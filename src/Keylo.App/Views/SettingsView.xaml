@@ -1,0 +1,213 @@
+<UserControl x:Class="Keylo.App.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:vm="clr-namespace:Keylo.App.ViewModels"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:SettingsViewModel}">
+
+    <DockPanel>
+        <!-- Footer -->
+        <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Padding="28,12">
+            <DockPanel>
+                <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                           Text="Saving asks for Windows Hello, because these settings decide what can skip it." />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <ui:Button Appearance="Secondary" Content="Revert" Command="{Binding RevertCommand}" Margin="0,0,8,0" />
+                    <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Save24}" Content="Save settings" Command="{Binding SaveCommand}"
+                               IsEnabled="{Binding IsBusy, Converter={StaticResource Not}}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="28,24,28,24" FocusVisualStyle="{x:Null}">
+            <StackPanel MaxWidth="820" HorizontalAlignment="Stretch">
+                <DockPanel Margin="0,0,0,24">
+                    <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon Dismiss24}" ToolTip="Close settings"
+                               Command="{Binding DataContext.CloseSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+                    <TextBlock Text="Settings" FontSize="26" FontWeight="SemiBold" />
+                </DockPanel>
+
+                <!-- ==================================================== security -->
+                <TextBlock Text="SECURITY" Style="{StaticResource SectionLabel}" />
+                <Border Style="{StaticResource Surface}" Margin="0,0,0,28">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,16">
+                            <ComboBox DockPanel.Dock="Right" Width="290" ItemsSource="{Binding HelloModes}" SelectedItem="{Binding Hello}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Converter={StaticResource HelloModeText}}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <StackPanel>
+                                <TextBlock Text="Ask for Windows Hello" FontWeight="SemiBold" />
+                                <TextBlock Text="Shared by the app and the keylo command." FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </DockPanel>
+                        <DockPanel Margin="0,0,0,16">
+                            <ui:NumberBox DockPanel.Dock="Right" Width="140" Minimum="1" Maximum="1440" SmallChange="5" Value="{Binding SessionMinutes}" />
+                            <StackPanel>
+                                <TextBlock Text="Session length (minutes)" FontWeight="SemiBold" />
+                                <TextBlock Text="How long one verification lasts in 'once per session' mode." FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </DockPanel>
+                        <DockPanel>
+                            <ui:NumberBox DockPanel.Dock="Right" Width="140" Minimum="5" Maximum="600" SmallChange="5" Value="{Binding ClipboardSeconds}" />
+                            <StackPanel>
+                                <TextBlock Text="Clear clipboard after (seconds)" FontWeight="SemiBold" />
+                                <TextBlock Text="Copied values are also kept out of clipboard history and cloud sync." FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- ==================================================== backup -->
+                <TextBlock Text="BACKUP &amp; RESTORE" Style="{StaticResource SectionLabel}" />
+                <Border Style="{StaticResource Surface}" Margin="0,0,0,28">
+                    <StackPanel>
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon ArrowExportUp24}" Content="Create backup…"
+                                           Command="{Binding BackupCommand}" IsEnabled="{Binding IsBusy, Converter={StaticResource Not}}" Margin="0,0,8,0" />
+                                <ui:Button Appearance="Secondary" Icon="{ui:SymbolIcon ArrowImport24}" Content="Restore…"
+                                           Command="{Binding RestoreCommand}" IsEnabled="{Binding IsBusy, Converter={StaticResource Not}}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,16,0">
+                                <TextBlock Text="Password-protected backup" FontWeight="SemiBold" />
+                                <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Text="One .keylo file with every secret, category and icon, encrypted with AES-256-GCM under your password. It works on any PC or Windows account, unlike Keylo's normal storage." />
+                            </StackPanel>
+                        </DockPanel>
+                        <TextBlock Text="{Binding BackupStatus}" FontSize="12" Margin="0,10,0,0" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   Visibility="{Binding BackupStatus, Converter={StaticResource VisibleWhen}}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- ==================================================== trust groups -->
+                <DockPanel Margin="0,0,0,6">
+                    <ui:Button DockPanel.Dock="Right" Appearance="Secondary" Icon="{ui:SymbolIcon Add24}" Content="Add group" Command="{Binding AddTrustGroupCommand}" />
+                    <StackPanel>
+                        <TextBlock Text="TRUST GROUPS" Style="{StaticResource SectionLabel}" Margin="0" />
+                        <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,4,12,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   Text="Let tools such as Claude Code use some secrets without Windows Hello. By default they can only run commands with secrets as environment variables (keylo run), so values don't end up in an AI conversation." />
+                    </StackPanel>
+                </DockPanel>
+
+                <ui:InfoBar IsOpen="True" IsClosable="False" Severity="Warning" Margin="0,8,0,12" Title="Not a security boundary"
+                            Message="Callers are recognised by program name, which any program running as you can imitate. Keep groups small and check the audit log below." />
+
+                <ItemsControl ItemsSource="{Binding TrustGroups}" Margin="0,0,0,28">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:TrustGroupViewModel}">
+                            <Border Style="{StaticResource Surface}" Margin="0,0,0,10">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,12">
+                                        <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon Delete24}" ToolTip="Remove group"
+                                                   Command="{Binding DataContext.RemoveTrustGroupCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                   CommandParameter="{Binding}" />
+                                        <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Group name" FontWeight="SemiBold" />
+                                    </DockPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="12" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="Callers (program names)" Style="{StaticResource FieldLabel}" />
+                                            <ui:TextBox Text="{Binding Callers, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="claude.exe, code.exe" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="Categories" Style="{StaticResource FieldLabel}" />
+                                            <ui:TextBox Text="{Binding Categories, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="dev, cloud" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock Text="Individual secrets" Style="{StaticResource FieldLabel}" Margin="0,12,0,4" />
+                                    <ui:TextBox Text="{Binding Secrets, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="github-token, npm-token" />
+                                    <ui:ToggleSwitch IsChecked="{Binding AllowGet}" Margin="0,14,0,0"
+                                                     Content="Also allow printing values (keylo get) — they will be visible to the tool" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- ==================================================== providers -->
+                <TextBlock Text="VAULT PROVIDERS" Style="{StaticResource SectionLabel}" />
+                <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                    Push secrets to other vaults. Add your own by dropping a plugin DLL into
+                    <Run Text="{Binding PluginDirectory, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" />.
+                </TextBlock>
+                <ItemsControl ItemsSource="{Binding Providers}" Margin="0,0,0,28">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:ProviderSettingsViewModel}">
+                            <Border Style="{StaticResource Surface}" Margin="0,0,0,10">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,12">
+                                        <ui:Button DockPanel.Dock="Right" Appearance="Secondary" Icon="{ui:SymbolIcon PlugConnected24}" Content="Test connection"
+                                                   Command="{Binding TestCommand}" />
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="15" />
+                                            <TextBlock Text="{Binding Status}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <ItemsControl ItemsSource="{Binding Settings}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type vm:ProviderSettingViewModel}">
+                                                <StackPanel Margin="0,0,0,10">
+                                                    <TextBlock Text="{Binding Description}" Style="{StaticResource FieldLabel}" />
+                                                    <ui:TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="{Binding Key}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- ==================================================== audit -->
+                <DockPanel Margin="0,0,0,6">
+                    <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon ArrowClockwise24}" Content="Refresh" Command="{Binding LoadAuditCommand}" />
+                    <TextBlock Text="AUDIT LOG — ACCESS WITHOUT WINDOWS HELLO" Style="{StaticResource SectionLabel}" VerticalAlignment="Center" Margin="0" />
+                </DockPanel>
+                <Border Style="{StaticResource Surface}" Padding="0" Margin="0,0,0,28">
+                    <Grid>
+                        <ItemsControl ItemsSource="{Binding Audit}" Margin="16,10">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:AuditEntry}">
+                                    <Grid Margin="0,5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="150" />
+                                            <ColumnDefinition Width="56" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Time}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Operation}" FontSize="12" FontWeight="SemiBold" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Secrets}" FontSize="12" TextTrimming="CharacterEllipsis" FontFamily="{StaticResource MonoFont}" />
+                                        <TextBlock Grid.Column="3" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="12,0,0,0">
+                                            <Run Text="{Binding Caller, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Group, Mode=OneWay}" />
+                                        </TextBlock>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="No access without Windows Hello yet." Margin="16" FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   Visibility="{Binding Audit.Count, Converter={StaticResource HiddenWhen}}" />
+                    </Grid>
+                </Border>
+
+                <TextBlock FontSize="12" Foreground="{DynamicResource TextFillColorTertiaryBrush}">
+                    Data folder: <Run Text="{Binding DataDirectory, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" />
+                </TextBlock>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

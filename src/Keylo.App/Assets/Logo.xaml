@@ -1,0 +1,42 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Keylo logo, on a 256x256 grid. The mark is a geometric "K" whose stem is a key blade: the
+        notches on its lower left are the key's cuts. Arms are cut at matching angles so the edges
+        stay parallel. Keep in sync with assets/keylo.svg.
+    -->
+
+    <Geometry x:Key="LogoTileGeometry">M60,0 H196 A60,60 0 0 1 256,60 V196 A60,60 0 0 1 196,256 H60 A60,60 0 0 1 0,196 V60 A60,60 0 0 1 60,0 Z</Geometry>
+
+    <Geometry x:Key="LogoStemGeometry">M64,56 L104,56 L104,200 L64,200 L64,188 L80,188 L80,172 L64,172 L64,160 L80,160 L80,144 L64,144 Z</Geometry>
+
+    <Geometry x:Key="LogoArmsGeometry">M104,104 L146,56 L190,56 L134,120 L192,200 L148,200 L110,146 L104,152 Z</Geometry>
+
+    <LinearGradientBrush x:Key="LogoTileBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#8B5CF6" Offset="0" />
+        <GradientStop Color="#6366F1" Offset="0.5" />
+        <GradientStop Color="#2563EB" Offset="1" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="LogoGlossBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#2EFFFFFF" Offset="0" />
+        <GradientStop Color="#00FFFFFF" Offset="0.55" />
+    </LinearGradientBrush>
+
+    <!-- Full logo: gradient tile + white mark. -->
+    <DrawingImage x:Key="LogoImage">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="{StaticResource LogoTileBrush}" Geometry="{StaticResource LogoTileGeometry}" />
+                <GeometryDrawing Brush="{StaticResource LogoGlossBrush}" Geometry="{StaticResource LogoTileGeometry}">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#1FFFFFFF" Thickness="4" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="White" Geometry="{StaticResource LogoStemGeometry}" />
+                <GeometryDrawing Brush="White" Geometry="{StaticResource LogoArmsGeometry}" />
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+</ResourceDictionary>

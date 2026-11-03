@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>keylo</AssemblyName>
+    <RootNamespace>Keylo.Cli</RootNamespace>
+    <ApplicationIcon>..\Keylo.App\Assets\keylo.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Keylo.Core\Keylo.Core.csproj" />
+  </ItemGroup>
+
+</Project>
