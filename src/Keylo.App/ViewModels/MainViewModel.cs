@@ -148,7 +148,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         _suppressSelection = true;
         Secrets.Clear();
-        foreach (var info in all) Secrets.Add(new SecretItemViewModel(info, _keylo.Categories.StyleOf(info.Category)));
+        foreach (var info in all) Secrets.Add(new SecretItemViewModel(info, _keylo.Categories.StyleOf(info.Category), _keylo.TypeOf(info.Type)));
 
         Categories.Clear();
         Categories.Add(new CategoryItem(null, "All secrets", all.Count, SymbolRegular.Key24));
@@ -255,6 +255,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void OpenSettings()
     {
+        _keylo.RefreshConfig();
         Settings.Revert();
         IsCategoryManagerOpen = false;
         IsSettingsOpen = true;

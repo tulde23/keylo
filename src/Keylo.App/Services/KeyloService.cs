@@ -29,6 +29,29 @@ public sealed class KeyloService : IDisposable
     public AccessGate Gate { get; }
     public ProviderRegistry Providers { get; } = new();
 
+    public SecretTypeCatalog TypeCatalog { get; } = new();
+
+    /// <summary>Built-in and custom secret types, cached; call <see cref="RefreshTypes"/> after editing them.</summary>
+    public IReadOnlyList<SecretTypeDefinition> Types => _types ??= LoadTypes();
+    private IReadOnlyList<SecretTypeDefinition>? _types;
+
+    public SecretTypeDefinition? TypeOf(string? id) =>
+        id is null ? null : Types.FirstOrDefault(t => t.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+
+    public void RefreshTypes() => _types = null;
+
+    private IReadOnlyList<SecretTypeDefinition> LoadTypes()
+    {
+        try
+        {
+            return TypeCatalog.All();
+        }
+        catch (KeyloException)
+        {
+            return SecretTypeCatalog.BuiltIn; // A broken types.json shouldn't stop the app.
+        }
+    }
+
     /// <summary>Owner window for Windows Hello prompts.</summary>
     public IntPtr WindowHandle { get; set; }
 
@@ -69,6 +92,20 @@ public sealed class KeyloService : IDisposable
         _clipboardSequence = null;
     }
 
+    /// <summary>
+    /// Re-reads config.json into <see cref="Config"/> (same instance, which the gate holds). Other
+    /// processes change it too: the CLI, and approval windows adding secrets to access keys.
+    /// </summary>
+    public void RefreshConfig()
+    {
+        var fresh = KeyloConfig.Load();
+        Config.Hello = fresh.Hello;
+        Config.SessionMinutes = fresh.SessionMinutes;
+        Config.ClipboardSeconds = fresh.ClipboardSeconds;
+        Config.AccessKeys = fresh.AccessKeys;
+        Config.Providers = fresh.Providers;
+    }
+
     /// <summary>Saves settings after a fresh Windows Hello check (they decide what skips it).</summary>
     public async Task SaveConfigAsync(KeyloConfig updated)
     {
@@ -78,7 +115,7 @@ public sealed class KeyloService : IDisposable
         Config.Hello = updated.Hello;
         Config.SessionMinutes = updated.SessionMinutes;
         Config.ClipboardSeconds = updated.ClipboardSeconds;
-        Config.TrustGroups = updated.TrustGroups;
+        Config.AccessKeys = updated.AccessKeys;
         Config.Providers = updated.Providers;
         Config.Save();
     }

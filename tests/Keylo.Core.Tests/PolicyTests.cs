@@ -33,43 +33,104 @@ public sealed class SearchTests
     }
 }
 
-public sealed class TrustPolicyTests
+public sealed class AccessKeyTests
 {
-    private static readonly IReadOnlyList<AncestorProcess> ClaudeChain =
-        [new(1, "bash.exe"), new(2, "claude.exe"), new(3, "pwsh.exe")];
-
     private static SecretInfo Info(string name, string? category) =>
         new(name, category, null, null, DateTimeOffset.Now, 1, StorageKind.CredentialManager);
 
-    private static KeyloConfig Config(bool allowGet = false) => new()
+    private static (KeyloConfig Config, string Token) Config(bool allowGet = false, DateTimeOffset? expires = null)
     {
-        TrustGroups = [new TrustGroup { Name = "agents", Callers = ["claude"], Categories = ["dev"], Secrets = ["one-off"], AllowGet = allowGet }],
-    };
+        var (key, token) = AccessKeys.Create("agents", expires);
+        key.Categories = ["dev"];
+        key.Secrets = ["one-off"];
+        key.AllowGet = allowGet;
+        return (new KeyloConfig { AccessKeys = [key] }, token);
+    }
 
     [Fact]
-    public void Run_is_trusted_for_covered_secrets_from_a_listed_caller()
+    public void A_token_finds_its_key_and_only_the_hash_is_stored()
     {
-        var decision = TrustPolicy.Find(Config(), SecretOperation.Run, [Info("x", "dev"), Info("one-off", null)], ClaudeChain);
-        Assert.Equal("claude.exe", decision?.Caller.ExecutableName);
+        var (config, token) = Config();
+        Assert.StartsWith("kyl_", token);
+        Assert.Equal("agents", AccessKeys.Find(config, token)?.Name);
+        Assert.DoesNotContain(token, System.Text.Json.JsonSerializer.Serialize(config));
+    }
+
+    [Fact]
+    public void Wrong_missing_or_expired_tokens_find_nothing()
+    {
+        var (config, token) = Config();
+        Assert.Null(AccessKeys.Find(config, token + "x"));
+        Assert.Null(AccessKeys.Find(config, null));
+        Assert.Null(AccessKeys.Find(config, "kyl_"));
+
+        var (expired, expiredToken) = Config(expires: DateTimeOffset.Now.AddMinutes(-1));
+        Assert.Null(AccessKeys.Find(expired, expiredToken));
+    }
+
+    [Fact]
+    public void Run_is_allowed_for_covered_secrets()
+    {
+        var key = Config().Config.AccessKeys[0];
+        Assert.True(key.Allows(SecretOperation.Run, [Info("x", "DEV"), Info("one-off", null)]));
     }
 
     [Fact]
     public void Get_needs_allow_get()
     {
-        Assert.Null(TrustPolicy.Find(Config(), SecretOperation.Get, [Info("x", "dev")], ClaudeChain));
-        Assert.NotNull(TrustPolicy.Find(Config(allowGet: true), SecretOperation.Get, [Info("x", "dev")], ClaudeChain));
+        Assert.False(Config().Config.AccessKeys[0].Allows(SecretOperation.Get, [Info("x", "dev")]));
+        Assert.True(Config(allowGet: true).Config.AccessKeys[0].Allows(SecretOperation.Get, [Info("x", "dev")]));
     }
 
     [Fact]
-    public void One_uncovered_secret_makes_the_whole_request_untrusted()
+    public void Every_secret_must_be_covered()
     {
-        Assert.Null(TrustPolicy.Find(Config(), SecretOperation.Run, [Info("x", "dev"), Info("bank", "personal")], ClaudeChain));
+        var key = Config().Config.AccessKeys[0];
+        Assert.False(key.Allows(SecretOperation.Run, [Info("x", "dev"), Info("bank", "personal")]));
+        Assert.False(key.Allows(SecretOperation.Run, []));
     }
 
     [Fact]
-    public void Other_callers_are_not_trusted()
+    public void Grant_adds_secrets_once_to_the_named_key()
     {
-        Assert.Null(TrustPolicy.Find(Config(), SecretOperation.Run, [Info("x", "dev")], [new(1, "node.exe")]));
-        Assert.Null(TrustPolicy.Find(Config(), SecretOperation.Run, [Info("x", "dev")], []));
+        var (config, _) = Config();
+        var id = config.AccessKeys[0].Id;
+        Assert.True(AccessKeys.Grant(config, id, ["bank", "BANK", "one-off"]));
+        Assert.Equal(["one-off", "bank"], config.AccessKeys[0].Secrets);
+        Assert.False(AccessKeys.Grant(config, "nope", ["x"]));
+    }
+
+    [Fact]
+    public void Approval_requests_round_trip_and_clip_long_text()
+    {
+        var request = new ApprovalRequest(SecretOperation.Run, ["a", "b"], "id1", "Claude Code", new string('r', 5000), "echo hi", true);
+        var decoded = ApprovalRequest.Decode(request.Encode());
+        Assert.NotNull(decoded);
+        Assert.Equal(["a", "b"], decoded.Secrets);
+        Assert.Equal("echo hi", decoded.Command);
+        Assert.True(decoded.Reason!.Length < 2100);
+        Assert.Null(ApprovalRequest.Decode("not base64!"));
+    }
+}
+
+public sealed class RedactorTests
+{
+    [Fact]
+    public void Values_and_their_trimmed_form_are_replaced()
+    {
+        var redactor = new OutputRedactor();
+        redactor.Add("token", "s3cr3t-value\n");
+        Assert.Equal("auth=[keylo:token] ok", redactor.Redact("auth=s3cr3t-value ok"));
+    }
+
+    [Fact]
+    public void Longer_values_win_and_short_ones_are_left_alone()
+    {
+        var redactor = new OutputRedactor();
+        redactor.Add("short", "abc");
+        redactor.Add("inner", "pass");
+        redactor.Add("outer", "password123");
+        Assert.Equal("[keylo:outer] [keylo:inner] abc", redactor.Redact("password123 pass abc"));
+        Assert.Equal(11, redactor.LongestValue);
     }
 }

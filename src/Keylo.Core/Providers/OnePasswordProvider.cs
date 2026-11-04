@@ -43,17 +43,27 @@ public sealed class OnePasswordProvider : IVaultProvider
         if (!settings.TryGetValue("vault", out var vault) || string.IsNullOrWhiteSpace(vault))
             return new PushResult(info.Name, false, "No 1Password vault configured.");
 
-        string value;
-        try
-        {
-            value = new UTF8Encoding(false, throwOnInvalidBytes: true).GetString(secret.Value);
-        }
-        catch (DecoderFallbackException)
-        {
-            return new PushResult(info.Name, false, "Binary values can't be stored in a 1Password field.");
-        }
+        // Typed secrets: the main field is the password; the others go along as labelled fields.
+        var type = new SecretTypeCatalog().Find(info.Type);
+        Dictionary<string, string>? typed = type is null ? null : TypedSecrets.ReadFields(type, info, secret.Value);
+        var value = type is null ? TypedSecrets.DecodeText(secret.Value) : typed!.GetValueOrDefault(type.Primary?.Id ?? "", "");
+        if (value is null) return new PushResult(info.Name, false, "Binary values can't be stored in a 1Password field.");
 
         var item = BuildItem(info, value);
+        if (type is not null && item["fields"] is JsonArray itemFields)
+        {
+            foreach (var field in type.Fields.Where(f => f != type.Primary && f.Kind != FieldKind.Username))
+            {
+                if (!typed!.TryGetValue(field.Id, out var text)) continue;
+                itemFields.Add(new JsonObject
+                {
+                    ["id"] = field.Id,
+                    ["type"] = field.IsSecret ? "CONCEALED" : field.Kind == FieldKind.Url ? "URL" : "STRING",
+                    ["label"] = field.Label,
+                    ["value"] = text,
+                });
+            }
+        }
         var account = AccountArgs(settings);
 
         var existingId = await FindItemIdAsync(info.Name, vault, account, cancellationToken);

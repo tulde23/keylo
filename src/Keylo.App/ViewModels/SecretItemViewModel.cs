@@ -5,7 +5,7 @@ using Wpf.Ui.Controls;
 namespace Keylo.App.ViewModels;
 
 /// <summary>A row in the secret list.</summary>
-public sealed class SecretItemViewModel(SecretInfo info, CategoryStyle? categoryStyle = null)
+public sealed class SecretItemViewModel(SecretInfo info, CategoryStyle? categoryStyle = null, SecretTypeDefinition? type = null)
 {
     private static readonly Color[] Palette = IconCatalog.Colors.Select(c => IconCatalog.ToColor(c)!.Value).ToArray();
 
@@ -13,19 +13,19 @@ public sealed class SecretItemViewModel(SecretInfo info, CategoryStyle? category
     public string Name => Info.Name;
     public string? Category => Info.Category;
 
-    public string Subtitle => string.Join("  ·  ", new[] { Info.Category, Info.Username }.Where(s => !string.IsNullOrEmpty(s)))
+    public string Subtitle => string.Join("  ·  ", new[] { type?.Name, Info.Category, Info.Username }.Where(s => !string.IsNullOrEmpty(s)))
         is { Length: > 0 } s ? s : "No category";
 
     public string Initial => Info.Name[..1].ToUpperInvariant();
 
-    private string? EffectiveIcon => Info.Icon ?? categoryStyle?.Icon;
+    private string? EffectiveIcon => Info.Icon ?? categoryStyle?.Icon ?? type?.Icon;
 
     /// <summary>An uploaded image icon (own or the category's), shown instead of a symbol.</summary>
     public ImageSource? Image => IconImages.Load(EffectiveIcon);
 
     public bool HasImage => Image is not null;
 
-    /// <summary>The secret's own icon, else its category's, else none (the initial is shown).</summary>
+    /// <summary>The secret's own icon, else its category's, else its type's, else none (the initial is shown).</summary>
     public SymbolRegular? Icon =>
         !HasImage && IconCatalog.ToSymbol(EffectiveIcon, SymbolRegular.Empty) is var s && s != SymbolRegular.Empty ? s : null;
 
@@ -38,7 +38,7 @@ public sealed class SecretItemViewModel(SecretInfo info, CategoryStyle? category
         get
         {
             if (HasImage) return Brushes.Transparent;
-            var color = IconCatalog.ToColor(Info.Color) ?? IconCatalog.ToColor(categoryStyle?.Color);
+            var color = IconCatalog.ToColor(Info.Color) ?? IconCatalog.ToColor(categoryStyle?.Color) ?? IconCatalog.ToColor(type?.Color);
             if (color is null)
             {
                 var hash = Info.Name.ToLowerInvariant().Aggregate(17, (h, c) => unchecked(h * 31 + c));

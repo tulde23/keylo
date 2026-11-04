@@ -2,6 +2,7 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using Keylo.App.Services;
+using Keylo.Core.Security;
 
 namespace Keylo.App;
 
@@ -13,6 +14,23 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // "keylow --approve REQUEST" (from keylo mcp): just the approval window, answered by exit code.
+        // Not single-instance, so it works while the main window is open.
+        if (e.Args is [ApprovalRequest.Argument, var encoded])
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            if (ApprovalRequest.Decode(encoded) is not { } request)
+            {
+                Shutdown((int)ApprovalResult.Denied);
+                return;
+            }
+
+            var approval = new Views.ApprovalWindow(request);
+            approval.Closed += (_, _) => Shutdown((int)(approval.Result ?? ApprovalResult.Denied));
+            approval.Show();
+            return;
+        }
 
         // One window per user and data folder: a second launch (e.g. typing "keylo" again) focuses the
         // first. Keyed by data folder so a copy pointed at a scratch KEYLO_HOME doesn't collide.

@@ -5,6 +5,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:vm="clr-namespace:Keylo.App.ViewModels"
+             xmlns:views="clr-namespace:Keylo.App.Views"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:SettingsViewModel}">
 
@@ -87,30 +88,103 @@
                     </StackPanel>
                 </Border>
 
-                <!-- ==================================================== trust groups -->
-                <DockPanel Margin="0,0,0,6">
-                    <ui:Button DockPanel.Dock="Right" Appearance="Secondary" Icon="{ui:SymbolIcon Add24}" Content="Add group" Command="{Binding AddTrustGroupCommand}" />
+                <!-- ==================================================== secret types -->
+                <DockPanel Margin="0,0,0,6" DataContext="{Binding SecretTypes}">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <ui:Button Appearance="Secondary" Icon="{ui:SymbolIcon Add24}" Content="New type" Command="{Binding AddTypeCommand}" Margin="0,0,8,0" />
+                        <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Save24}" Content="Save types" Command="{Binding SaveCommand}" />
+                    </StackPanel>
                     <StackPanel>
-                        <TextBlock Text="TRUST GROUPS" Style="{StaticResource SectionLabel}" Margin="0" />
+                        <TextBlock Text="SECRET TYPES" Style="{StaticResource SectionLabel}" Margin="0" />
                         <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,4,12,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                   Text="Let tools such as Claude Code use some secrets without Windows Hello. By default they can only run commands with secrets as environment variables (keylo run), so values don't end up in an AI conversation." />
+                                   Text="Kinds of secret with their own fields, like 1Password's categories. Secret fields (Password, Secret text) are encrypted and redacted from agent output; the others are searchable and shown to agents whose key covers the secret. Built-in types can change their icon and colour." />
                     </StackPanel>
                 </DockPanel>
 
-                <ui:InfoBar IsOpen="True" IsClosable="False" Severity="Warning" Margin="0,8,0,12" Title="Not a security boundary"
-                            Message="Callers are recognised by program name, which any program running as you can imitate. Keep groups small and check the audit log below." />
-
-                <ItemsControl ItemsSource="{Binding TrustGroups}" Margin="0,0,0,28">
+                <ItemsControl ItemsSource="{Binding SecretTypes.Types}" Margin="0,8,0,28">
                     <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type vm:TrustGroupViewModel}">
+                        <DataTemplate DataType="{x:Type vm:SecretTypeViewModel}">
+                            <Expander Margin="0,0,0,8">
+                                <Expander.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <views:IconTile Width="30" Height="30" CornerRadius="8" GlyphSize="16" Symbol="{Binding Symbol}" />
+                                        <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding Summary}" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Expander.Header>
+                                <StackPanel Margin="4,4,4,8">
+                                    <DockPanel Margin="0,0,0,12" Visibility="{Binding IsCustom, Converter={StaticResource VisibleWhen}}">
+                                        <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon Delete24}" ToolTip="Delete type (on save)"
+                                                   Command="{Binding DataContext.SecretTypes.RemoveTypeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                   CommandParameter="{Binding}" Margin="8,0,0,0" />
+                                        <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Type name" />
+                                    </DockPanel>
+
+                                    <TextBlock Text="Icon and colour" Style="{StaticResource FieldLabel}" />
+                                    <views:IconPicker Icon="{Binding Icon}" Color="{Binding Color}" Margin="0,4,0,14" />
+
+                                    <TextBlock Text="Fields" Style="{StaticResource FieldLabel}" />
+                                    <ItemsControl ItemsSource="{Binding Fields}" IsEnabled="{Binding IsCustom}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type vm:FieldDefinitionViewModel}">
+                                                <Grid Margin="0,0,0,6">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="2*" />
+                                                        <ColumnDefinition Width="8" />
+                                                        <ColumnDefinition Width="1.3*" />
+                                                        <ColumnDefinition Width="8" />
+                                                        <ColumnDefinition Width="2*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <ui:TextBox Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Label" />
+                                                    <ComboBox Grid.Column="2" ItemsSource="{Binding Kinds, Mode=OneTime}" SelectedItem="{Binding Kind}" />
+                                                    <ui:TextBox Grid.Column="4" Text="{Binding Options, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Suggestions (optional, comma-separated)" />
+                                                    <ui:Button Grid.Column="5" Appearance="Transparent" Icon="{ui:SymbolIcon Dismiss24}" ToolTip="Remove field" Margin="4,0,0,0"
+                                                               Command="{Binding DataContext.RemoveFieldCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                               CommandParameter="{Binding}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <ui:Button Appearance="Secondary" Icon="{ui:SymbolIcon Add24}" Content="Add field" Command="{Binding AddFieldCommand}" Margin="0,4,0,0"
+                                               Visibility="{Binding IsCustom, Converter={StaticResource VisibleWhen}}" />
+                                    <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                               Text="Kinds: Username (shown as the key) · Text, Url, Number (searchable, max 256 bytes) · Password, SecretText (encrypted; the first one is the main value)." />
+                                </StackPanel>
+                            </Expander>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- ==================================================== access keys -->
+                <DockPanel Margin="0,0,0,6">
+                    <ui:Button DockPanel.Dock="Right" Appearance="Secondary" Icon="{ui:SymbolIcon Add24}" Content="New key" Command="{Binding AddAccessKeyCommand}" />
+                    <StackPanel>
+                        <TextBlock Text="ACCESS KEYS" Style="{StaticResource SectionLabel}" Margin="0" />
+                        <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,4,12,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   Text="Let tools such as Claude Code (through Keylo's MCP server, or KEYLO_ACCESS_KEY for the CLI) use some secrets without Windows Hello. Secrets outside a key's scope ask you first. By default a key can only pass secrets to commands, so values don't end up in an AI conversation." />
+                    </StackPanel>
+                </DockPanel>
+
+                <ui:InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Margin="0,8,0,12" Title="Keys are shown once"
+                            Message="A new key appears after you save, with the command to add it to Claude Code. Keylo keeps only a hash. A key only skips approval for the categories and secrets you list — leave both blank and every use asks you first. Delete a key to revoke it." />
+
+                <ItemsControl ItemsSource="{Binding AccessKeys}" Margin="0,0,0,28">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:AccessKeyViewModel}">
                             <Border Style="{StaticResource Surface}" Margin="0,0,0,10">
                                 <StackPanel>
-                                    <DockPanel Margin="0,0,0,12">
-                                        <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon Delete24}" ToolTip="Remove group"
-                                                   Command="{Binding DataContext.RemoveTrustGroupCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                    <DockPanel Margin="0,0,0,4">
+                                        <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon Delete24}" ToolTip="Revoke (on save)"
+                                                   Command="{Binding DataContext.RemoveAccessKeyCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                    CommandParameter="{Binding}" />
-                                        <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Group name" FontWeight="SemiBold" />
+                                        <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Key24" FontSize="18" Margin="0,0,10,0"
+                                                       Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                        <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Key name, e.g. Claude Code" FontWeight="SemiBold" />
                                     </DockPanel>
+                                    <TextBlock Text="{Binding Details}" FontSize="11" Margin="28,0,0,12" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -118,18 +192,18 @@
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel>
-                                            <TextBlock Text="Callers (program names)" Style="{StaticResource FieldLabel}" />
-                                            <ui:TextBox Text="{Binding Callers, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="claude.exe, code.exe" />
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="2">
                                             <TextBlock Text="Categories" Style="{StaticResource FieldLabel}" />
                                             <ui:TextBox Text="{Binding Categories, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="dev, cloud" />
                                         </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="Expires (optional)" Style="{StaticResource FieldLabel}" />
+                                            <DatePicker SelectedDate="{Binding Expires}" />
+                                        </StackPanel>
                                     </Grid>
                                     <TextBlock Text="Individual secrets" Style="{StaticResource FieldLabel}" Margin="0,12,0,4" />
-                                    <ui:TextBox Text="{Binding Secrets, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="github-token, npm-token" />
+                                    <ui:TextBox Text="{Binding Secrets, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="github-token, npm-token (approvals add to this list)" />
                                     <ui:ToggleSwitch IsChecked="{Binding AllowGet}" Margin="0,14,0,0"
-                                                     Content="Also allow printing values (keylo get) — they will be visible to the tool" />
+                                                     Content="Also allow reading values (get) — they will be visible to the tool" />
                                 </StackPanel>
                             </Border>
                         </DataTemplate>
@@ -192,7 +266,7 @@
                                         <TextBlock Grid.Column="1" Text="{Binding Operation}" FontSize="12" FontWeight="SemiBold" />
                                         <TextBlock Grid.Column="2" Text="{Binding Secrets}" FontSize="12" TextTrimming="CharacterEllipsis" FontFamily="{StaticResource MonoFont}" />
                                         <TextBlock Grid.Column="3" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="12,0,0,0">
-                                            <Run Text="{Binding Caller, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Group, Mode=OneWay}" />
+                                            <Run Text="{Binding Key, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Via, Mode=OneWay}" />
                                         </TextBlock>
                                     </Grid>
                                 </DataTemplate>

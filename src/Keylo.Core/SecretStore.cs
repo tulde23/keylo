@@ -32,6 +32,8 @@ public sealed class SecretStore
     private const string CategoryAttribute = "KeyloCategory";
     private const string IconAttribute = "KeyloIcon";
     private const string ColorAttribute = "KeyloColor";
+    private const string TypeAttribute = "KeyloType";
+    private const string FieldAttributePrefix = "KeyloField:";
 
     private readonly string _prefix;
     private readonly string _blobDirectory;
@@ -131,6 +133,7 @@ public sealed class SecretStore
         }
 
         var attributes = Attributes(category, NormalizeIcon(draft.Icon), NormalizeColor(draft.Color));
+        AddTypeAttributes(attributes, draft.Type, draft.Fields);
 
         try
         {
@@ -179,6 +182,7 @@ public sealed class SecretStore
             category is null ? info.Category : NormalizeOptional(category, MaxCategoryLength, "Category"),
             icon is null ? info.Icon : NormalizeIcon(icon),
             color is null ? info.Color : NormalizeColor(color));
+        AddTypeAttributes(attributes, info.Type, info.Fields);
 
         try
         {
@@ -274,6 +278,26 @@ public sealed class SecretStore
         return color.ToUpperInvariant();
     }
 
+    /// <summary>Type id and non-secret fields as attributes (each value at most 256 bytes; 64 attributes in all).</summary>
+    private static void AddTypeAttributes(Dictionary<string, string> attributes, string? type, IReadOnlyDictionary<string, string>? fields)
+    {
+        if (string.IsNullOrWhiteSpace(type)) return;
+        if (type.Length > 64 || !type.All(c => char.IsAsciiLetterOrDigit(c) || c == '_'))
+            throw new KeyloException($"'{type}' isn't a valid type id.");
+        attributes[TypeAttribute] = type;
+
+        foreach (var (id, value) in fields ?? new Dictionary<string, string>())
+        {
+            if (string.IsNullOrEmpty(value)) continue;
+            if (Encoding.UTF8.GetByteCount(value) > Native.CredentialApi.CRED_MAX_VALUE_SIZE)
+                throw new KeyloException($"'{id}' is longer than {Native.CredentialApi.CRED_MAX_VALUE_SIZE} bytes. Shorten it, or use a secret field for long text.");
+            if (value.Any(char.IsControl))
+                throw new KeyloException($"'{id}' cannot contain line breaks or control characters.");
+            attributes[FieldAttributePrefix + id] = value;
+        }
+        if (attributes.Count > 64) throw new KeyloException("Too many fields (Credential Manager allows 64 attributes).");
+    }
+
     private static Dictionary<string, string> Attributes(string? category, string? icon, string? color)
     {
         var attributes = new Dictionary<string, string>();
@@ -309,6 +333,10 @@ public sealed class SecretStore
         raw.Attributes.TryGetValue(CategoryAttribute, out var category);
         raw.Attributes.TryGetValue(IconAttribute, out var icon);
         raw.Attributes.TryGetValue(ColorAttribute, out var color);
+        raw.Attributes.TryGetValue(TypeAttribute, out var type);
+        var fields = raw.Attributes
+            .Where(a => a.Key.StartsWith(FieldAttributePrefix, StringComparison.Ordinal) && !string.IsNullOrEmpty(a.Value))
+            .ToDictionary(a => a.Key[FieldAttributePrefix.Length..], a => a.Value, StringComparer.OrdinalIgnoreCase);
 
         return new SecretInfo(
             raw.Target[_prefix.Length..],
@@ -319,7 +347,9 @@ public sealed class SecretStore
             size,
             storage,
             string.IsNullOrEmpty(icon) ? null : icon,
-            string.IsNullOrEmpty(color) ? null : color);
+            string.IsNullOrEmpty(color) ? null : color,
+            string.IsNullOrEmpty(type) ? null : type,
+            fields.Count > 0 ? fields : null);
     }
 
     private static (Guid Id, int Length) ReadFileReference(byte[] blob) =>

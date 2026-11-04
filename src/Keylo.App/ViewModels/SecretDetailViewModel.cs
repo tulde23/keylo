@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -25,6 +26,8 @@ public sealed partial class SecretDetailViewModel : ObservableObject
 
     private SecretInfo? _info;
     private byte[]? _binaryValue;
+    private bool _valuesLoaded;
+    private bool _loading;
 
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsViewing), nameof(Title))]
     private bool _isEditing;
@@ -47,6 +50,10 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     [ObservableProperty] private int _generatorLength = 24;
     [ObservableProperty] private bool _generatorSymbols = true;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Type), nameof(IsTyped), nameof(IsPlain), nameof(TypeName), nameof(ShowKey), nameof(Symbol), nameof(Image), nameof(HasImage), nameof(TileBrush))]
+    private TypeChoice? _selectedType;
+
     public SecretDetailViewModel(KeyloService keylo, IUserNotifier notify, Func<string?, Task> reload, SecretInfo? info)
     {
         _keylo = keylo;
@@ -56,12 +63,16 @@ public sealed partial class SecretDetailViewModel : ObservableObject
 
         Categories = new ObservableCollection<string>(keylo.Store.Categories());
         Providers = new ObservableCollection<ProviderItem>(keylo.Providers.All.Select(p => new ProviderItem(p.Id, p.DisplayName)));
+        TypeChoices = new ObservableCollection<TypeChoice>([new TypeChoice(null), .. keylo.Types.Select(t => new TypeChoice(t))]);
 
         if (info is null)
         {
             IsNew = true;
             IsEditing = true;
             IsValueVisible = true;
+            _loading = true;
+            SelectedType = TypeChoices[0];
+            _loading = false;
         }
         else
         {
@@ -74,19 +85,29 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     public string Title => IsNew ? "New secret" : Name;
     public ObservableCollection<string> Categories { get; }
     public ObservableCollection<ProviderItem> Providers { get; }
+    public ObservableCollection<TypeChoice> TypeChoices { get; }
+
+    /// <summary>A typed secret's fields; empty for a plain secret.</summary>
+    public ObservableCollection<FieldViewModel> Fields { get; } = [];
+
+    public SecretTypeDefinition? Type => SelectedType?.Definition;
+    public bool IsTyped => Type is not null;
+    public bool IsPlain => !IsTyped;
+    public string? TypeName => Type?.Name;
 
     public string MaskedValue => IsValueVisible ? Value : "••••••••••••••••";
 
-    /// <summary>Header tile: own icon/colour, falling back to the category's, then Keylo's default.</summary>
+    /// <summary>Header tile: own icon/colour, falling back to the category's, then the type's, then Keylo's default.</summary>
     public Wpf.Ui.Controls.SymbolRegular Symbol =>
-        IconCatalog.ToSymbol(Icon ?? _keylo.Categories.StyleOf(Category)?.Icon, Wpf.Ui.Controls.SymbolRegular.Key24);
+        IconCatalog.ToSymbol(Icon ?? _keylo.Categories.StyleOf(Category)?.Icon ?? Type?.Icon, Wpf.Ui.Controls.SymbolRegular.Key24);
 
-    public System.Windows.Media.ImageSource? Image => IconImages.Load(Icon ?? _keylo.Categories.StyleOf(Category)?.Icon);
+    public System.Windows.Media.ImageSource? Image => IconImages.Load(Icon ?? _keylo.Categories.StyleOf(Category)?.Icon ?? Type?.Icon);
 
     public bool HasImage => Image is not null;
 
     public System.Windows.Media.Brush TileBrush => HasImage ? System.Windows.Media.Brushes.Transparent :
-        IconCatalog.Tile(IconCatalog.ToColor(Color) ?? IconCatalog.ToColor(_keylo.Categories.StyleOf(Category)?.Color) ?? IconCatalog.ToColor("#6366F1")!.Value);
+        IconCatalog.Tile(IconCatalog.ToColor(Color) ?? IconCatalog.ToColor(_keylo.Categories.StyleOf(Category)?.Color) ??
+                         IconCatalog.ToColor(Type?.Color) ?? IconCatalog.ToColor("#6366F1")!.Value);
     public int ValueLength => Value.Length;
 
     public string UpdatedText => _info is null ? "" : _info.UpdatedAt.LocalDateTime.ToString("MMM d, yyyy  h:mm tt");
@@ -99,6 +120,7 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     };
     public string StorageText => _info?.Storage == StorageKind.EncryptedFile ? "Encrypted file (DPAPI)" : "Windows Credential Manager";
     public bool HasUsername => !string.IsNullOrEmpty(_info?.Username);
+    public bool ShowKey => IsPlain && HasUsername;
     public bool HasNotes => !string.IsNullOrEmpty(_info?.Notes);
     public bool HasCategory => !string.IsNullOrEmpty(_info?.Category);
 
@@ -111,9 +133,52 @@ public sealed partial class SecretDetailViewModel : ObservableObject
         OnPropertyChanged(nameof(TileBrush));
     }
 
+    partial void OnIsValueVisibleChanged(bool value)
+    {
+        foreach (var field in Fields) field.Revealed = value;
+    }
+
+    /// <summary>Switching type while editing carries values across: same-named fields, main value and username.</summary>
+    partial void OnSelectedTypeChanged(TypeChoice? oldValue, TypeChoice? newValue)
+    {
+        if (_loading) return;
+
+        var current = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string? main, user;
+        if (oldValue?.Definition is { } oldType)
+        {
+            foreach (var field in Fields.Where(f => f.HasValue)) current[field.Id] = field.Value;
+            main = oldType.Primary is { } p ? current.GetValueOrDefault(p.Id) : null;
+            user = oldType.UsernameField is { } u ? current.GetValueOrDefault(u.Id) : null;
+        }
+        else
+        {
+            main = IsBinary ? null : Value;
+            user = Username;
+        }
+
+        if (newValue?.Definition is { } newType)
+        {
+            if (newType.Primary is { } primary && !current.ContainsKey(primary.Id) && !string.IsNullOrEmpty(main)) current[primary.Id] = main;
+            if (newType.UsernameField is { } userField && !current.ContainsKey(userField.Id) && !string.IsNullOrEmpty(user)) current[userField.Id] = user;
+            BuildFields(newType, current);
+        }
+        else
+        {
+            Fields.Clear();
+            Value = main ?? "";
+            Username = user ?? "";
+        }
+        IsValueVisible = true;
+    }
+
     private void Load(SecretInfo info)
     {
         _info = info;
+        _loading = true;
+        SelectedType = TypeChoices.FirstOrDefault(t => t.Id is not null && t.Id.Equals(info.Type, StringComparison.OrdinalIgnoreCase)) ?? TypeChoices[0];
+        _loading = false;
+
         Name = info.Name;
         Category = info.Category ?? "";
         Username = info.Username ?? "";
@@ -123,27 +188,68 @@ public sealed partial class SecretDetailViewModel : ObservableObject
         Value = "";
         IsValueVisible = false;
         IsBinary = false;
+        _valuesLoaded = false;
+
+        // Non-secret fields are metadata, shown without unlocking; secret ones load on demand.
+        var known = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (Type is { } type)
+        {
+            if (type.UsernameField is { } user && info.Username is not null) known[user.Id] = info.Username;
+            foreach (var (id, value) in info.Fields ?? new Dictionary<string, string>()) known[id] = value;
+            BuildFields(type, known);
+        }
+        else
+        {
+            Fields.Clear();
+        }
+
         OnPropertyChanged(nameof(UpdatedText));
         OnPropertyChanged(nameof(SizeText));
         OnPropertyChanged(nameof(StorageText));
         OnPropertyChanged(nameof(HasUsername));
+        OnPropertyChanged(nameof(ShowKey));
         OnPropertyChanged(nameof(HasNotes));
         OnPropertyChanged(nameof(HasCategory));
         OnPropertyChanged(nameof(Title));
     }
 
-    /// <summary>Reads the value after an access check. Returns false when it couldn't be read.</summary>
-    private async Task<bool> LoadValueAsync(string why)
+    private void BuildFields(SecretTypeDefinition type, IReadOnlyDictionary<string, string> values)
+    {
+        Fields.Clear();
+        foreach (var definition in type.Fields)
+            Fields.Add(new FieldViewModel(definition, CopyFieldAsync) { Value = values.GetValueOrDefault(definition.Id) ?? "", Revealed = IsValueVisible });
+    }
+
+    /// <summary>
+    /// Reads the value after an access check. Returns false when it couldn't be read. With
+    /// <paramref name="derive"/>, a database's connection string is built from its fields if none is stored.
+    /// </summary>
+    private async Task<bool> LoadValueAsync(string why, bool derive = true)
     {
         if (_info is null) return true;
         try
         {
             await _keylo.EnsureValueAccessAsync($"{why} '{_info.Name}'");
             var bytes = _keylo.Store.Get(_info.Name).Value;
+
+            if (Type is { } type && string.Equals(_info.Type, type.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                var fields = TypedSecrets.ReadFields(type, _info, bytes, derive);
+                var stored = derive ? TypedSecrets.ReadFields(type, _info, bytes, derive: false) : fields;
+                foreach (var field in Fields)
+                {
+                    field.Value = fields.GetValueOrDefault(field.Id) ?? "";
+                    field.IsDerived = !stored.ContainsKey(field.Id) && fields.ContainsKey(field.Id);
+                }
+                _valuesLoaded = true;
+                return true;
+            }
+
             var text = KeyloService.DecodeText(bytes);
             IsBinary = text is null;
             _binaryValue = text is null ? bytes : null;
             Value = text ?? $"Binary value ({bytes.Length} bytes) — use Export or Replace from file";
+            _valuesLoaded = true;
             return true;
         }
         catch (KeyloException ex)
@@ -172,13 +278,27 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     {
         _hideTimer.Stop();
         IsValueVisible = false;
-        if (!IsEditing) Value = "";
+        if (IsEditing) return;
+        Value = "";
+        ForgetSecretFields();
+    }
+
+    private void ForgetSecretFields()
+    {
+        foreach (var field in Fields.Where(f => f.IsSecret)) field.Value = "";
+        _valuesLoaded = false;
     }
 
     [RelayCommand]
     private async Task CopyValue()
     {
         if (_info is null) return;
+        if (IsTyped)
+        {
+            if (Fields.FirstOrDefault(f => f.Definition == Type!.Primary) is { } primary) await CopyFieldAsync(primary);
+            return;
+        }
+
         var visible = IsValueVisible;
         if (!await LoadValueAsync("copy")) return;
         if (IsBinary)
@@ -192,6 +312,28 @@ public sealed partial class SecretDetailViewModel : ObservableObject
         _notify.Success($"Copied. Clears from the clipboard in {_keylo.Config.ClipboardSeconds}s.");
     }
 
+    private async Task CopyFieldAsync(FieldViewModel field)
+    {
+        var loadedHere = false;
+        if (field.IsSecret && !_valuesLoaded && !IsEditing)
+        {
+            if (!await LoadValueAsync("copy")) return;
+            loadedHere = true;
+        }
+
+        if (!field.HasValue)
+        {
+            _notify.Info($"{field.Label} is empty.");
+        }
+        else
+        {
+            _keylo.CopyToClipboard(field.Value);
+            _notify.Success(field.IsSecret ? $"{field.Label} copied. Clears from the clipboard in {_keylo.Config.ClipboardSeconds}s." : $"{field.Label} copied.");
+        }
+
+        if (loadedHere && !IsValueVisible) ForgetSecretFields();
+    }
+
     [RelayCommand]
     private void CopyUsername()
     {
@@ -200,10 +342,45 @@ public sealed partial class SecretDetailViewModel : ObservableObject
         _notify.Success("Key copied.");
     }
 
+    /// <summary>
+    /// Copies the <c>keylo get</c> command that prints this secret (every field, or key and value),
+    /// for pasting into Claude Code or a script. It holds no secret, so it goes on the normal
+    /// clipboard and isn't cleared.
+    /// </summary>
+    [RelayCommand]
+    private void CopyGetCommand()
+    {
+        if (_info is null) return;
+        try
+        {
+            System.Windows.Clipboard.SetText(BuildGetCommand(_info));
+            _notify.Success("Command copied.");
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            _notify.Error("The clipboard is busy. Try again.");
+        }
+    }
+
+    internal static string BuildGetCommand(SecretInfo info) =>
+        $"keylo get {Quote(info.Name)}{(string.IsNullOrEmpty(info.Username) && info.Type is null ? "" : " --both")}";
+
+    /// <summary>Double quotes, escaped for bash (Claude Code's shell); also fine in PowerShell for ordinary names.</summary>
+    private static string Quote(string text)
+    {
+        var escaped = new StringBuilder(text.Length + 2).Append('"');
+        foreach (var ch in text)
+        {
+            if (ch is '"' or '\\' or '$' or '`') escaped.Append('\\');
+            escaped.Append(ch);
+        }
+        return escaped.Append('"').ToString();
+    }
+
     [RelayCommand]
     private async Task Edit()
     {
-        if (!await LoadValueAsync("edit")) return;
+        if (!await LoadValueAsync("edit", derive: false)) return;
         IsValueVisible = !IsBinary;
         IsEditing = true;
         _hideTimer.Stop();
@@ -225,7 +402,21 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     [RelayCommand]
     private void Generate()
     {
-        Value = PasswordGenerator.Generate(GeneratorLength, GeneratorSymbols);
+        var password = PasswordGenerator.Generate(GeneratorLength, GeneratorSymbols);
+        if (IsTyped)
+        {
+            var target = Fields.FirstOrDefault(f => f.Definition.Kind == FieldKind.Password);
+            if (target is null)
+            {
+                _notify.Info($"{Type!.Name} has no password field to generate.");
+                return;
+            }
+            target.Value = password;
+            IsValueVisible = true;
+            return;
+        }
+
+        Value = password;
         IsValueVisible = true;
         IsBinary = false;
         _binaryValue = null;
@@ -234,11 +425,23 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     [RelayCommand]
     private void ReplaceFromFile()
     {
-        var dialog = new OpenFileDialog { Title = "Replace value from file" };
+        var dialog = new OpenFileDialog { Title = IsTyped ? $"Load {Type!.Primary?.Label ?? "value"} from file" : "Replace value from file" };
         if (dialog.ShowDialog() != true) return;
 
         var bytes = File.ReadAllBytes(dialog.FileName);
         var text = KeyloService.DecodeText(bytes);
+        if (IsTyped)
+        {
+            if (text is null)
+            {
+                _notify.Error("That file isn't text. Typed secrets hold text; use a plain secret for binary files.");
+                return;
+            }
+            if (Fields.FirstOrDefault(f => f.Definition == Type!.Primary) is { } primary) primary.Value = text;
+            IsValueVisible = true;
+            return;
+        }
+
         IsBinary = text is null;
         _binaryValue = text is null ? bytes : null;
         Value = text ?? $"Binary value ({bytes.Length} bytes) from {Path.GetFileName(dialog.FileName)}";
@@ -249,13 +452,18 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     private async Task Export()
     {
         if (_info is null) return;
-        var dialog = new SaveFileDialog { Title = "Export value", FileName = _info.Name };
+        var dialog = new SaveFileDialog { Title = "Export value", FileName = _info.Name + (IsTyped ? ".json" : "") };
         if (dialog.ShowDialog() != true) return;
 
         try
         {
             await _keylo.EnsureValueAccessAsync($"export '{_info.Name}'");
-            await File.WriteAllBytesAsync(dialog.FileName, _keylo.Store.Get(_info.Name).Value);
+            var secret = _keylo.Store.Get(_info.Name);
+            // Typed secrets export every field as JSON; plain ones their raw bytes.
+            var bytes = Type is { } type && _info.Type is not null
+                ? JsonSerializer.SerializeToUtf8Bytes(TypedSecrets.ReadFields(type, _info, secret.Value, derive: false), new JsonSerializerOptions { WriteIndented = true })
+                : secret.Value;
+            await File.WriteAllBytesAsync(dialog.FileName, bytes);
             _notify.Success($"Exported to {dialog.FileName}. That file is not encrypted.");
         }
         catch (Exception ex) when (ex is KeyloException or IOException or UnauthorizedAccessException)
@@ -267,23 +475,45 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     [RelayCommand]
     private async Task Save()
     {
-        var value = IsBinary && _binaryValue is not null ? _binaryValue : Encoding.UTF8.GetBytes(Value);
-        if (value.Length == 0)
+        SecretDraft draft;
+        if (Type is { } type)
         {
-            _notify.Error("Enter a value.");
-            return;
+            var values = Fields.ToDictionary(f => f.Id, f => (string?)f.Value, StringComparer.OrdinalIgnoreCase);
+            if (type.Primary is { } primary && string.IsNullOrEmpty(values.GetValueOrDefault(primary.Id)))
+            {
+                _notify.Error($"Enter the {primary.Label.ToLowerInvariant()}.");
+                return;
+            }
+            try
+            {
+                draft = TypedSecrets.Draft(type, Name, values, Category, Notes, Icon, Color);
+            }
+            catch (KeyloException ex)
+            {
+                _notify.Error(ex.Message);
+                return;
+            }
+        }
+        else
+        {
+            var value = IsBinary && _binaryValue is not null ? _binaryValue : Encoding.UTF8.GetBytes(Value);
+            if (value.Length == 0)
+            {
+                _notify.Error("Enter a value.");
+                return;
+            }
+            draft = new SecretDraft(Name, value, Category, Username, Notes, Icon, Color);
         }
 
         IsBusy = true;
         try
         {
             await _keylo.EnsureBrowseAsync();
-            var saved = _keylo.Store.Save(
-                new SecretDraft(Name, value, Category, Username, Notes, Icon, Color),
-                originalName: IsNew ? null : _info?.Name);
+            var saved = _keylo.Store.Save(draft, originalName: IsNew ? null : _info?.Name);
 
             _notify.Success(IsNew ? $"Added '{saved.Name}'." : $"Saved '{saved.Name}'.");
             Value = "";
+            ForgetSecretFields();
             await _reload(saved.Name);
         }
         catch (KeyloException ex)
@@ -353,5 +583,6 @@ public sealed partial class SecretDetailViewModel : ObservableObject
         Value = "";
         _binaryValue = null;
         IsValueVisible = false;
+        ForgetSecretFields();
     }
 }

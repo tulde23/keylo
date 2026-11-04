@@ -16,4 +16,7 @@ public interface IUserNotifier
 
     /// <summary>Three-way choice: true = primary, false = secondary, null = canceled.</summary>
     Task<bool?> ChooseAsync(string title, string message, string primaryText, string? secondaryText);
+
+    /// <summary>Shows a newly created access key (the only time it's visible) and how to register it with Claude Code.</summary>
+    Task ShowAccessKeyAsync(string name, string token);
 }

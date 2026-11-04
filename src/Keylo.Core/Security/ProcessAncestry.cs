@@ -5,9 +5,9 @@ namespace Keylo.Core.Security;
 public sealed record AncestorProcess(int ProcessId, string ExecutableName);
 
 /// <summary>
-/// The chain of processes that started this one (parent first). Used to match trust-group callers.
-/// It is advisory: any process running as this user can arrange to be started by a program of a
-/// given name, so it narrows what an agent gets without prompting rather than authenticating it.
+/// The chain of processes that started this one (parent first), recorded in the audit log. It is
+/// informational only: any process running as this user can arrange to be started by a program of a
+/// given name, which is why access is granted by access keys rather than by caller name.
 /// </summary>
 public static class ProcessAncestry
 {

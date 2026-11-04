@@ -19,7 +19,8 @@ $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Keylo.lnk'
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 $entries = @($userPath -split ';' | Where-Object { $_ -and $_.TrimEnd('\') -ne $target.TrimEnd('\') })
 
-$running = Get-Process keylow -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$target*" }
+# The app, and any "keylo mcp" servers Claude Code started (it restarts them on /mcp or its next launch).
+$running = Get-Process keylow, keylo -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$target*" }
 if ($running) {
     $running | Stop-Process -Force
     # Wait for the files to be released, or the copy below fails half way.

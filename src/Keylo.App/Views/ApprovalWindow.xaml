@@ -1,0 +1,77 @@
+<ui:FluentWindow x:Class="Keylo.App.Views.ApprovalWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 Title="Keylo — access request"
+                 Width="540" SizeToContent="Height"
+                 ResizeMode="NoResize" Topmost="True"
+                 WindowStartupLocation="CenterScreen"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round">
+    <StackPanel>
+        <ui:TitleBar Title="Keylo" ShowMinimize="False" ShowMaximize="False" />
+        <StackPanel Margin="28,4,28,24">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                <Border Width="44" Height="44" CornerRadius="12" Background="{StaticResource BrandBrush}">
+                    <ui:SymbolIcon Symbol="ShieldKeyhole24" FontSize="22" Foreground="White" />
+                </Border>
+                <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                    <TextBlock x:Name="Heading" FontSize="19" FontWeight="SemiBold" TextWrapping="Wrap" MaxWidth="400" />
+                    <TextBlock x:Name="Subheading" FontSize="13" Margin="0,2,0,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </StackPanel>
+
+            <TextBlock x:Name="ActionLabel" Style="{StaticResource SectionLabel}" Margin="0,0,0,6" />
+            <ItemsControl x:Name="SecretList" Margin="0,0,0,14">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border CornerRadius="8" Padding="10,4" Margin="0,0,6,6" Background="{DynamicResource ControlFillColorSecondaryBrush}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="Key16" FontSize="13" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                <TextBlock Text="{Binding}" FontFamily="{StaticResource MonoFont}" FontSize="13" Margin="6,0,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <StackPanel x:Name="CommandPanel" Margin="0,0,0,14">
+                <TextBlock Text="COMMAND" Style="{StaticResource SectionLabel}" Margin="0,0,0,6" />
+                <Border Style="{StaticResource Surface}" Padding="12,10">
+                    <TextBox x:Name="CommandText" IsReadOnly="True" BorderThickness="0" Background="Transparent" Padding="0"
+                             FontFamily="{StaticResource MonoFont}" FontSize="12.5" TextWrapping="Wrap" MaxHeight="140"
+                             VerticalScrollBarVisibility="Auto" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                </Border>
+            </StackPanel>
+
+            <StackPanel x:Name="ReasonPanel" Margin="0,0,0,14">
+                <TextBlock Text="REASON GIVEN BY THE AGENT" Style="{StaticResource SectionLabel}" Margin="0,0,0,6" />
+                <TextBlock x:Name="ReasonText" TextWrapping="Wrap" FontStyle="Italic" MaxHeight="120"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+
+            <ui:InfoBar x:Name="GetWarning" IsOpen="True" IsClosable="False" Severity="Warning" Margin="0,0,0,14"
+                        Title="The value will be shown to the agent"
+                        Message="It becomes part of the AI conversation. Allow only if the agent really needs the value itself." />
+
+            <TextBlock x:Name="Problem" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,8"
+                       Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+
+            <DockPanel Margin="0,6,0,0">
+                <TextBlock x:Name="Countdown" DockPanel.Dock="Left" FontSize="12" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <ui:Button x:Name="DenyButton" Appearance="Secondary" Content="Deny" IsCancel="True" Click="OnDeny" Margin="0,0,8,0" Padding="18,8" />
+                    <ui:Button x:Name="AlwaysButton" Appearance="Secondary" Click="OnAlways" Margin="0,0,8,0" Padding="18,8" />
+                    <ui:Button x:Name="OnceButton" Appearance="Primary" Content="Allow once" Click="OnOnce" Padding="18,8" />
+                </StackPanel>
+            </DockPanel>
+        </StackPanel>
+    </StackPanel>
+</ui:FluentWindow>

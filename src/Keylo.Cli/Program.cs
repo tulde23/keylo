@@ -13,20 +13,26 @@ internal static class Program
         keylo - local secrets in Windows Credential Manager
 
         keylo                                   Open the Keylo app
-        keylo list [search...] [--category C]   List secrets (search matches name, category, username, notes)
+        keylo list [search...] [--category C]   List secrets (search matches name, category, username, notes,
+                                                non-secret fields; "type:login" and "cat:dev" narrow it)
         keylo categories                        List categories with counts
-        keylo get NAME [--clip] [--out FILE] [--field value|username]
-                                                Print a value (or copy it; the clipboard clears itself)
+        keylo types                             List secret types (login, api_key, database, ...) and their fields
+        keylo get NAME [--clip] [--out FILE] [--field F] [--both]
+                                                Print the value (a typed secret's main field, or --field F;
+                                                the clipboard clears itself). --both prints every field
         keylo set NAME [--category C] [--username U] [--notes N] [--file FILE]
                                                 Add or update (value is prompted, piped, or read from FILE)
-        keylo edit NAME [--rename NEW] [--category C] [--username U] [--notes N]
-                                                Change details without touching the value ("" clears a field)
+        keylo set NAME --type T [--field F=V]... [--category C] [--notes N] [--file FILE]
+                                                Add a typed secret (the main secret field is prompted)
+        keylo edit NAME [--rename NEW] [--category C] [--username U] [--notes N] [--field F=V]...
+                                                Change details or fields ("" clears one)
         keylo rm NAME [--yes]                   Delete a secret
         keylo import PATH... [--category C | --flat] [--overwrite] [--delete-originals]
                                                 One secret per file. Subfolders become categories,
                                                 unless --category puts everything in C or --flat sets none
         keylo run --env VAR=NAME [...] -- CMD [ARGS]
                                                 Run CMD with secrets as environment variables
+                                                (NAME:FIELD maps one field, e.g. prod-db:password or x:username)
         keylo push PROVIDER [NAME...] [--category C] [--all]
                                                 Push secrets to another vault (e.g. 1password)
         keylo provider list | status ID | set ID KEY VALUE
@@ -34,12 +40,16 @@ internal static class Program
                                                 Encrypted, password-protected backup of everything
         keylo restore FILE [--overwrite] [--dry-run] [--password-stdin]
                                                 Restore a backup (existing secrets are skipped unless --overwrite)
-        keylo trust                             Show trust groups (manage them in the app)
+        keylo keys                              List access keys (let tools use secrets without Windows Hello)
+        keylo keys create NAME [--category C]... [--secret S]... [--allow-get] [--expires-days N] [--add-to-claude]
+                                                Create a key (shown once; --add-to-claude registers the MCP server instead)
+        keylo keys revoke NAME                  Revoke a key
+        keylo mcp                               Run the MCP server for AI agents (needs KEYLO_ACCESS_KEY)
         keylo unlock | lock | status
         keylo config [hello session|always|never | session-minutes N | clipboard-seconds N]
         """;
 
-    private static readonly string[] Flags = ["clip", "yes", "overwrite", "delete-originals", "flat", "all", "json", "force", "dry-run", "password-stdin", "help"];
+    private static readonly string[] Flags = ["clip", "yes", "overwrite", "delete-originals", "flat", "all", "json", "force", "dry-run", "password-stdin", "both", "allow-get", "add-to-claude", "help"];
 
     private static async Task<int> Main(string[] argv)
     {
@@ -63,6 +73,7 @@ internal static class Program
                 "ui" or "app" => LaunchApp(),
                 "list" or "ls" or "search" => await ListAsync(context, args),
                 "categories" or "cats" => await CategoriesAsync(context, args),
+                "types" => Types(context, args),
                 "get" => await GetAsync(context, args),
                 "set" or "add" => await SetAsync(context, args),
                 "edit" => await EditAsync(context, args),
@@ -71,7 +82,8 @@ internal static class Program
                 "run" => await RunAsync(context, args),
                 "push" => await PushAsync(context, args),
                 "provider" or "providers" => await ProviderAsync(context, args),
-                "trust" => Trust(context, args),
+                "keys" or "key" => await KeysAsync(context, args),
+                "mcp" => await Mcp.McpServer.RunAsync(),
                 "backup" or "export" => await BackupAsync(context, args),
                 "restore" => await RestoreAsync(context, args),
                 "unlock" => await UnlockAsync(context, args),
@@ -99,39 +111,42 @@ internal static class Program
     {
         public KeyloConfig Config { get; } = KeyloConfig.Load();
         public SecretStore Store { get; } = new();
+        public SecretTypeCatalog Types { get; } = new();
         public AccessGate Gate { get; }
-
-        private IReadOnlyList<AncestorProcess>? _ancestry;
 
         public Context() => Gate = new AccessGate(Config, new WindowsHelloVerifier());
 
-        public IReadOnlyList<AncestorProcess> Ancestry => _ancestry ??= ProcessAncestry.Current();
+        /// <summary>The access key in KEYLO_ACCESS_KEY, if it's valid and unexpired.</summary>
+        public AccessKey? Key => _key ??= AccessKeys.FromEnvironment(Config);
+        private AccessKey? _key;
 
-        /// <summary>For commands that change secrets or settings: trust groups never apply.</summary>
+        /// <summary>For commands that change secrets or settings: access keys never apply.</summary>
         public Task BrowseAsync() => Gate.EnsureAsync(IntPtr.Zero, "Unlock Keylo", valueAccess: false);
 
         /// <summary>
-        /// Lists what this caller may see: everything once unlocked; otherwise, for a trusted caller,
-        /// only the secrets its groups cover (without prompting); otherwise prompts.
+        /// Lists what this caller may see: everything once unlocked; otherwise, for a caller with an
+        /// access key, only the secrets the key covers (without prompting); otherwise prompts.
         /// </summary>
         public async Task<IReadOnlyList<SecretInfo>> VisibleSecretsAsync()
         {
-            if (!Gate.IsUnlocked && TrustPolicy.GroupsFor(Config, Ancestry) is { Count: > 0 } groups)
-                return Store.List().Where(s => groups.Any(g => g.Covers(s))).ToList();
+            if (!Gate.IsUnlocked && Key is { } key)
+                return Store.List().Where(key.Covers).ToList();
 
             await BrowseAsync();
             return Store.List();
         }
 
-        /// <summary>Allows a value operation via a trust group (audited) or Windows Hello.</summary>
+        /// <summary>Allows a value operation via the access key (audited) or Windows Hello.</summary>
         public async Task AuthorizeAsync(SecretOperation operation, IReadOnlyCollection<SecretInfo> secrets, string what)
         {
-            if (TrustPolicy.Find(Config, operation, secrets, Ancestry) is { } decision)
+            if (Key is { } key && key.Allows(operation, secrets))
             {
-                AuditLog.Write(operation.ToString().ToLowerInvariant(), secrets.Select(s => s.Name), decision, Ancestry);
+                AuditLog.Write(operation.ToString().ToLowerInvariant(), secrets.Select(s => s.Name), key, "access key");
                 return;
             }
 
+            if (Key is null && AccessKeys.IsPresentInEnvironment)
+                Terminal.Info($"keylo: {AccessKeys.EnvironmentVariable} isn't a valid, unexpired access key; asking Windows Hello instead.");
             await Gate.EnsureAsync(IntPtr.Zero, $"Keylo: {what}", valueAccess: true);
         }
 
@@ -169,8 +184,24 @@ internal static class Program
         }
 
         PrintTable(
-            ["NAME", "CATEGORY", "USERNAME", "UPDATED"],
-            secrets.Select(s => new[] { s.Name, s.Category ?? "", s.Username ?? "", s.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm") }));
+            ["NAME", "TYPE", "CATEGORY", "USERNAME", "UPDATED"],
+            secrets.Select(s => new[] { s.Name, s.Type ?? "", s.Category ?? "", s.Username ?? "", s.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm") }));
+        return 0;
+    }
+
+    private static int Types(Context c, Args args)
+    {
+        args.ThrowOnUnknown();
+        foreach (var type in c.Types.All())
+        {
+            Console.WriteLine($"{type.Id}  ({type.Name}{(type.IsBuiltIn ? "" : ", custom")})");
+            foreach (var field in type.Fields)
+                Console.WriteLine($"    {field.Id,-20} {field.Kind}{(field == type.Primary ? ", main value" : "")}" +
+                                  (field.Options is { Count: > 0 } options ? $"  [{string.Join(", ", options)}]" : ""));
+        }
+        Console.WriteLine();
+        Console.WriteLine("Add one: keylo set NAME --type login --field username=alice --field url=https://…  (the main value is prompted)");
+        Console.WriteLine("Custom types are managed in the app (Settings → Secret types).");
         return 0;
     }
 
@@ -189,14 +220,16 @@ internal static class Program
     {
         var name = args.Positional(0, "secret name");
         var clip = args.Flag("clip");
-        var field = args.Option("field")?.ToLowerInvariant() ?? "value";
+        var field = args.Option("field")?.ToLowerInvariant();
         var outFile = args.Option("out");
+        var both = args.Flag("both");
         args.ThrowOnUnknown(maxPositionals: 1);
-        if (field is not ("value" or "username")) throw new UsageException("--field must be value or username.");
-        var username = field == "username";
+        if (both && (clip || outFile is not null || field is not null))
+            throw new UsageException("--both prints to the terminal; it can't be combined with --clip, --out or --field.");
 
         var info = c.Store.Find(name) ?? throw new SecretNotFoundException(name);
-        if (username)
+        var type = c.Types.Find(info.Type);
+        if (field is "username" or "key")
         {
             if (info.Username is null) throw new KeyloException($"'{name}' has no username.");
             await c.AuthorizeAsync(SecretOperation.Get, [info], $"read the username of '{name}'");
@@ -204,24 +237,63 @@ internal static class Program
             Console.WriteLine(info.Username);
             return 0;
         }
+        if (type is null && field is not (null or "value"))
+            throw new UsageException($"'{name}' is a plain secret; --field must be value or username.");
 
         await c.AuthorizeAsync(SecretOperation.Get, [info], $"read '{name}'");
         var secret = c.Store.Get(name);
 
-        if (outFile is not null)
+        if (both)
         {
-            File.WriteAllBytes(outFile, secret.Value);
-            Terminal.Info($"Wrote {secret.Value.Length} bytes to {Path.GetFullPath(outFile)}");
+            // Every field (typed) or key and value (plain), e.g. for a login an agent needs.
+            if (type is null)
+            {
+                var value = DecodeText(secret.Value) ?? throw new KeyloException($"'{name}' is binary; use --out FILE instead.");
+                if (info.Username is not null) Console.WriteLine($"key: {info.Username}");
+                Console.WriteLine($"value: {value}");
+                return 0;
+            }
+
+            var fields = TypedSecrets.ReadFields(type, info, secret.Value);
+            Console.WriteLine($"type: {type.Id}");
+            foreach (var f in type.Fields)
+                if (fields.TryGetValue(f.Id, out var text)) Console.WriteLine($"{f.Id}: {text}");
             return 0;
         }
 
-        if (clip)
+        if (type is null)
         {
-            var text = DecodeText(secret.Value) ?? throw new KeyloException($"'{name}' is binary; use --out FILE instead.");
-            return CopyWithTimeout(c, text, "Value");
+            if (outFile is not null)
+            {
+                File.WriteAllBytes(outFile, secret.Value);
+                Terminal.Info($"Wrote {secret.Value.Length} bytes to {Path.GetFullPath(outFile)}");
+                return 0;
+            }
+
+            if (clip)
+            {
+                var text = DecodeText(secret.Value) ?? throw new KeyloException($"'{name}' is binary; use --out FILE instead.");
+                return CopyWithTimeout(c, text, "Value");
+            }
+
+            Terminal.WriteRaw(secret.Value);
+            return 0;
         }
 
-        Terminal.WriteRaw(secret.Value);
+        // Typed: one field, the main (first secret) field by default.
+        var chosen = field is null or "value" ? type.Primary : type.Field(field)
+            ?? throw new UsageException($"{type.Name} has no field '{field}'. Fields: {string.Join(", ", type.Fields.Select(f => f.Id))}.");
+        if (chosen is null || !TypedSecrets.ReadFields(type, info, secret.Value).TryGetValue(chosen.Id, out var fieldValue))
+            throw new KeyloException($"'{name}' has no {chosen?.Label ?? "value"}.");
+
+        if (outFile is not null)
+        {
+            File.WriteAllText(outFile, fieldValue);
+            Terminal.Info($"Wrote {chosen.Label} to {Path.GetFullPath(outFile)}");
+            return 0;
+        }
+        if (clip) return CopyWithTimeout(c, fieldValue, chosen.Label);
+        Console.WriteLine(fieldValue);
         return 0;
     }
 
@@ -232,18 +304,43 @@ internal static class Program
         var username = args.Option("username");
         var notes = args.Option("notes");
         var file = args.Option("file");
+        var typeName = args.Option("type");
+        var fieldArgs = args.Options("field");
         args.ThrowOnUnknown(maxPositionals: 1);
         await c.BrowseAsync();
 
         var existing = c.Store.Find(name);
-        var value = file is not null
-            ? File.ReadAllBytes(file)
-            : Terminal.ReadSecret(existing is null ? $"Value for '{name}': " : $"New value for '{name}': ", confirm: true);
+        if (typeName is null && fieldArgs.Count == 0)
+        {
+            var value = file is not null
+                ? File.ReadAllBytes(file)
+                : Terminal.ReadSecret(existing is null ? $"Value for '{name}': " : $"New value for '{name}': ", confirm: true);
 
-        c.Store.Save(
-            new SecretDraft(name, value, category ?? existing?.Category, username ?? existing?.Username, notes ?? existing?.Notes,
-                existing?.Icon, existing?.Color),
-            originalName: existing?.Name);
+            c.Store.Save(
+                new SecretDraft(name, value, category ?? existing?.Category, username ?? existing?.Username, notes ?? existing?.Notes,
+                    existing?.Icon, existing?.Color),
+                originalName: existing?.Name);
+        }
+        else
+        {
+            var type = (typeName is not null ? c.Types.Resolve(typeName) : c.Types.Find(existing?.Type))
+                       ?? throw new UsageException(typeName is null
+                           ? "--field needs --type (e.g. --type login). See 'keylo types'."
+                           : $"No type '{typeName}'. See 'keylo types'.");
+
+            var fields = ParseFieldArgs(type, fieldArgs);
+            if (username is not null && type.UsernameField is { } userField) fields[userField.Id] = username;
+            if (type.Primary is { } primary && !fields.ContainsKey(primary.Id))
+            {
+                fields[primary.Id] = file is not null
+                    ? File.ReadAllText(file)
+                    : Encoding.UTF8.GetString(Terminal.ReadSecret($"{primary.Label} for '{name}': ", confirm: true));
+            }
+
+            c.Store.Save(
+                TypedSecrets.Draft(type, name, fields, category ?? existing?.Category, notes ?? existing?.Notes, existing?.Icon, existing?.Color),
+                originalName: existing?.Name);
+        }
 
         Terminal.Info(existing is null ? $"Added '{name}'." : $"Updated '{name}'.");
         return 0;
@@ -256,20 +353,57 @@ internal static class Program
         var category = args.Option("category");
         var username = args.Option("username");
         var notes = args.Option("notes");
+        var fieldArgs = args.Options("field");
         args.ThrowOnUnknown(maxPositionals: 1);
 
-        if (rename is null && category is null && username is null && notes is null)
-            throw new UsageException("Nothing to change. Use --rename, --category, --username or --notes.");
+        if (rename is null && category is null && username is null && notes is null && fieldArgs.Count == 0)
+            throw new UsageException("Nothing to change. Use --rename, --category, --username, --notes or --field.");
 
         await c.BrowseAsync();
         var secret = c.Store.Get(name);
-        var info = c.Store.Save(
-            new SecretDraft(rename ?? secret.Info.Name, secret.Value, category ?? secret.Info.Category,
-                username ?? secret.Info.Username, notes ?? secret.Info.Notes, secret.Info.Icon, secret.Info.Color),
-            originalName: secret.Info.Name);
+        var type = c.Types.Find(secret.Info.Type);
 
+        SecretDraft draft;
+        if (fieldArgs.Count > 0)
+        {
+            if (type is null) throw new UsageException($"'{name}' is a plain secret; --field only applies to typed secrets.");
+            var fields = TypedSecrets.ReadFields(type, secret.Info, secret.Value, derive: false)
+                .ToDictionary(p => p.Key, p => (string?)p.Value, StringComparer.OrdinalIgnoreCase);
+            foreach (var (id, value) in ParseFieldArgs(type, fieldArgs)) fields[id] = value; // "" clears
+            if (username is not null && type.UsernameField is { } userField) fields[userField.Id] = username;
+            draft = TypedSecrets.Draft(type, rename ?? secret.Info.Name, fields, category ?? secret.Info.Category,
+                notes ?? secret.Info.Notes, secret.Info.Icon, secret.Info.Color);
+        }
+        else
+        {
+            draft = SecretDraft.From(secret) with
+            {
+                Name = rename ?? secret.Info.Name,
+                Category = category ?? secret.Info.Category,
+                Username = username ?? secret.Info.Username,
+                Notes = notes ?? secret.Info.Notes,
+            };
+        }
+
+        var info = c.Store.Save(draft, originalName: secret.Info.Name);
         Terminal.Info($"Updated '{info.Name}'.");
         return 0;
+    }
+
+    /// <summary>"--field host=db.local" pairs, checked against the type. Secret fields given this way end up in shell history.</summary>
+    private static Dictionary<string, string?> ParseFieldArgs(SecretTypeDefinition type, IReadOnlyList<string> pairs)
+    {
+        var fields = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in pairs)
+        {
+            var eq = pair.IndexOf('=');
+            if (eq <= 0) throw new UsageException($"--field expects NAME=VALUE, got '{pair}'.");
+            var field = type.Field(pair[..eq].Trim())
+                        ?? throw new UsageException($"{type.Name} has no field '{pair[..eq]}'. Fields: {string.Join(", ", type.Fields.Select(f => f.Id))}.");
+            if (field.IsSecret) Terminal.Info($"keylo: note that '{field.Id}' given on the command line is visible in your shell history.");
+            fields[field.Id] = pair[(eq + 1)..];
+        }
+        return fields;
     }
 
     private static async Task<int> RemoveAsync(Context c, Args args)
@@ -337,28 +471,60 @@ internal static class Program
         args.ThrowOnUnknown();
         if (mappings.Count == 0) throw new UsageException("Map at least one secret: --env VAR=NAME");
         if (args.PositionalCount > 0) throw new UsageException("Put the command after '--': keylo run --env VAR=NAME -- CMD");
+        // The app's "Copy CLI command" ends with this placeholder.
+        if (args.Rest is ["YOUR-COMMAND", ..])
+            throw new UsageException("Replace YOUR-COMMAND with the program that needs the secret, e.g. ... -- node deploy.js (it reads the variables from its environment).");
 
         var pairs = mappings.Select(m =>
         {
             var eq = m.IndexOf('=');
             if (eq <= 0 || eq == m.Length - 1) throw new UsageException($"--env expects VAR=NAME, got '{m}'.");
-            return (Variable: m[..eq], Name: m[(eq + 1)..]);
+            var (info, field) = ResolveEnvSource(c, m[(eq + 1)..]);
+            return (Variable: m[..eq], Info: info, Field: field);
         }).ToList();
 
-        var infos = pairs
-            .Select(p => c.Store.Find(p.Name) ?? throw new SecretNotFoundException(p.Name))
-            .DistinctBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var infos = pairs.Select(p => p.Info).DistinctBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
         await c.AuthorizeAsync(SecretOperation.Run, infos, $"run with {string.Join(", ", infos.Select(s => s.Name))}");
 
         var environment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (variable, name) in pairs)
-        {
-            var value = DecodeText(c.Store.Get(name).Value) ?? throw new KeyloException($"'{name}' is binary and can't be an environment variable.");
-            environment[variable] = value;
-        }
+        foreach (var (variable, info, field) in pairs)
+            environment[variable] = FieldValue(c, info, field);
 
         return CommandRunner.Run(args.Rest, environment);
+    }
+
+    /// <summary>
+    /// "NAME" maps the main value; "NAME:FIELD" one field ("username" works for any secret, other
+    /// field ids for typed ones). Names may contain ':', so an exact secret name wins.
+    /// </summary>
+    private static (SecretInfo Info, string? Field) ResolveEnvSource(Context c, string source)
+    {
+        if (c.Store.Find(source) is { } exact) return (exact, null);
+        var colon = source.LastIndexOf(':');
+        if (colon > 0 && colon < source.Length - 1 && c.Store.Find(source[..colon]) is { } info)
+            return (info, source[(colon + 1)..]);
+        throw new SecretNotFoundException(source);
+    }
+
+    /// <summary>A secret's main value, or one field, as text.</summary>
+    private static string FieldValue(Context c, SecretInfo info, string? field)
+    {
+        if (field?.ToLowerInvariant() is "username" or "key")
+            return info.Username ?? throw new KeyloException($"'{info.Name}' has no username.");
+
+        var type = c.Types.Find(info.Type);
+        var secret = c.Store.Get(info.Name);
+        if (type is null)
+        {
+            if (field is not (null or "value")) throw new KeyloException($"'{info.Name}' is a plain secret; it only has value and username.");
+            return DecodeText(secret.Value) ?? throw new KeyloException($"'{info.Name}' is binary and can't be an environment variable.");
+        }
+
+        var chosen = field is null or "value" ? type.Primary : type.Field(field)
+            ?? throw new KeyloException($"{type.Name} '{info.Name}' has no field '{field}'. Fields: {string.Join(", ", type.Fields.Select(f => f.Id))}.");
+        return chosen is not null && TypedSecrets.ReadFields(type, info, secret.Value).TryGetValue(chosen.Id, out var value)
+            ? value
+            : throw new KeyloException($"'{info.Name}' has no {chosen?.Label ?? "value"}.");
     }
 
     private static async Task<int> PushAsync(Context c, Args args)
@@ -507,28 +673,96 @@ internal static class Program
         return result.Errors.Count > 0 ? 1 : 0;
     }
 
-    private static int Trust(Context c, Args args)
+    private static async Task<int> KeysAsync(Context c, Args args)
     {
-        args.ThrowOnUnknown();
-        if (c.Config.TrustGroups.Count == 0)
+        var action = args.PositionalCount > 0 ? args.Positional(0, "action").ToLowerInvariant() : "list";
+        switch (action)
         {
-            Console.WriteLine("No trust groups. Add them in the Keylo app (Settings → Trust groups).");
-            return 0;
+            case "list" or "ls":
+            {
+                args.ThrowOnUnknown(maxPositionals: 1);
+                if (c.Config.AccessKeys.Count == 0)
+                {
+                    Console.WriteLine("No access keys. Create one with 'keylo keys create NAME' or in the app (Settings → Access keys).");
+                    return 0;
+                }
+
+                var now = DateTimeOffset.Now;
+                PrintTable(["NAME", "ID", "COVERS", "ALLOWS", "EXPIRES"], c.Config.AccessKeys.Select(k => new[]
+                {
+                    k.Name,
+                    k.Id,
+                    string.Join(", ", k.Categories.Select(cat => $"cat:{cat}").Concat(k.Secrets)) is { Length: > 0 } covers ? covers : "(approval only)",
+                    k.AllowGet ? "run, get" : "run",
+                    k.Expires is { } e ? (k.IsExpired(now) ? "expired" : e.LocalDateTime.ToString("yyyy-MM-dd")) : "never",
+                }));
+
+                Console.WriteLine();
+                Console.WriteLine(c.Key is { } mine
+                    ? $"This process has the key '{mine.Name}' ({AccessKeys.EnvironmentVariable})."
+                    : AccessKeys.IsPresentInEnvironment
+                        ? $"{AccessKeys.EnvironmentVariable} is set but isn't a valid, unexpired key."
+                        : $"This process has no access key ({AccessKeys.EnvironmentVariable} isn't set).");
+                return 0;
+            }
+
+            case "create" or "new" or "add":
+            {
+                var name = args.Positional(1, "key name").Trim();
+                var categories = args.Options("category");
+                var secrets = args.Options("secret");
+                var allowGet = args.Flag("allow-get");
+                var expiresDays = args.Option("expires-days");
+                var addToClaude = args.Flag("add-to-claude");
+                args.ThrowOnUnknown(maxPositionals: 2);
+
+                if (name.Length == 0) throw new UsageException("Give the key a name, e.g. 'Claude Code'.");
+                if (c.Config.AccessKeys.Any(k => k.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                    throw new UsageException($"There's already a key called '{name}'. Revoke it first, or pick another name.");
+                DateTimeOffset? expires = expiresDays is null ? null
+                    : int.TryParse(expiresDays, out var days) && days > 0 ? DateTimeOffset.Now.AddDays(days)
+                    : throw new UsageException("--expires-days must be a positive number.");
+
+                await c.Gate.ConfirmAsync(IntPtr.Zero, $"Keylo: create access key '{name}'");
+
+                var (key, token) = AccessKeys.Create(name, expires);
+                key.Categories = categories.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                key.Secrets = secrets.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                key.AllowGet = allowGet;
+                c.Config.AccessKeys.Add(key);
+                c.Config.Save();
+
+                if (addToClaude)
+                {
+                    await ClaudeCode.RegisterAsync(Path.Combine(AppContext.BaseDirectory, "keylo.exe"), token);
+                    Terminal.Info($"Created '{name}' and added Keylo to Claude Code (user scope) with it. Restart Claude Code, or run /mcp, to load it.");
+                    return 0;
+                }
+
+                Terminal.Info($"Created '{name}'. This is the only time the key is shown:");
+                Console.WriteLine(token);
+                Terminal.Info("Register it with Claude Code (user scope; never put it in a project's .mcp.json):");
+                Terminal.Info($"  claude mcp add {ClaudeCode.ServerName} --scope user --env {AccessKeys.EnvironmentVariable}={token} -- \"{Path.Combine(AppContext.BaseDirectory, "keylo.exe")}\" mcp");
+                return 0;
+            }
+
+            case "revoke" or "rm" or "delete":
+            {
+                var which = args.Positional(1, "key name or id");
+                args.ThrowOnUnknown(maxPositionals: 2);
+                var key = c.Config.AccessKeys.FirstOrDefault(k => k.Id == which || k.Name.Equals(which, StringComparison.OrdinalIgnoreCase))
+                          ?? throw new KeyloException($"No access key '{which}'. See 'keylo keys'.");
+
+                await c.Gate.ConfirmAsync(IntPtr.Zero, $"Keylo: revoke access key '{key.Name}'");
+                c.Config.AccessKeys.Remove(key);
+                c.Config.Save();
+                Terminal.Info($"Revoked '{key.Name}'. Anything still using it now gets Windows Hello prompts or approval requests.");
+                return 0;
+            }
+
+            default:
+                throw new UsageException("Usage: keylo keys [list | create NAME ... | revoke NAME]");
         }
-
-        PrintTable(["GROUP", "CALLERS", "COVERS", "ALLOWS"], c.Config.TrustGroups.Select(g => new[]
-        {
-            g.Name,
-            string.Join(", ", g.Callers),
-            string.Join(", ", g.Categories.Select(cat => $"cat:{cat}").Concat(g.Secrets)),
-            g.AllowGet ? "run, get" : "run",
-        }));
-
-        var mine = TrustPolicy.GroupsFor(c.Config, c.Ancestry);
-        Console.WriteLine();
-        Console.WriteLine($"This caller ({string.Join(" ← ", c.Ancestry.Take(4).Select(p => p.ExecutableName))}): " +
-                          (mine.Count == 0 ? "not in any group" : $"in {string.Join(", ", mine.Select(g => g.Name))}"));
-        return 0;
     }
 
     private static async Task<int> UnlockAsync(Context c, Args args)

@@ -9,14 +9,16 @@ namespace Keylo.Core;
 
 public sealed class BackupPasswordException() : KeyloException("Wrong password, or the backup file is damaged.");
 
-public sealed record BackupSecret(string Name, string? Category, string? Username, string? Notes, string? Icon, string? Color, byte[] Value);
+public sealed record BackupSecret(string Name, string? Category, string? Username, string? Notes, string? Icon, string? Color, byte[] Value,
+    string? Type = null, Dictionary<string, string>? Fields = null);
 
 /// <summary>A decrypted backup, held in memory only.</summary>
 public sealed record BackupContents(
     DateTimeOffset CreatedAt,
     IReadOnlyList<BackupSecret> Secrets,
     IReadOnlyDictionary<string, CategoryStyle> Categories,
-    IReadOnlyDictionary<string, byte[]> Icons);
+    IReadOnlyDictionary<string, byte[]> Icons,
+    IReadOnlyList<SecretTypeDefinition> Types);
 
 public sealed record BackupSummary(string Path, int Secrets, int Categories, int Icons, long Bytes);
 
@@ -58,13 +60,14 @@ public static class KeyloBackup
     public static string? CheckPassword(ReadOnlySpan<char> password) =>
         password.Length < MinPasswordLength ? $"Use at least {MinPasswordLength} characters — a passphrase of a few words is ideal." : null;
 
-    /// <summary>Writes every secret, category and uploaded icon to <paramref name="path"/>, encrypted with <paramref name="password"/>.</summary>
+    /// <summary>Writes every secret, category, custom type and uploaded icon to <paramref name="path"/>, encrypted with <paramref name="password"/>.</summary>
     public static BackupSummary Create(SecretStore store, CategoryCatalog catalog, string path, ReadOnlySpan<char> password, int iterations = DefaultIterations)
     {
         if (CheckPassword(password) is { } problem) throw new KeyloException(problem);
 
         var infos = store.List();
-        var secrets = infos.Select(info => new BackupSecret(info.Name, info.Category, info.Username, info.Notes, info.Icon, info.Color, store.Get(info.Name).Value)).ToList();
+        var secrets = infos.Select(info => new BackupSecret(info.Name, info.Category, info.Username, info.Notes, info.Icon, info.Color, store.Get(info.Name).Value,
+            info.Type, info.Fields?.ToDictionary(StringComparer.OrdinalIgnoreCase))).ToList();
         var categories = catalog.All(infos).ToDictionary(c => c.Name, c => new CategoryStyle { Icon = c.Icon, Color = c.Color }, StringComparer.OrdinalIgnoreCase);
 
         // Only the uploaded images something still refers to.
@@ -75,7 +78,8 @@ public static class KeyloBackup
             if (icon.StartsWith("img", StringComparison.Ordinal) && File.Exists(file)) icons[icon] = File.ReadAllBytes(file);
         }
 
-        var payload = Compress(JsonSerializer.SerializeToUtf8Bytes(new Payload(DateTimeOffset.Now, secrets, categories, icons), Json));
+        var types = new SecretTypeCatalog().Custom().ToList();
+        var payload = Compress(JsonSerializer.SerializeToUtf8Bytes(new Payload(DateTimeOffset.Now, secrets, categories, icons, types), Json));
         try
         {
             var file = Encrypt(payload, password, iterations);
@@ -130,7 +134,7 @@ public static class KeyloBackup
         try
         {
             var payload = JsonSerializer.Deserialize<Payload>(json, Json) ?? throw new BackupPasswordException();
-            return new BackupContents(payload.CreatedAt, payload.Secrets, payload.Categories, payload.Icons);
+            return new BackupContents(payload.CreatedAt, payload.Secrets, payload.Categories, payload.Icons, payload.Types ?? []);
         }
         catch (JsonException)
         {
@@ -158,6 +162,12 @@ public static class KeyloBackup
 
         var categoriesAdded = contents.Categories.Count(c => catalog.Merge(c.Key, c.Value, overwrite));
 
+        // Custom types the restored secrets may use; ones already defined here are kept as they are.
+        var typeCatalog = new SecretTypeCatalog();
+        var existingTypes = typeCatalog.Custom().ToList();
+        var newTypes = contents.Types.Where(t => existingTypes.All(e => e.Id != t.Id) && SecretTypeCatalog.BuiltIn.All(b => b.Id != t.Id)).ToList();
+        if (newTypes.Count > 0) typeCatalog.SaveCustom([.. existingTypes, .. newTypes]);
+
         int added = 0, replaced = 0, skipped = 0;
         var errors = new List<string>();
         foreach (var secret in contents.Secrets)
@@ -171,7 +181,7 @@ public static class KeyloBackup
                     continue;
                 }
 
-                store.Save(new SecretDraft(secret.Name, secret.Value, secret.Category, secret.Username, secret.Notes, secret.Icon, secret.Color),
+                store.Save(new SecretDraft(secret.Name, secret.Value, secret.Category, secret.Username, secret.Notes, secret.Icon, secret.Color, secret.Type, secret.Fields),
                     originalName: existing?.Name);
                 if (existing is null) added++; else replaced++;
             }
@@ -240,5 +250,6 @@ public static class KeyloBackup
         DateTimeOffset CreatedAt,
         List<BackupSecret> Secrets,
         Dictionary<string, CategoryStyle> Categories,
-        Dictionary<string, byte[]> Icons);
+        Dictionary<string, byte[]> Icons,
+        List<SecretTypeDefinition>? Types = null);
 }

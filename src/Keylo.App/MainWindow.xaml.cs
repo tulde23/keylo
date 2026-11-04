@@ -119,6 +119,12 @@ public partial class MainWindow : FluentWindow, IUserNotifier
         return dialog.ShowDialog() == true ? dialog.Password : null;
     }
 
+    public Task ShowAccessKeyAsync(string name, string token)
+    {
+        new Views.AccessKeyDialog(name, token, _keylo.CopyToClipboard) { Owner = this }.ShowDialog();
+        return Task.CompletedTask;
+    }
+
     public async Task<bool?> ChooseAsync(string title, string message, string primaryText, string? secondaryText)
     {
         var box = new Wpf.Ui.Controls.MessageBox

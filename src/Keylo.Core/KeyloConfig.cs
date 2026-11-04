@@ -28,8 +28,8 @@ public sealed class KeyloConfig
     public int SessionMinutes { get; set; } = 15;
     public int ClipboardSeconds { get; set; } = 30;
 
-    /// <summary>Callers allowed to use some secrets without Windows Hello. See <see cref="Security.TrustGroup"/>.</summary>
-    public List<Security.TrustGroup> TrustGroups { get; set; } = [];
+    /// <summary>Keys that let tools use some secrets without Windows Hello. See <see cref="Security.AccessKey"/>.</summary>
+    public List<Security.AccessKey> AccessKeys { get; set; } = [];
 
     /// <summary>Per-provider settings, e.g. { "1password": { "vault": "Private" } }.</summary>
     public Dictionary<string, Dictionary<string, string>> Providers { get; set; } = new(StringComparer.OrdinalIgnoreCase);

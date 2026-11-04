@@ -10,31 +10,49 @@ using Keylo.Core.Security;
 
 namespace Keylo.App.ViewModels;
 
-public sealed partial class TrustGroupViewModel : ObservableObject
+public sealed partial class AccessKeyViewModel : ObservableObject
 {
     [ObservableProperty] private string _name = "";
-    [ObservableProperty] private string _callers = "";
     [ObservableProperty] private string _categories = "";
     [ObservableProperty] private string _secrets = "";
     [ObservableProperty] private bool _allowGet;
+    [ObservableProperty] private DateTime? _expires;
 
-    public static TrustGroupViewModel From(TrustGroup group) => new()
+    /// <summary>The saved key this row edits, or null for a key that is created on Save.</summary>
+    public AccessKey? Original { get; private init; }
+
+    public bool IsNew => Original is null;
+
+    public string Details => Original is null
+        ? "New — the key is created and shown once when you save"
+        : $"id {Original.Id} · created {Original.Created.LocalDateTime:MMM d, yyyy}" +
+          (Original.IsExpired(DateTimeOffset.Now) ? " · EXPIRED" : "");
+
+    public static AccessKeyViewModel From(AccessKey key) => new()
     {
-        Name = group.Name,
-        Callers = string.Join(", ", group.Callers),
-        Categories = string.Join(", ", group.Categories),
-        Secrets = string.Join(", ", group.Secrets),
-        AllowGet = group.AllowGet,
+        Original = key,
+        Name = key.Name,
+        Categories = string.Join(", ", key.Categories),
+        Secrets = string.Join(", ", key.Secrets),
+        AllowGet = key.AllowGet,
+        Expires = key.Expires?.LocalDateTime.Date,
     };
 
-    public TrustGroup ToModel() => new()
+    /// <summary>The edited key; new rows get a freshly generated key and its one-time token.</summary>
+    public (AccessKey Key, string? Token) ToModel()
     {
-        Name = Name.Trim(),
-        Callers = Split(Callers),
-        Categories = Split(Categories),
-        Secrets = Split(Secrets),
-        AllowGet = AllowGet,
-    };
+        DateTimeOffset? expires = Expires is { } date ? new DateTimeOffset(date.Date.AddDays(1).AddTicks(-1)) : null;
+        var (key, token) = Original is null
+            ? AccessKeys.Create(Name, expires)
+            : (new AccessKey { Id = Original.Id, Hash = Original.Hash, Created = Original.Created }, (string?)null);
+
+        key.Name = Name.Trim();
+        key.Categories = Split(Categories);
+        key.Secrets = Split(Secrets);
+        key.AllowGet = AllowGet;
+        key.Expires = expires;
+        return (key, token);
+    }
 
     private static List<string> Split(string value) =>
         value.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -79,7 +97,7 @@ public sealed partial class ProviderSettingsViewModel : ObservableObject
     }
 }
 
-public sealed record AuditEntry(string Time, string Operation, string Secrets, string Caller, string Group);
+public sealed record AuditEntry(string Time, string Operation, string Secrets, string Key, string Via);
 
 public sealed partial class SettingsViewModel : ObservableObject
 {
@@ -98,6 +116,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _keylo = keylo;
         _notify = notify;
         _restored = restored;
+        SecretTypes = new SecretTypesViewModel(keylo, notify);
         Revert();
     }
 
@@ -211,7 +230,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     }
 
     public IReadOnlyList<HelloMode> HelloModes { get; } = Enum.GetValues<HelloMode>();
-    public ObservableCollection<TrustGroupViewModel> TrustGroups { get; } = [];
+    public ObservableCollection<AccessKeyViewModel> AccessKeys { get; } = [];
+    public SecretTypesViewModel SecretTypes { get; }
     public ObservableCollection<ProviderSettingsViewModel> Providers { get; } = [];
     public ObservableCollection<AuditEntry> Audit { get; } = [];
     public string DataDirectory => KeyloPaths.DefaultDataDirectory;
@@ -225,42 +245,50 @@ public sealed partial class SettingsViewModel : ObservableObject
         SessionMinutes = config.SessionMinutes;
         ClipboardSeconds = config.ClipboardSeconds;
 
-        TrustGroups.Clear();
-        foreach (var group in config.TrustGroups) TrustGroups.Add(TrustGroupViewModel.From(group));
+        AccessKeys.Clear();
+        foreach (var key in config.AccessKeys) AccessKeys.Add(AccessKeyViewModel.From(key));
 
         Providers.Clear();
         foreach (var provider in _keylo.Providers.All)
             Providers.Add(new ProviderSettingsViewModel(provider, config.Providers.GetValueOrDefault(provider.Id) ?? new Dictionary<string, string>()));
 
+        SecretTypes.Load();
         LoadAudit();
     }
 
     [RelayCommand]
-    private void AddTrustGroup() =>
-        TrustGroups.Add(new TrustGroupViewModel { Name = $"Group {TrustGroups.Count + 1}", Callers = "claude.exe" });
+    private void AddAccessKey() =>
+        AccessKeys.Add(new AccessKeyViewModel { Name = AccessKeys.Count == 0 ? "Claude Code" : $"Key {AccessKeys.Count + 1}" });
 
+    /// <summary>Removing a row revokes the key when you save.</summary>
     [RelayCommand]
-    private void RemoveTrustGroup(TrustGroupViewModel? group)
+    private void RemoveAccessKey(AccessKeyViewModel? key)
     {
-        if (group is not null) TrustGroups.Remove(group);
+        if (key is not null) AccessKeys.Remove(key);
     }
 
     [RelayCommand]
     private async Task Save()
     {
-        var groups = TrustGroups.Select(g => g.ToModel()).ToList();
-        if (groups.FirstOrDefault(g => g.Name.Length == 0 || g.Callers.Count == 0 || g.Categories.Count + g.Secrets.Count == 0) is { } invalid)
+        if (AccessKeys.Any(k => k.Name.Trim().Length == 0))
         {
-            _notify.Error($"Trust group '{(invalid.Name.Length == 0 ? "(unnamed)" : invalid.Name)}' needs a name, at least one caller, and a category or secret.");
+            _notify.Error("Every access key needs a name.");
             return;
         }
+        if (AccessKeys.GroupBy(k => k.Name.Trim(), StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => g.Count() > 1) is { } duplicate)
+        {
+            _notify.Error($"Two access keys are called '{duplicate.Key}'. Give each a different name.");
+            return;
+        }
+
+        var keys = AccessKeys.Select(k => k.ToModel()).ToList();
 
         var updated = new KeyloConfig
         {
             Hello = Hello,
             SessionMinutes = (int)SessionMinutes,
             ClipboardSeconds = (int)ClipboardSeconds,
-            TrustGroups = groups,
+            AccessKeys = keys.Select(k => k.Key).ToList(),
             Providers = Providers.ToDictionary(p => p.Id, p => p.ToSettings(), StringComparer.OrdinalIgnoreCase),
         };
 
@@ -270,6 +298,10 @@ public sealed partial class SettingsViewModel : ObservableObject
             await _keylo.SaveConfigAsync(updated);
             _notify.Success("Settings saved.");
             Revert();
+
+            // Each new key's token exists only now; show it once.
+            foreach (var (key, token) in keys.Where(k => k.Token is not null))
+                await _notify.ShowAccessKeyAsync(key.Name, token!);
         }
         catch (KeyloException ex)
         {
@@ -298,8 +330,8 @@ public sealed partial class SettingsViewModel : ObservableObject
                     root.GetProperty("time").GetDateTimeOffset().LocalDateTime.ToString("MMM d  h:mm:ss tt"),
                     root.GetProperty("operation").GetString() ?? "",
                     string.Join(", ", root.GetProperty("secrets").EnumerateArray().Select(s => s.GetString())),
-                    root.GetProperty("caller").GetString() ?? "",
-                    root.GetProperty("group").GetString() ?? ""));
+                    Text(root, "key") ?? Text(root, "group") ?? "",
+                    Text(root, "via") ?? Text(root, "caller") ?? ""));
             }
             catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
             {
@@ -307,4 +339,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             }
         }
     }
+
+    private static string? Text(JsonElement entry, string property) =>
+        entry.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 }

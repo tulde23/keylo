@@ -4,7 +4,8 @@ public static class SecretSearch
 {
     /// <summary>
     /// Case-insensitive match of every whitespace-separated term against the name, category,
-    /// username or notes. A term like "cat:cloud" only matches the category. Never looks at values.
+    /// username, notes, type or non-secret fields (host, url…). "cat:cloud" only matches the category,
+    /// "type:login" only the type id. Never looks at values.
     /// </summary>
     public static bool Matches(SecretInfo secret, string? query)
     {
@@ -18,8 +19,15 @@ public static class SecretSearch
                 continue;
             }
 
+            if (term.StartsWith("type:", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!Contains(secret.Type, term[5..])) return false;
+                continue;
+            }
+
             if (!Contains(secret.Name, term) && !Contains(secret.Category, term) &&
-                !Contains(secret.Username, term) && !Contains(secret.Notes, term))
+                !Contains(secret.Username, term) && !Contains(secret.Notes, term) && !Contains(secret.Type, term) &&
+                secret.Fields?.Values.Any(v => Contains(v, term)) != true)
                 return false;
         }
 
