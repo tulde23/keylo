@@ -10,7 +10,7 @@
                  d:DataContext="{d:DesignInstance vm:MainViewModel}"
                  Title="Keylo"
                  Icon="pack://application:,,,/Assets/keylo.ico"
-                 Width="1180" Height="760" MinWidth="900" MinHeight="560"
+                 Width="1180" Height="760" MinWidth="1080" MinHeight="560"
                  WindowStartupLocation="CenterScreen"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica"
@@ -28,10 +28,180 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0" Title="" />
+        <!-- Chromeless: no title bar. The top bar (or the lock screen) drags the window; our own buttons sit top-right. -->
+        <StackPanel Grid.Row="0" Grid.RowSpan="2" Panel.ZIndex="10" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+            <StackPanel.Resources>
+                <Style x:Key="CaptionButton" TargetType="Button">
+                    <Setter Property="Width" Value="46" />
+                    <Setter Property="Height" Value="34" />
+                    <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+                    <Setter Property="FontSize" Value="10" />
+                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                    <Setter Property="IsTabStop" Value="False" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Bg" Background="Transparent">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bg" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="Bg" Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+                <Style x:Key="CloseButton" TargetType="Button" BasedOn="{StaticResource CaptionButton}">
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Bg" Background="Transparent">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bg" Property="Background" Value="#C42B1C" />
+                                        <Setter Property="Foreground" Value="White" />
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="Bg" Property="Background" Value="#A3261A" />
+                                        <Setter Property="Foreground" Value="White" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </StackPanel.Resources>
+            <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="OnMinimize" ToolTip="Minimize" AutomationProperties.Name="Minimize" />
+            <Button x:Name="MaximizeButton" Style="{StaticResource CaptionButton}" Content="&#xE922;" Click="OnMaximize" ToolTip="Maximize" AutomationProperties.Name="Maximize" />
+            <Button Style="{StaticResource CloseButton}" Content="&#xE8BB;" Click="OnClose" ToolTip="Close" AutomationProperties.Name="Close" />
+        </StackPanel>
 
         <!-- ============================================================ main -->
-        <Grid Grid.Row="1" Visibility="{Binding IsLocked, Converter={StaticResource HiddenWhen}}">
+        <DockPanel Grid.Row="1" Visibility="{Binding IsLocked, Converter={StaticResource HiddenWhen}}">
+
+        <!-- Top bar: brand over the sidebar, search over the list, action tiles over the detail area.
+             Its columns follow the sidebar and list widths, so the search box stays above the list. -->
+        <Border DockPanel.Dock="Top" Panel.ZIndex="1" Margin="0,0,0,12" Padding="0,12,0,12" MouseLeftButtonDown="OnDragArea"
+                Background="{DynamicResource SolidBackgroundFillColorTertiaryBrush}"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="{Binding Width, ElementName=SidebarColumn}" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition Width="{Binding Width, ElementName=ListColumn}" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.Resources>
+                <!-- A labelled icon tile; Tag holds the label. -->
+                <Style x:Key="Tile" TargetType="Button">
+                    <Setter Property="Width" Value="78" />
+                    <Setter Property="Height" Value="58" />
+                    <Setter Property="Margin" Value="0,0,8,0" />
+                    <Setter Property="Cursor" Value="Hand" />
+                    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                    <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+                    <Setter Property="ToolTipService.InitialShowDelay" Value="400" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Bg" CornerRadius="8" BorderThickness="1" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}">
+                                    <Grid>
+                                        <Border x:Name="Shade" CornerRadius="7" Background="Transparent" />
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <ContentPresenter HorizontalAlignment="Center" />
+                                            <TextBlock x:Name="Label" Text="{TemplateBinding Tag}" FontSize="11" Margin="0,4,0,0" HorizontalAlignment="Center"
+                                                       Foreground="{TemplateBinding Foreground}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <!-- Compact (no room for labels): icon only. -->
+                                    <Trigger Property="Tag" Value="">
+                                        <Setter TargetName="Label" Property="Visibility" Value="Collapsed" />
+                                    </Trigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Shade" Property="Background" Value="#14FFFFFF" />
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="Shade" Property="Background" Value="#22000000" />
+                                    </Trigger>
+                                    <Trigger Property="IsKeyboardFocused" Value="True">
+                                        <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+                <Style x:Key="AccentTile" TargetType="Button" BasedOn="{StaticResource Tile}">
+                    <Setter Property="Foreground" Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                    <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                </Style>
+                <Style x:Key="QuietTile" TargetType="Button" BasedOn="{StaticResource Tile}">
+                    <Setter Property="Width" Value="62" />
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="BorderBrush" Value="Transparent" />
+                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                </Style>
+            </Grid.Resources>
+
+            <!-- Brand, over the sidebar -->
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="18,0,0,0">
+                <Image Source="{StaticResource LogoImage}" Width="32" Height="32" />
+                <TextBlock Text="Keylo" FontSize="18" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+            </StackPanel>
+
+            <!-- Search, over the list -->
+            <ui:TextBox x:Name="SearchBox" Grid.Column="2" Margin="14,0,14,0" VerticalAlignment="Center"
+                        PlaceholderText="Search all secrets…   Ctrl+K"
+                        Icon="{ui:SymbolIcon Search24}" ClearButtonEnabled="True"
+                        Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
+
+            <!-- Action tiles, over the detail area -->
+            <DockPanel x:Name="ActionTiles" Grid.Column="4" Margin="14,0,150,0" VerticalAlignment="Center" LastChildFill="False"
+                       SizeChanged="OnActionTilesResized">
+                <Button DockPanel.Dock="Right" Style="{StaticResource QuietTile}" Tag="Lock" Command="{Binding LockCommand}" Margin="0"
+                        ToolTip="Lock (Ctrl+L)" AutomationProperties.Name="Lock">
+                    <ui:SymbolIcon Symbol="LockClosed24" FontSize="20" />
+                </Button>
+                <Button DockPanel.Dock="Right" Style="{StaticResource QuietTile}" Tag="Settings" Command="{Binding OpenSettingsCommand}"
+                        ToolTip="Settings" AutomationProperties.Name="Settings">
+                    <ui:SymbolIcon Symbol="Settings24" FontSize="20" />
+                </Button>
+                <Button Style="{StaticResource AccentTile}" Tag="New secret" Command="{Binding NewSecretCommand}"
+                        ToolTip="New secret (Ctrl+N)" AutomationProperties.Name="New secret">
+                    <ui:SymbolIcon Symbol="Add24" FontSize="20" Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                </Button>
+                <Button Style="{StaticResource Tile}" Tag="Import files" Command="{Binding ImportFilesCommand}"
+                        ToolTip="Import files as secrets" AutomationProperties.Name="Import files">
+                    <ui:SymbolIcon Symbol="DocumentAdd24" FontSize="20" />
+                </Button>
+                <Button Style="{StaticResource Tile}" Tag="Import folder" Command="{Binding ImportFolderCommand}"
+                        ToolTip="Import a folder; subfolders become categories" AutomationProperties.Name="Import folder">
+                    <ui:SymbolIcon Symbol="FolderOpen24" FontSize="20" />
+                </Button>
+                <Button Style="{StaticResource Tile}" Tag="Link 1Password" Command="{Binding LinkFromVaultCommand}"
+                        ToolTip="Link to a 1Password item (read live, never copied)" AutomationProperties.Name="Link from 1Password">
+                    <ui:SymbolIcon Symbol="Link24" FontSize="20" />
+                </Button>
+            </DockPanel>
+        </Grid>
+        </Border>
+
+        <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="SidebarColumn" Width="232" MinWidth="180" MaxWidth="420" />
                 <ColumnDefinition Width="Auto" />
@@ -48,41 +218,6 @@
 
             <!-- Sidebar: brand, new, categories, footer actions -->
             <DockPanel Grid.Column="0" Margin="12,4,2,12" LastChildFill="True">
-                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="6,4,0,18">
-                    <Image Source="{StaticResource LogoImage}" Width="36" Height="36" />
-
-                    <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="Keylo" FontSize="17" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-                        <TextBlock Text="Local secrets vault" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                    </StackPanel>
-                </StackPanel>
-
-                <ui:Button DockPanel.Dock="Top" Appearance="Primary" HorizontalAlignment="Stretch" Height="36"
-                           Icon="{ui:SymbolIcon Add24}" Content="New secret" Command="{Binding NewSecretCommand}"
-                           ToolTip="New secret (Ctrl+N)" Margin="0,0,0,18" />
-
-                <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
-                    <StackPanel.Resources>
-                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                            <Setter Property="Appearance" Value="Transparent" />
-                            <Setter Property="BorderThickness" Value="0" />
-                            <Setter Property="HorizontalAlignment" Value="Stretch" />
-                            <Setter Property="HorizontalContentAlignment" Value="Left" />
-                            <Setter Property="Padding" Value="10,7" />
-                            <Setter Property="Margin" Value="0,1" />
-                        </Style>
-                    </StackPanel.Resources>
-                    <StackPanel Orientation="Horizontal" Margin="10,0,0,10">
-                        <Ellipse Width="7" Height="7" Fill="#34D399" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding SessionText}" FontSize="11" Margin="8,0,0,0" TextWrapping="Wrap"
-                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                    </StackPanel>
-                    <ui:Button Icon="{ui:SymbolIcon DocumentAdd24}" Content="Import files…" Command="{Binding ImportFilesCommand}" />
-                    <ui:Button Icon="{ui:SymbolIcon FolderOpen24}" Content="Import folder…" Command="{Binding ImportFolderCommand}" />
-                    <ui:Button Icon="{ui:SymbolIcon Settings24}" Content="Settings" Command="{Binding OpenSettingsCommand}" />
-                    <ui:Button Icon="{ui:SymbolIcon LockClosed24}" Content="Lock" Command="{Binding LockCommand}" ToolTip="Lock (Ctrl+L)" />
-                </StackPanel>
-
                 <DockPanel>
                     <DockPanel DockPanel.Dock="Top" Margin="8,0,0,4">
                         <ui:Button DockPanel.Dock="Right" Appearance="Transparent" BorderThickness="0" Padding="6,2" FontSize="12"
@@ -91,7 +226,8 @@
                         <TextBlock Text="CATEGORIES" Style="{StaticResource SectionLabel}" Margin="0" VerticalAlignment="Center" />
                     </DockPanel>
                     <ListBox ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory}" ItemContainerStyle="{StaticResource NavItem}"
-                             Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                             Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
                         <ListBox.ItemTemplate>
                             <DataTemplate DataType="{x:Type vm:CategoryItem}">
                                 <Grid Margin="2,3">
@@ -131,38 +267,69 @@
             <Border Grid.Column="2" Margin="0,0,0,0" CornerRadius="8,0,0,0" BorderThickness="1,1,0,0"
                     Background="{DynamicResource LayerFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
                 <DockPanel Margin="14,14,14,8">
-                    <ui:TextBox x:Name="SearchBox" DockPanel.Dock="Top" PlaceholderText="Search name, category, key…"
-                                Icon="{ui:SymbolIcon Search24}" ClearButtonEnabled="True"
-                                Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
-
-                    <DockPanel DockPanel.Dock="Top" Margin="4,14,4,6">
-                        <TextBlock DockPanel.Dock="Right" FontSize="12" Foreground="{DynamicResource TextFillColorTertiaryBrush}">
-                            <Run Text="{Binding VisibleCount, Mode=OneWay}" /><Run Text=" items" />
-                        </TextBlock>
-                        <TextBlock Text="{Binding SelectedCategory.Label}" FontWeight="SemiBold" FontSize="14" />
+                    <DockPanel DockPanel.Dock="Top" Margin="4,0,4,6">
+                        <TextBlock DockPanel.Dock="Right" FontSize="12" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Text="{Binding CountText}" />
+                        <TextBlock Text="{Binding ListTitle}" FontWeight="SemiBold" FontSize="14" />
                     </DockPanel>
 
                     <Grid>
                         <ListBox x:Name="SecretList" ItemsSource="{Binding SecretsView}" SelectedItem="{Binding SelectedSecret}"
                                  SelectionMode="Extended" SelectionChanged="OnSecretSelectionChanged"
                                  ItemContainerStyle="{StaticResource NavItem}" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                 VirtualizingPanel.IsVirtualizing="True" ToolTip="Ctrl or Shift + click to select several"
-                                 ToolTipService.InitialShowDelay="2500">
+                                 VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.IsVirtualizingWhenGrouping="True"
+                                 VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ToolTip="Ctrl or Shift + click to select several" ToolTipService.InitialShowDelay="2500">
+                            <ListBox.GroupStyle>
+                                <GroupStyle>
+                                    <GroupStyle.HeaderTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Name}" Style="{StaticResource SectionLabel}" Margin="8,12,0,4" />
+                                        </DataTemplate>
+                                    </GroupStyle.HeaderTemplate>
+                                </GroupStyle>
+                            </ListBox.GroupStyle>
                             <ListBox.ItemTemplate>
                                 <DataTemplate DataType="{x:Type vm:SecretItemViewModel}">
-                                    <Grid Margin="2,2">
+                                    <Grid Margin="2,2" Background="Transparent"
+                                          Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=ListBox}}">
+                                        <Grid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Command="{Binding PlacementTarget.Tag.TogglePinCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                          CommandParameter="{Binding}">
+                                                    <MenuItem.Style>
+                                                        <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                            <Setter Property="Header" Value="Pin to Home" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsPinned}" Value="True">
+                                                                    <Setter Property="Header" Value="Unpin from Home" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </MenuItem.Style>
+                                                </MenuItem>
+                                            </ContextMenu>
+                                        </Grid.ContextMenu>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
                                         <views:IconTile Width="36" Height="36" CornerRadius="10" GlyphSize="18"
                                                         Fill="{Binding AvatarBrush}" Image="{Binding Image}" Symbol="{Binding Icon}" Text="{Binding Initial}" />
-                                        <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
-                                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-                                            <TextBlock Text="{Binding Subtitle}" FontSize="12" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"
-                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                        </StackPanel>
+                                        <DockPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                                            <ui:Button DockPanel.Dock="Right" Appearance="Transparent" BorderThickness="0" Padding="6" Margin="4,0,0,0"
+                                                       VerticalAlignment="Center" Icon="{ui:SymbolIcon Pin16}" FontSize="14"
+                                                       Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}"
+                                                       ToolTip="Unpin from Home" AutomationProperties.Name="Unpin from Home"
+                                                       Command="{Binding DataContext.TogglePinCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                       CommandParameter="{Binding}"
+                                                       Visibility="{Binding IsPinned, Converter={StaticResource VisibleWhen}}" />
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                <TextBlock Text="{Binding DisplaySubtitle}" FontSize="12" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"
+                                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            </StackPanel>
+                                        </DockPanel>
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
@@ -171,8 +338,8 @@
                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="16"
                                     Visibility="{Binding VisibleCount, Converter={StaticResource HiddenWhen}}">
                             <ui:SymbolIcon Symbol="Search24" FontSize="40" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                            <TextBlock Text="Nothing here" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,10,0,4" />
-                            <TextBlock Text="Add a secret, or drop files on the window to import them." TextWrapping="Wrap" TextAlignment="Center"
+                            <TextBlock Text="{Binding EmptyTitle}" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,10,0,4" />
+                            <TextBlock Text="{Binding EmptyText}" TextWrapping="Wrap" TextAlignment="Center"
                                        FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
                     </Grid>
@@ -240,9 +407,11 @@
                 </Grid>
             </Border>
         </Grid>
+        </DockPanel>
 
         <!-- ============================================================ lock screen -->
-        <Grid Grid.Row="1" Visibility="{Binding IsLocked, Converter={StaticResource VisibleWhen}}">
+        <Grid Grid.Row="1" Background="Transparent" MouseLeftButtonDown="OnDragArea"
+              Visibility="{Binding IsLocked, Converter={StaticResource VisibleWhen}}">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="360">
                 <Grid Width="96" Height="96" HorizontalAlignment="Center">
                     <Image Source="{StaticResource LogoImage}">

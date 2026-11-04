@@ -133,7 +133,10 @@ public static class AccessKeys
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 }
 
-/// <summary>Append-only record of every access that skipped Windows Hello.</summary>
+/// <summary>
+/// Append-only record of every access that skipped Windows Hello, one JSON object per line. Entries
+/// older than the configured retention are pruned as new ones are written.
+/// </summary>
 public static class AuditLog
 {
     private static readonly JsonSerializerOptions Json = new()
@@ -160,6 +163,58 @@ public static class AuditLog
 
         var dir = dataDirectory ?? KeyloPaths.DefaultDataDirectory;
         Directory.CreateDirectory(dir);
-        File.AppendAllText(PathIn(dir), JsonSerializer.Serialize(entry, Json) + Environment.NewLine);
+        var path = PathIn(dir);
+
+        // The CLI, the app and MCP servers can all write at once; a prune must not drop a concurrent append.
+        using var mutex = new Mutex(false, "Keylo.Audit." + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(path.ToLowerInvariant())))[..16]);
+        var owned = false;
+        try
+        {
+            try { owned = mutex.WaitOne(TimeSpan.FromSeconds(5)); }
+            catch (AbandonedMutexException) { owned = true; }
+
+            File.AppendAllText(path, JsonSerializer.Serialize(entry, Json) + Environment.NewLine);
+            Prune(path, KeyloConfig.Load(dir).AuditRetentionDays, DateTimeOffset.Now);
+        }
+        finally
+        {
+            if (owned) mutex.ReleaseMutex();
+        }
+    }
+
+    /// <summary>
+    /// Drops entries older than <paramref name="days"/> (0: keep all). Only rewrites the file when its
+    /// first entry has expired, so the usual cost is reading one line. Unreadable lines are kept.
+    /// </summary>
+    public static int Prune(string path, int days, DateTimeOffset now)
+    {
+        if (days <= 0 || !File.Exists(path)) return 0;
+        var cutoff = now.AddDays(-days);
+
+        using (var reader = new StreamReader(path))
+        {
+            if (TimeOf(reader.ReadLine()) is not { } first || first >= cutoff) return 0;
+        }
+
+        var lines = File.ReadAllLines(path);
+        var kept = lines.Where(l => l.Length > 0 && (TimeOf(l) is not { } t || t >= cutoff)).ToList();
+        var temp = path + ".tmp";
+        File.WriteAllLines(temp, kept);
+        File.Move(temp, path, overwrite: true);
+        return lines.Count(l => l.Length > 0) - kept.Count;
+    }
+
+    private static DateTimeOffset? TimeOf(string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(line);
+            return doc.RootElement.TryGetProperty("time", out var t) && t.TryGetDateTimeOffset(out var time) ? time : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

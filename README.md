@@ -29,7 +29,7 @@ This adds Keylo to your user PATH and the Start menu. Requires the .NET 10 runti
 | `keylo restore FILE [--overwrite] [--dry-run]` | Restore one (existing secrets are kept unless `--overwrite`) |
 | `keylo keys [create NAME … \| revoke NAME]` | Access keys for agents (see below) |
 | `keylo mcp` | MCP server for Claude Code and other agents |
-| `keylo unlock` / `lock` / `status` / `config` | Windows Hello session and settings |
+| `keylo unlock` / `lock` / `status` / `config` / `version` | Windows Hello session, settings and version |
 
 Migrating a `.secrets` folder: `keylo import .\.secrets`, check `keylo list`, then re-run with
 `--overwrite --delete-originals` (or delete the folder yourself).
@@ -64,7 +64,8 @@ keylo types                             # all types and fields
 
 ## In the app
 
-- **Search** across name, category, key and notes; filter by category in the sidebar.
+- **Home** (the default view) shows pinned secrets (pin button on a secret) and recently used ones — by you in the app, or by agents (from the audit log). Search covers everything; categories show their full lists. The top bar has search for everything (Ctrl+K), New ▾ (import, link from 1Password), Settings and Lock.
+- **Search** across name, category, key, notes and non-secret fields; filter by category in the sidebar.
 - **Import** files or folders (button, drag and drop, or `keylow --import PATH`). The dialog
   previews the result and lets you use subfolder names, put everything in one existing or new
   category, or leave them uncategorized, and choose whether to replace existing secrets.
@@ -108,7 +109,7 @@ Backup & restore, or `keylo backup`) is what gets your secrets onto a new PC or 
 
 `keylo config hello session|always|never` (or Settings in the app):
 
-- **session** (default): verify once, then the app and CLI share a 15-minute unlock.
+- **session** (default): verify once, then the app and CLI share an unlock that lasts 15 minutes after your last activity in the app (keyboard or mouse); agents' use doesn't extend it.
 - **always**: verify every time a value is revealed, copied, exported or run.
 - **never**: rely on your Windows sign-in only.
 
@@ -147,21 +148,40 @@ or from a terminal: `keylo keys create "Claude Code" --all --add-to-claude` (or 
   lives in Claude Code's user config (`~/.claude.json`) — never put it in a project's `.mcp.json`.
   Commands run by the server don't receive it.
 - `KEYLO_ACCESS_KEY` works for the plain CLI too (`keylo run`, `keylo get`).
-- Every use without Windows Hello is in the audit log (Settings), with the key and the process chain.
+- Every use without Windows Hello is in the audit log (Settings → Open log), with the key and the
+  process chain. Entries older than 90 days are pruned (Settings → Keep audit log, or
+  `keylo config audit-days 365|forever`).
 - Redaction catches accidental leaks, not deliberate ones (a command could encode a value first).
   Neither keys nor Hello stop malware already running as you.
 
+## Linked secrets (1Password and other vaults)
+
+A linked secret points at an item in another vault. Keylo stores only the reference (vault, item,
+account); the value is read from the vault each time it's used and never copied, so changes there
+apply at once. To Claude it's an ordinary secret: same search, `name:field` access, approvals,
+redaction and audit log.
+
+- **App:** Link from 1Password… in the sidebar: search, pick an item, keep all its fields or just one.
+- **CLI:** `keylo link --search github`, then `keylo link gh --item "GitHub" [--field password] [--category dev]`.
+- 1Password is read through its CLI (`op`), signed in via the 1Password app (Settings → Developer →
+  Integrate with 1Password CLI). Every signed-in account is searched; 1Password may ask you to unlock it.
+
 ## Vault providers
 
-`IVaultProvider` (in `Keylo.Core.Providers`) pushes secrets to other vaults. Built in:
+Two plugin interfaces in `Keylo.Core.Providers`:
 
-- **1Password** via the `op` CLI: `keylo provider set 1password vault Private`, then
-  `keylo push 1password --category cloud`. Items are tagged `keylo`; pushing again updates them.
-  Values go over stdin, never the command line.
+- **`ILinkedVaultProvider`**: search a vault, describe an item's fields, and read their values —
+  for linked secrets. Bitwarden, KeePass, Azure Key Vault or AWS Secrets Manager would implement this.
+- **`IVaultProvider`**: push Keylo secrets into another vault.
 
-Add others by building a class library that references `Keylo.Core`, implementing
-`IVaultProvider` with a parameterless constructor, and dropping the DLL into
-`%LOCALAPPDATA%\Keylo\plugins`. Plugins run as you with full trust.
+1Password implements both:
+
+- **Push**: `keylo provider set 1password vault Private`, then `keylo push 1password --category cloud`.
+  Items are tagged `keylo`; pushing again updates them. Values go over stdin, never the command line.
+
+Add others by building a class library that references `Keylo.Core`, implementing either interface
+(or both) with a parameterless constructor, and dropping the DLL into `%LOCALAPPDATA%\Keylo\plugins`.
+Plugins run as you with full trust.
 
 ## Develop
 

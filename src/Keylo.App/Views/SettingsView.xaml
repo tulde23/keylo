@@ -21,18 +21,42 @@
             <Setter Property="ToolTipService.InitialShowDelay" Value="100" />
             <Setter Property="ToolTipService.ShowDuration" Value="60000" />
         </Style>
+        <!-- Save buttons: muted (and disabled) when clean, accent when there are unsaved changes. -->
+        <Style x:Key="DirtySaveButton" TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+            <Setter Property="Appearance" Value="Secondary" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsDirty}" Value="True">
+                    <Setter Property="Appearance" Value="Primary" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <DockPanel>
         <!-- Footer -->
         <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Padding="28,12">
             <DockPanel>
-                <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                           Text="Saving asks for Windows Hello, because these settings decide what can skip it." />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Ellipse Width="8" Height="8" Margin="0,0,8,0" Fill="{DynamicResource SystemFillColorCautionBrush}"
+                             Visibility="{Binding IsDirty, Converter={StaticResource VisibleWhen}}" />
+                    <TextBlock FontSize="12" VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Text" Value="Saving asks for Windows Hello, because these settings decide what can skip it." />
+                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsDirty}" Value="True">
+                                        <Setter Property="Text" Value="Unsaved changes — Save settings to apply them (asks for Windows Hello)." />
+                                        <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <ui:Button Appearance="Secondary" Content="Revert" Command="{Binding RevertCommand}" Margin="0,0,8,0" />
-                    <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Save24}" Content="Save settings" Command="{Binding SaveCommand}"
-                               IsEnabled="{Binding IsBusy, Converter={StaticResource Not}}" />
+                    <ui:Button Style="{StaticResource DirtySaveButton}" Icon="{ui:SymbolIcon Save24}" Content="Save settings" Command="{Binding SaveCommand}" />
                 </StackPanel>
             </DockPanel>
         </Border>
@@ -66,14 +90,23 @@
                             <ui:NumberBox DockPanel.Dock="Right" Width="140" Minimum="1" Maximum="1440" SmallChange="5" Value="{Binding SessionMinutes}" />
                             <StackPanel>
                                 <TextBlock Text="Session length (minutes)" FontWeight="SemiBold" />
-                                <TextBlock Text="How long one verification lasts in 'once per session' mode." FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="Keylo locks after this long without activity in the app ('once per session' mode)." FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                         </DockPanel>
-                        <DockPanel>
+                        <DockPanel Margin="0,0,0,16">
                             <ui:NumberBox DockPanel.Dock="Right" Width="140" Minimum="5" Maximum="600" SmallChange="5" Value="{Binding ClipboardSeconds}" />
                             <StackPanel>
                                 <TextBlock Text="Clear clipboard after (seconds)" FontWeight="SemiBold" />
                                 <TextBlock Text="Copied values are also kept out of clipboard history and cloud sync." FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </DockPanel>
+                        <DockPanel>
+                            <ComboBox DockPanel.Dock="Right" Width="140" ItemsSource="{Binding Source={x:Static vm:SettingsViewModel.RetentionOptions}}"
+                                      SelectedItem="{Binding AuditRetention}" DisplayMemberPath="Label" />
+                            <StackPanel>
+                                <TextBlock Text="Keep audit log" FontWeight="SemiBold" />
+                                <TextBlock Text="Older entries are removed as new ones are added. The log records every use that skipped Windows Hello." FontSize="12"
+                                           TextWrapping="Wrap" Margin="0,0,12,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                         </DockPanel>
                     </StackPanel>
@@ -106,7 +139,7 @@
                 <DockPanel Margin="0,0,0,6" DataContext="{Binding SecretTypes}">
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                         <ui:Button Appearance="Secondary" Icon="{ui:SymbolIcon Add24}" Content="New type" Command="{Binding AddTypeCommand}" Margin="0,0,8,0" />
-                        <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Save24}" Content="Save types" Command="{Binding SaveCommand}" />
+                        <ui:Button Style="{StaticResource DirtySaveButton}" Icon="{ui:SymbolIcon Save24}" Content="Save types" Command="{Binding SaveCommand}" />
                     </StackPanel>
                     <StackPanel>
                         <TextBlock Text="SECRET TYPES" Style="{StaticResource SectionLabel}" Margin="0" />
@@ -302,6 +335,8 @@
                 <!-- ==================================================== audit -->
                 <DockPanel Margin="0,0,0,6">
                     <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon ArrowClockwise24}" Content="Refresh" Command="{Binding LoadAuditCommand}" />
+                    <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon DocumentText24}" Content="Open log" Command="{Binding OpenAuditLogCommand}"
+                               ToolTip="Open the full log (this list shows the latest 100 entries)" Margin="0,0,4,0" />
                     <TextBlock Text="AUDIT LOG — ACCESS WITHOUT WINDOWS HELLO" Style="{StaticResource SectionLabel}" VerticalAlignment="Center" Margin="0" />
                 </DockPanel>
                 <Border Style="{StaticResource Surface}" Padding="0" Margin="0,0,0,28">
@@ -332,9 +367,73 @@
                     </Grid>
                 </Border>
 
-                <TextBlock FontSize="12" Foreground="{DynamicResource TextFillColorTertiaryBrush}">
-                    Data folder: <Run Text="{Binding DataDirectory, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" />
-                </TextBlock>
+                <!-- ==================================================== about -->
+                <TextBlock Text="ABOUT" Style="{StaticResource SectionLabel}" />
+                <Border Style="{StaticResource Surface}" Margin="0,0,0,12" DataContext="{Binding About}">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,16">
+                            <Image Source="{StaticResource LogoImage}" Width="64" Height="64" DockPanel.Dock="Left" Margin="0,0,16,0" />
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="Keylo" FontSize="20" FontWeight="SemiBold" />
+                                <TextBlock Text="Local secrets vault for Windows" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="{Binding Version}" FontFamily="{StaticResource MonoFont}" FontSize="12" Margin="0,4,0,0"
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                            </StackPanel>
+                        </DockPanel>
+
+                        <!-- Claude Code -->
+                        <DockPanel Margin="0,0,0,14">
+                            <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon ArrowClockwise24}" ToolTip="Check again"
+                                       Command="{Binding RefreshCommand}" VerticalAlignment="Top" />
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="CLAUDE CODE" Style="{StaticResource SectionLabel}" Margin="0,0,10,0" VerticalAlignment="Center" />
+                                    <Border CornerRadius="10" Padding="8,1" VerticalAlignment="Center">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBackgroundBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ClaudeOk}" Value="True">
+                                                        <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="{Binding ClaudeStatus}" FontSize="12" FontWeight="SemiBold" />
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock Text="{Binding ClaudeDetail}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </DockPanel>
+
+                        <!-- Folders -->
+                        <Grid Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition />
+                                <RowDefinition />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="Program" FontSize="12" VerticalAlignment="Center" Margin="0,0,16,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            <TextBlock Grid.Column="1" Text="{Binding InstallFolder}" FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                            <ui:Button Grid.Column="2" Appearance="Transparent" Icon="{ui:SymbolIcon FolderOpen24}" Content="Open" Command="{Binding OpenInstallFolderCommand}" />
+                            <TextBlock Grid.Row="1" Text="Data" FontSize="12" VerticalAlignment="Center" Margin="0,0,16,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DataFolder}" FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                            <ui:Button Grid.Row="1" Grid.Column="2" Appearance="Transparent" Icon="{ui:SymbolIcon FolderOpen24}" Content="Open" Command="{Binding OpenDataFolderCommand}" />
+                        </Grid>
+
+                        <StackPanel Orientation="Horizontal">
+                            <ui:Button Appearance="Secondary" Icon="{ui:SymbolIcon Code24}" Content="GitHub" Command="{Binding OpenRepositoryCommand}" Margin="0,0,8,0" />
+                            <ui:Button Appearance="Secondary" Icon="{ui:SymbolIcon BookOpen24}" Content="Documentation" Command="{Binding OpenReadmeCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </ScrollViewer>
     </DockPanel>

@@ -20,6 +20,13 @@ internal sealed class KeyloTools
 
     private readonly SecretStore _store = new();
     private readonly SecretTypeCatalog _types = new();
+    private readonly Keylo.Core.Providers.ProviderRegistry _registry = new();
+
+    /// <summary>A secret's type: its catalog type, a schema built from a link's fields, or null for plain.</summary>
+    private SecretTypeDefinition? TypeOf(SecretInfo secret) =>
+        LinkedSecrets.Read(secret) is { } link
+            ? LinkedSecrets.AsType(link, _registry.FindLinked(link.Target.Provider)?.DisplayName ?? link.Target.Provider)
+            : _types.Find(secret.Type);
 
     // Every value this server has handed out, redacted from all later command output too (so a
     // value written to a file by one command doesn't come back through another).
@@ -66,7 +73,7 @@ internal sealed class KeyloTools
         var results = matches.Take(limit).Select(s =>
         {
             var covered = key.Covers(s);
-            var type = _types.Find(s.Type);
+            var type = TypeOf(s);
             return new
             {
                 name = s.Name,
@@ -93,6 +100,13 @@ internal sealed class KeyloTools
 
     private static Dictionary<string, string>? Details(SecretTypeDefinition? type, SecretInfo secret)
     {
+        if (LinkedSecrets.Read(secret) is { } link)
+            return new Dictionary<string, string>
+            {
+                ["linked_to"] = link.Title,
+                ["vault"] = link.Target.Provider + (link.Where is { Length: > 0 } where ? $" ({where})" : ""),
+            };
+
         var details = new Dictionary<string, string>();
         if (secret.Username is not null) details[type?.UsernameField?.Id ?? "username"] = secret.Username;
         foreach (var (id, value) in secret.Fields ?? new Dictionary<string, string>()) details[id] = value;
@@ -177,6 +191,7 @@ internal sealed class KeyloTools
         var text = new StringBuilder();
         text.Append($"type: {info.Type ?? "plain"}");
         foreach (var (id, value) in all) text.Append($"\n{id}: {value}");
+        if (LinkedSecrets.Read(info) is { } linkInfo) text.Insert(0, $"linked to: {linkInfo.Title} ({linkInfo.Target.Provider})\n");
         return text.ToString();
     }
 
@@ -262,6 +277,16 @@ internal sealed class KeyloTools
     /// </summary>
     private Dictionary<string, string> ReadAll(SecretInfo info)
     {
+        if (LinkedSecrets.Read(info) is { } link)
+        {
+            // Read live from the linked vault; everything except known non-secret fields is redacted.
+            var values = LinkedSecrets.ResolveAsync(info, _registry, KeyloConfig.Load()).GetAwaiter().GetResult();
+            var plain = link.Fields.Where(f => !f.Secret).Select(f => f.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var (id, value) in values)
+                if (!plain.Contains(id) || !LinkedSecrets.LooksPublic(id)) lock (_redactorLock) _redactor.Add($"{info.Name}:{id}", value);
+            return values;
+        }
+
         var secret = _store.Get(info.Name);
         var type = _types.Find(info.Type);
         var all = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -288,6 +313,14 @@ internal sealed class KeyloTools
     /// <summary>One field: the main value when <paramref name="field"/> is null or "value".</summary>
     private string Pick(SecretInfo info, Dictionary<string, string> all, string? field)
     {
+        if (LinkedSecrets.Read(info) is { } link)
+        {
+            var linkedId = field?.ToLowerInvariant() switch { null or "value" => link.MainField, "key" => "username", _ => field };
+            return linkedId is not null && all.TryGetValue(linkedId, out var linked)
+                ? linked
+                : throw new KeyloException($"'{info.Name}' has no {(field is null ? "value" : $"field '{field}'")}. Fields: {string.Join(", ", all.Keys)}.");
+        }
+
         var type = _types.Find(info.Type);
         if (field?.ToLowerInvariant() is "username" or "key")
             return info.Username ?? throw new KeyloException($"'{info.Name}' has no username.");

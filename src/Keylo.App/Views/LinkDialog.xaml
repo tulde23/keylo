@@ -1,0 +1,89 @@
+<ui:FluentWindow x:Class="Keylo.App.Views.LinkDialog"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 Title="Link a secret"
+                 Width="620" SizeToContent="Height"
+                 ResizeMode="NoResize" ShowInTaskbar="False"
+                 WindowStartupLocation="CenterOwner"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round">
+    <StackPanel>
+        <ui:TitleBar Title="" ShowMinimize="False" ShowMaximize="False" />
+        <StackPanel Margin="28,0,28,24">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                <Border Width="40" Height="40" CornerRadius="10" Background="{StaticResource BrandBrush}">
+                    <ui:SymbolIcon Symbol="Link24" FontSize="20" Foreground="White" />
+                </Border>
+                <TextBlock Text="Link a secret from another vault" FontSize="20" FontWeight="SemiBold" Margin="12,0,0,0" VerticalAlignment="Center" />
+            </StackPanel>
+            <TextBlock TextWrapping="Wrap" Margin="0,0,0,16" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       Text="Ctrl or Shift+click to link several items at once. Keylo stores only a reference. The value is read from the vault each time it's used — never copied — so changes there apply at once. Access keys, approvals, redaction and the audit log work as for any secret." />
+
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ComboBox x:Name="ProviderBox" DisplayMemberPath="DisplayName" MinWidth="140" Margin="0,0,8,0" SelectionChanged="OnProviderChanged" />
+                <ui:TextBox x:Name="SearchBox" Grid.Column="1" PlaceholderText="Search titles, vaults, categories…" Icon="{ui:SymbolIcon Search24}"
+                            KeyDown="OnSearchKeyDown" />
+                <ui:Button x:Name="SearchButton" Grid.Column="2" Appearance="Secondary" Content="Search" Margin="8,0,0,0" Click="OnSearch" />
+            </Grid>
+
+            <Border Style="{StaticResource Surface}" Padding="4" Margin="0,0,0,8">
+                <Grid MinHeight="120">
+                    <ListBox x:Name="Results" MaxHeight="260" SelectionMode="Extended" SelectionChanged="OnItemSelected" BorderThickness="0" Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="4,2">
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <StackPanel x:Name="Busy" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+                        <ui:ProgressRing IsIndeterminate="True" Width="28" Height="28" />
+                        <TextBlock Text="Waiting for 1Password… approve it if it asks." FontSize="12" Margin="0,8,0,0"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <TextBlock x:Name="Status" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,12" MinHeight="16"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+
+            <StackPanel x:Name="Details" Visibility="Collapsed">
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel x:Name="NamePanel">
+                        <TextBlock Text="Name in Keylo" Style="{StaticResource FieldLabel}" />
+                        <ui:TextBox x:Name="NameBox" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="Category" Style="{StaticResource FieldLabel}" />
+                        <ComboBox x:Name="CategoryBox" IsEditable="True" />
+                        <TextBlock x:Name="CategoryHint" Text="Leave blank to use each item's vault (1Password · Vault)." FontSize="11" Margin="0,4,0,0"
+                                   Visibility="Collapsed" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                    </StackPanel>
+                </Grid>
+                <StackPanel x:Name="FieldPanel">
+                    <TextBlock Text="Use" Style="{StaticResource FieldLabel}" />
+                    <ComboBox x:Name="FieldBox" DisplayMemberPath="Label" HorizontalAlignment="Left" MinWidth="260" />
+                </StackPanel>
+                <TextBlock x:Name="FieldsText" TextWrapping="Wrap" FontSize="12" Margin="0,6,0,0" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                <ui:Button x:Name="CancelButton" Appearance="Secondary" Content="Cancel" IsCancel="True" Click="OnCancel" Margin="0,0,8,0" Padding="18,8" />
+                <ui:Button x:Name="LinkButton" Appearance="Primary" Icon="{ui:SymbolIcon Link24}" Content="Link" IsEnabled="False" Click="OnLink" Padding="18,8" />
+            </StackPanel>
+        </StackPanel>
+    </StackPanel>
+</ui:FluentWindow>

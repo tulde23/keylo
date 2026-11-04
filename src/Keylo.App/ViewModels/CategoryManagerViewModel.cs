@@ -113,6 +113,7 @@ public sealed partial class CategoryManagerViewModel : ObservableObject
                     return;
 
                 var moved = _keylo.Categories.Rename(row.OriginalName, row.Name);
+                _keylo.UpdateKeysForCategory(row.OriginalName, row.Name, merged: merging);
                 _keylo.Categories.SetStyle(row.Name, row.Icon, row.Color);
                 _notify.Success(merging ? $"Merged into '{row.Name.Trim()}' ({moved} moved)." : $"Renamed to '{row.Name.Trim()}'.");
             }
@@ -162,6 +163,7 @@ public sealed partial class CategoryManagerViewModel : ObservableObject
             await _keylo.EnsureBrowseAsync();
             var moveTo = row.DeleteTarget is CategoryRowViewModel.Uncategorized or CategoryRowViewModel.DeleteSecrets ? null : row.DeleteTarget;
             var affected = _keylo.Categories.Delete(row.OriginalName, moveTo, deleteSecrets);
+            _keylo.UpdateKeysForCategory(row.OriginalName, null);
 
             _notify.Success(row.Count == 0 ? $"Deleted '{row.OriginalName}'."
                 : deleteSecrets ? $"Deleted '{row.OriginalName}' and {affected} secrets."

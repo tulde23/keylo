@@ -35,7 +35,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty] private string _bulkCategory = "";
     [ObservableProperty] private string _sessionText = "";
-    [ObservableProperty] private int _visibleCount;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(CountText))] private int _visibleCount;
+
+    public string CountText => VisibleCount == 1 ? "1 item" : $"{VisibleCount} items";
 
     public MainViewModel(KeyloService keylo, IUserNotifier notify)
     {
@@ -44,17 +46,42 @@ public sealed partial class MainViewModel : ObservableObject
         Settings = new SettingsViewModel(keylo, notify, () => Reload());
         CategoryManager = new CategoryManagerViewModel(keylo, notify, () => Reload(SelectedSecret?.Name));
         SecretsView = CollectionViewSource.GetDefaultView(Secrets);
-        SecretsView.Filter = o => o is SecretItemViewModel s &&
-                                  (SelectedCategory?.Key is not { } key ||
-                                   (key.Length == 0 ? s.Category is null : string.Equals(s.Category, key, StringComparison.OrdinalIgnoreCase))) &&
-                                  SecretSearch.Matches(s.Info, SearchText);
+        SecretsView.Filter = o => o is SecretItemViewModel s && Shows(s);
 
         _keylo.Locked += (_, _) => ApplyLock("Locked.");
         _sessionTimer.Tick += (_, _) => CheckSession();
         _sessionTimer.Start();
     }
 
+    /// <summary>The sidebar's Home entry: pinned and recently used secrets instead of everything.</summary>
+    public const string HomeKey = "\u0001home";
+
     public ObservableCollection<SecretItemViewModel> Secrets { get; } = [];
+
+    public bool IsHome => SelectedCategory?.Key == HomeKey;
+
+    /// <summary>Home without a search shows pins and recent uses; a search covers every secret.</summary>
+    private bool ShowingHomeList => IsHome && string.IsNullOrWhiteSpace(SearchText);
+
+    public string ListTitle => IsHome ? (ShowingHomeList ? "Home" : "Search results") : SelectedCategory?.Label ?? "";
+
+    public string EmptyTitle => ShowingHomeList ? "Nothing pinned or used yet" : "Nothing here";
+
+    public string EmptyText => ShowingHomeList
+        ? "Pin secrets you use often, and anything you or an agent uses shows up here. Search finds everything."
+        : "Add a secret, or drop files on the window to import them.";
+
+    private bool Shows(SecretItemViewModel s)
+    {
+        if (ShowingHomeList) return s.HomeGroup is not null;
+        if (!SecretSearch.Matches(s.Info, SearchText)) return false;
+        return SelectedCategory?.Key switch
+        {
+            null or HomeKey => true,
+            "" => s.Category is null,
+            var key => string.Equals(s.Category, key, StringComparison.OrdinalIgnoreCase),
+        };
+    }
     public ICollectionView SecretsView { get; }
     public ObservableCollection<CategoryItem> Categories { get; } = [];
     public ObservableCollection<string> CategoryNames { get; } = [];
@@ -144,13 +171,15 @@ public sealed partial class MainViewModel : ObservableObject
     {
         var all = _keylo.Store.List();
         var categories = _keylo.Categories.All(all);
-        var categoryKey = SelectedCategory?.Key;
+        var categoryKey = SelectedCategory is null ? HomeKey : SelectedCategory.Key;
 
         _suppressSelection = true;
         Secrets.Clear();
         foreach (var info in all) Secrets.Add(new SecretItemViewModel(info, _keylo.Categories.StyleOf(info.Category), _keylo.TypeOf(info.Type)));
+        var homeCount = MarkHomeItems();
 
         Categories.Clear();
+        Categories.Add(new CategoryItem(HomeKey, "Home", homeCount, SymbolRegular.Home24));
         Categories.Add(new CategoryItem(null, "All secrets", all.Count, SymbolRegular.Key24));
         foreach (var category in categories)
         {
@@ -177,11 +206,43 @@ public sealed partial class MainViewModel : ObservableObject
         {
             // Saved into a category that's filtered out: switch to All so the result is visible.
             SearchText = "";
-            SelectedCategory = Categories[0];
+            SelectedCategory = Categories.First(c => c.Key is null);
         }
         SelectedSecret = target;
         if (target is null) ShowDetail(null, creating: false);
         CategoryManager.Refresh();
+    }
+
+    /// <summary>Flags pinned and recently used secrets for Home. Returns how many Home shows.</summary>
+    private int MarkHomeItems()
+    {
+        var byName = Secrets.ToDictionary(s => s.Name, StringComparer.OrdinalIgnoreCase);
+        var pins = _keylo.Activity.Pins().Where(byName.ContainsKey).ToList();
+        foreach (var (name, i) in pins.Select((n, i) => (n, i)))
+        {
+            var item = byName[name];
+            (item.IsPinned, item.HomeGroup, item.HomeRank) = (true, SecretItemViewModel.PinnedGroup, i);
+        }
+
+        var recent = _keylo.Activity.Recent(12).Where(r => byName.TryGetValue(r.Name, out var s) && !s.IsPinned).Take(8).ToList();
+        foreach (var (use, i) in recent.Select((u, i) => (u, i)))
+        {
+            var item = byName[use.Name];
+            (item.HomeGroup, item.HomeRank, item.RecentText) = (SecretItemViewModel.RecentGroup, 1000 + i, Describe(use));
+        }
+        return pins.Count + recent.Count;
+    }
+
+    private static string Describe(RecentUse use)
+    {
+        var verb = use.Action switch { "run" => "ran it", "get" => "read it", var a => a };
+        var age = DateTimeOffset.Now - use.Time;
+        var when = age.TotalMinutes < 1 ? "just now"
+            : age.TotalHours < 1 ? $"{(int)age.TotalMinutes} min ago"
+            : age.TotalDays < 1 ? $"{(int)age.TotalHours} h ago"
+            : age.TotalDays < 7 ? use.Time.LocalDateTime.ToString("ddd")
+            : use.Time.LocalDateTime.ToString("MMM d");
+        return $"{use.Who} {verb} · {when}";
     }
 
     private Task ReloadAsync(string? select)
@@ -224,15 +285,32 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void RefreshView()
     {
-        SecretsView.Refresh();
+        // Home groups pins and recent uses (in that order); everywhere else is a plain A-Z list.
+        using (SecretsView.DeferRefresh())
+        {
+            SecretsView.GroupDescriptions.Clear();
+            SecretsView.SortDescriptions.Clear();
+            if (ShowingHomeList)
+            {
+                SecretsView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(SecretItemViewModel.HomeGroup)));
+                SecretsView.SortDescriptions.Add(new SortDescription(nameof(SecretItemViewModel.HomeRank), ListSortDirection.Ascending));
+            }
+        }
+        foreach (var item in Secrets)
+            item.DisplaySubtitle = ShowingHomeList && item.RecentText is not null ? item.RecentText : item.Subtitle;
+
         VisibleCount = SecretsView.Cast<object>().Count();
+        OnPropertyChanged(nameof(IsHome));
+        OnPropertyChanged(nameof(ListTitle));
+        OnPropertyChanged(nameof(EmptyTitle));
+        OnPropertyChanged(nameof(EmptyText));
     }
 
     private void ShowDetail(SecretInfo? info, bool creating)
     {
         Detail?.Clear();
         Detail = info is null && !creating ? null : new SecretDetailViewModel(_keylo, _notify, ReloadAsync, info);
-        if (creating && SelectedCategory?.Key is { Length: > 0 } category) Detail!.Category = category;
+        if (creating && SelectedCategory?.Key is { Length: > 0 } category && category != HomeKey) Detail!.Category = category;
     }
 
     private void CloseOverlays()
@@ -288,6 +366,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             await _keylo.EnsureBrowseAsync();
             var deleted = names.Count(_keylo.Store.Delete);
+            _keylo.Activity.Removed(names);
             _notify.Success($"Deleted {deleted} secret{(deleted == 1 ? "" : "s")}.");
             Reload();
         }
@@ -325,6 +404,37 @@ public sealed partial class MainViewModel : ObservableObject
     {
         SelectedSecret = null;
         SelectedSecrets = [];
+    }
+
+    // ---------------------------------------------------------------- pins
+
+    /// <summary>From a row's pin button or right-click menu.</summary>
+    [RelayCommand]
+    private void TogglePin(SecretItemViewModel? item)
+    {
+        if (item is null) return;
+        _keylo.Activity.SetPinned(item.Name, !item.IsPinned);
+        _notify.Success(item.IsPinned ? $"Unpinned '{item.Name}'." : $"Pinned '{item.Name}' to Home.");
+        Reload(SelectedSecret?.Name);
+    }
+
+    // ---------------------------------------------------------------- link
+
+    [RelayCommand]
+    private void LinkFromVault()
+    {
+        if (_keylo.Providers.Linked.Count == 0)
+        {
+            _notify.Error("No vault to link to. 1Password is built in; others come as plugins.");
+            return;
+        }
+        if (_notify.LinkSecret() is { } result)
+        {
+            // "name" for one link, "first|count" for several.
+            var parts = result.Split('|');
+            _notify.Success(parts.Length == 2 ? $"Linked {parts[1]} secrets." : $"Linked '{parts[0]}'.");
+            Reload(parts[0]);
+        }
     }
 
     // ---------------------------------------------------------------- import

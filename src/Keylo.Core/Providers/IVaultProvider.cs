@@ -26,6 +26,12 @@ public interface IVaultProvider
     /// <summary>Settings this provider reads from config ("providers.{id}"), with a description of each.</summary>
     IReadOnlyDictionary<string, string> SettingDescriptions { get; }
 
+    /// <summary>
+    /// Whether the required settings are filled in (cheap, no I/O). Push is offered only when true;
+    /// <see cref="GetStatusAsync"/> then checks the provider is actually reachable.
+    /// </summary>
+    bool IsConfigured(IReadOnlyDictionary<string, string> settings) => true;
+
     Task<ProviderStatus> GetStatusAsync(IReadOnlyDictionary<string, string> settings, CancellationToken cancellationToken = default);
 
     /// <summary>Creates the secret in the external vault, or updates the item Keylo pushed before.</summary>

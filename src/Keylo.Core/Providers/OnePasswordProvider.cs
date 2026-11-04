@@ -6,11 +6,17 @@ using System.Text.Json.Nodes;
 namespace Keylo.Core.Providers;
 
 /// <summary>
-/// Pushes secrets to 1Password through the 1Password CLI ("op"). Items are created from a JSON
+/// 1Password through its CLI ("op"), which signs in through the 1Password app (Settings →
+/// Developer → Integrate with 1Password CLI).
+///
+/// Linking: Keylo secrets can point at 1Password items in any signed-in account; values are read
+/// with "op item get --reveal" each time they're used and never stored.
+///
+/// Pushing: copies Keylo secrets into a vault. Items are created from a JSON
 /// template piped on stdin, so values never appear on a command line. A secret with a username
 /// becomes a Login item, otherwise a Password item; it is tagged "keylo" plus its category.
 /// </summary>
-public sealed class OnePasswordProvider : IVaultProvider
+public sealed class OnePasswordProvider : IVaultProvider, ILinkedVaultProvider
 {
     public string Id => "1password";
 
@@ -21,6 +27,123 @@ public sealed class OnePasswordProvider : IVaultProvider
         ["vault"] = "Vault to push into (required), e.g. Private",
         ["account"] = "Account shorthand or sign-in address, when signed in to more than one (optional)",
     };
+
+    /// <summary>Pushing needs a target vault.</summary>
+    public bool IsConfigured(IReadOnlyDictionary<string, string> settings) =>
+        settings.TryGetValue("vault", out var vault) && !string.IsNullOrWhiteSpace(vault);
+
+    // Linking needs nothing configured: links name their own account, vault and item.
+    bool ILinkedVaultProvider.IsConfigured(IReadOnlyDictionary<string, string> settings) => true;
+
+    // ------------------------------------------------------------------ linking
+
+    public async Task<IReadOnlyList<LinkedItemSummary>> SearchAsync(string? query, IReadOnlyDictionary<string, string> settings, CancellationToken cancellationToken = default)
+    {
+        var accounts = settings.TryGetValue("account", out var configured) && !string.IsNullOrWhiteSpace(configured)
+            ? [configured.Trim()]
+            : await AccountsAsync(cancellationToken);
+
+        var results = new List<LinkedItemSummary>();
+        foreach (var account in accounts)
+        {
+            var output = await RunOrThrowAsync(["item", "list", "--account", account, "--format", "json"], cancellationToken);
+            foreach (var item in JsonNode.Parse(output)?.AsArray() ?? [])
+            {
+                var summary = new LinkedItemSummary(
+                    item?["id"]?.GetValue<string>() ?? "",
+                    item?["title"]?.GetValue<string>() ?? "(untitled)",
+                    item?["vault"]?["id"]?.GetValue<string>(),
+                    item?["vault"]?["name"]?.GetValue<string>(),
+                    account,
+                    item?["category"]?.GetValue<string>());
+                if (summary.ItemId.Length > 0 && Matches(summary, query)) results.Add(summary);
+            }
+        }
+        return results.OrderBy(r => r.Title, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    public async Task<IReadOnlyList<LinkedField>> DescribeAsync(LinkTarget target, IReadOnlyDictionary<string, string> settings, CancellationToken cancellationToken = default) =>
+        Fields(await GetItemAsync(target, reveal: false, cancellationToken)).Select(f => f.Field).ToList();
+
+    public async Task<IReadOnlyDictionary<string, string>> ResolveAsync(LinkTarget target, IReadOnlyDictionary<string, string> settings, CancellationToken cancellationToken = default) =>
+        Fields(await GetItemAsync(target, reveal: true, cancellationToken))
+            .Where(f => f.Value is { Length: > 0 })
+            .ToDictionary(f => f.Field.Id, f => f.Value!, StringComparer.OrdinalIgnoreCase);
+
+    private static bool Matches(LinkedItemSummary item, string? query) =>
+        string.IsNullOrWhiteSpace(query) ||
+        query.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(term =>
+            item.Title.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+            (item.VaultName?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (item.Category?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+
+    private static async Task<IReadOnlyList<string>> AccountsAsync(CancellationToken cancellationToken)
+    {
+        var output = await RunOrThrowAsync(["account", "list", "--format", "json"], cancellationToken);
+        var accounts = (JsonNode.Parse(output)?.AsArray() ?? []).Select(a => a?["url"]?.GetValue<string>()).OfType<string>().ToList();
+        return accounts.Count > 0 ? accounts : throw new KeyloException("1Password CLI isn't signed in to any account. Open 1Password → Settings → Developer → Integrate with 1Password CLI.");
+    }
+
+    private static async Task<JsonNode> GetItemAsync(LinkTarget target, bool reveal, CancellationToken cancellationToken)
+    {
+        var args = new List<string> { "item", "get", target.ItemId, "--format", "json" };
+        if (target.VaultId is { Length: > 0 } vault) args.AddRange(["--vault", vault]);
+        if (target.Location is { Length: > 0 } account) args.AddRange(["--account", account]);
+        if (reveal) args.Add("--reveal");
+        return JsonNode.Parse(await RunOrThrowAsync([.. args], cancellationToken)) ?? throw new KeyloException("1Password returned nothing for the linked item.");
+    }
+
+    /// <summary>
+    /// An item's fields with stable ids: username/password/notes by purpose, others from their
+    /// labels (de-duplicated in order), plus the primary website.
+    /// </summary>
+    private static List<(LinkedField Field, string? Value)> Fields(JsonNode item)
+    {
+        var fields = new List<(LinkedField, string?)>();
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        string Unique(string id)
+        {
+            if (id.Length == 0) id = "field";
+            var candidate = id;
+            for (var n = 2; !used.Add(candidate); n++) candidate = $"{id}_{n}";
+            return candidate;
+        }
+
+        foreach (var field in item["fields"]?.AsArray() ?? [])
+        {
+            var purpose = field?["purpose"]?.GetValue<string>();
+            var type = field?["type"]?.GetValue<string>();
+            var label = field?["label"]?.GetValue<string>() ?? "";
+            var value = field?["value"]?.GetValue<string>();
+
+            var (id, display, secret) = purpose switch
+            {
+                "USERNAME" => ("username", "Username", false),
+                "PASSWORD" => ("password", "Password", true),
+                "NOTES" => ("notes", "Notes", true),
+                // Plain text fields often hold keys and tokens, so only clearly non-secret kinds stay visible.
+                _ => (FieldDefinition.IdFor(label), label, type is not ("URL" or "EMAIL" or "PHONE" or "DATE" or "MONTH_YEAR" or "MENU")),
+            };
+            if (display.Length == 0) continue;
+            fields.Add((new LinkedField(Unique(id), display, secret), value));
+        }
+
+        var urls = item["urls"]?.AsArray();
+        var url = urls?.FirstOrDefault(u => u?["primary"]?.GetValue<bool>() == true) ?? urls?.FirstOrDefault();
+        if (url?["href"]?.GetValue<string>() is { Length: > 0 } href)
+            fields.Add((new LinkedField(Unique("website"), "Website", false), href));
+        return fields;
+    }
+
+    private static async Task<string> RunOrThrowAsync(string[] args, CancellationToken cancellationToken)
+    {
+        var (code, output, error) = await RunOpAsync(args, null, cancellationToken);
+        if (code is null) throw new KeyloException("1Password CLI (op) isn't installed. Install it with: winget install AgileBits.1Password.CLI");
+        if (code != 0) throw new KeyloException($"1Password: {FirstLine(error) ?? $"op exited with {code}."}");
+        return output;
+    }
+
 
     public async Task<ProviderStatus> GetStatusAsync(IReadOnlyDictionary<string, string> settings, CancellationToken cancellationToken = default)
     {

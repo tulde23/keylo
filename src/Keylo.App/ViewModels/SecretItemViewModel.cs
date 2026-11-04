@@ -1,12 +1,30 @@
 using System.Windows.Media;
+using CommunityToolkit.Mvvm.ComponentModel;
 using Keylo.Core;
 using Wpf.Ui.Controls;
 
 namespace Keylo.App.ViewModels;
 
 /// <summary>A row in the secret list.</summary>
-public sealed class SecretItemViewModel(SecretInfo info, CategoryStyle? categoryStyle = null, SecretTypeDefinition? type = null)
+public sealed partial class SecretItemViewModel(SecretInfo info, CategoryStyle? categoryStyle = null, SecretTypeDefinition? type = null) : ObservableObject
 {
+    public const string PinnedGroup = "PINNED";
+    public const string RecentGroup = "RECENTLY USED";
+
+    public bool IsPinned { get; set; }
+
+    /// <summary>Pinned or Recently used on Home; null when it's neither.</summary>
+    public string? HomeGroup { get; set; }
+
+    /// <summary>Order on Home: pins in pin order, then recent uses newest first.</summary>
+    public int HomeRank { get; set; }
+
+    /// <summary>"Claude Code ran it · 2 min ago", for the Home list.</summary>
+    public string? RecentText { get; set; }
+
+    /// <summary>What the second line shows: the recent use on Home, the usual details elsewhere.</summary>
+    [ObservableProperty] private string? _displaySubtitle;
+
     private static readonly Color[] Palette = IconCatalog.Colors.Select(c => IconCatalog.ToColor(c)!.Value).ToArray();
 
     public SecretInfo Info { get; } = info;

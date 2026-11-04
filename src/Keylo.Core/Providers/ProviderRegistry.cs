@@ -5,10 +5,14 @@ namespace Keylo.Core.Providers;
 
 public sealed record ProviderLoadError(string Path, string Message);
 
-/// <summary>Built-in providers plus any found in the plugins folder.</summary>
+/// <summary>
+/// Built-in providers plus any found in the plugins folder: push providers (<see cref="IVaultProvider"/>)
+/// and linked vaults (<see cref="ILinkedVaultProvider"/>). One class may be both.
+/// </summary>
 public sealed class ProviderRegistry
 {
     private readonly Dictionary<string, IVaultProvider> _providers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, ILinkedVaultProvider> _linked = new(StringComparer.OrdinalIgnoreCase);
 
     public IReadOnlyList<ProviderLoadError> LoadErrors { get; }
 
@@ -27,14 +31,15 @@ public sealed class ProviderRegistry
                     var assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(dll);
                     foreach (var type in assembly.GetExportedTypes()
                                  .Where(t => t is { IsClass: true, IsAbstract: false } &&
-                                             typeof(IVaultProvider).IsAssignableFrom(t) &&
+                                             (typeof(IVaultProvider).IsAssignableFrom(t) || typeof(ILinkedVaultProvider).IsAssignableFrom(t)) &&
                                              t.GetConstructor(Type.EmptyTypes) is not null))
                     {
-                        var provider = (IVaultProvider)Activator.CreateInstance(type)!;
-                        if (_providers.ContainsKey(provider.Id))
-                            errors.Add(new ProviderLoadError(dll, $"Provider id '{provider.Id}' is already registered."));
+                        var instance = Activator.CreateInstance(type)!;
+                        var id = (instance as IVaultProvider)?.Id ?? ((ILinkedVaultProvider)instance).Id;
+                        if (_providers.ContainsKey(id) || _linked.ContainsKey(id))
+                            errors.Add(new ProviderLoadError(dll, $"Provider id '{id}' is already registered."));
                         else
-                            Add(provider);
+                            Add(instance);
                     }
                 }
                 catch (Exception ex) when (ex is BadImageFormatException or FileLoadException or ReflectionTypeLoadException
@@ -52,5 +57,17 @@ public sealed class ProviderRegistry
 
     public IVaultProvider? Find(string id) => _providers.GetValueOrDefault(id);
 
-    private void Add(IVaultProvider provider) => _providers[provider.Id] = provider;
+    /// <summary>Vaults secrets can be linked to.</summary>
+    public IReadOnlyList<ILinkedVaultProvider> Linked => _linked.Values.OrderBy(p => p.DisplayName).ToList();
+
+    public ILinkedVaultProvider? FindLinked(string id) => _linked.GetValueOrDefault(id);
+
+    /// <summary>Adds a provider object (push, linked, or both) — for hosts that bring their own, and tests.</summary>
+    public void Register(object provider) => Add(provider);
+
+    private void Add(object provider)
+    {
+        if (provider is IVaultProvider push) _providers[push.Id] = push;
+        if (provider is ILinkedVaultProvider linked) _linked[linked.Id] = linked;
+    }
 }

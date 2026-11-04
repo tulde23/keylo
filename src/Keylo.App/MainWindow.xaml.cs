@@ -36,6 +36,12 @@ public partial class MainWindow : FluentWindow, IUserNotifier
         ListColumn.Width = new GridLength(Math.Clamp(_uiState.ListWidth, ListColumn.MinWidth, ListColumn.MaxWidth));
 
         SourceInitialized += (_, _) => _keylo.WindowHandle = new WindowInteropHelper(this).Handle;
+
+        // Using the app keeps it unlocked: the session slides with keyboard and mouse activity.
+        PreviewKeyDown += (_, _) => _keylo.NoteActivity();
+        PreviewMouseDown += (_, _) => _keylo.NoteActivity();
+        PreviewMouseWheel += (_, _) => _keylo.NoteActivity();
+        PreviewMouseMove += (_, _) => { if (IsActive) _keylo.NoteActivity(); };
         // Ask for Windows Hello only once this window is drawn and in front. Prompting from Loaded
         // let the window appear on top of the Hello dialog, leaving the lock screen spinning.
         ContentRendered += async (_, _) =>
@@ -53,9 +59,65 @@ public partial class MainWindow : FluentWindow, IUserNotifier
     private static void ApplyBrandAccent(ApplicationTheme theme) =>
         ApplicationAccentColorManager.Apply(System.Windows.Media.Color.FromRgb(0x6D, 0x6A, 0xF6), theme);
 
+    // ---------------------------------------------------------------- action tiles
+
+    private readonly Dictionary<System.Windows.Controls.Button, (string Label, double Width)> _tileLabels = [];
+
+    /// <summary>
+    /// Labelled tiles when there's room above the detail area; icon-only tiles (named in their
+    /// tooltips) when the window or the dividers leave too little, so they never overlap.
+    /// </summary>
+    private void OnActionTilesResized(object sender, SizeChangedEventArgs e)
+    {
+        var tiles = ActionTiles.Children.OfType<System.Windows.Controls.Button>().ToList();
+        foreach (var tile in tiles)
+            if (!_tileLabels.ContainsKey(tile)) _tileLabels[tile] = ((string)tile.Tag, tile.Width);
+
+        var needed = tiles.Sum(t => _tileLabels[t].Width + t.Margin.Left + t.Margin.Right);
+        var compact = e.NewSize.Width < needed;
+        foreach (var tile in tiles)
+        {
+            var (label, width) = _tileLabels[tile];
+            tile.Tag = compact ? "" : label;
+            tile.Width = compact ? 46 : width;
+            tile.Height = compact ? 46 : 58;
+        }
+    }
+
+    // ---------------------------------------------------------------- chromeless window
+
+    /// <summary>Empty parts of the top bar and the lock screen move the window; a double-click maximizes.</summary>
+    private void OnDragArea(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount == 2)
+        {
+            ToggleMaximized();
+            return;
+        }
+        if (e.ButtonState == MouseButtonState.Pressed) DragMove();
+    }
+
+    private void OnMinimize(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void OnMaximize(object sender, RoutedEventArgs e) => ToggleMaximized();
+
+    private void OnClose(object sender, RoutedEventArgs e) => Close();
+
+    private void ToggleMaximized() =>
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+
+    protected override void OnStateChanged(EventArgs e)
+    {
+        base.OnStateChanged(e);
+        var maximized = WindowState == WindowState.Maximized;
+        MaximizeButton.Content = maximized ? "\uE923" : "\uE922";
+        MaximizeButton.ToolTip = maximized ? "Restore" : "Maximize";
+        System.Windows.Automation.AutomationProperties.SetName(MaximizeButton, maximized ? "Restore" : "Maximize");
+    }
+
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control && !_viewModel.IsLocked)
+        if (e.Key is Key.F or Key.K && Keyboard.Modifiers == ModifierKeys.Control && !_viewModel.IsLocked)
         {
             _viewModel.IsSettingsOpen = false;
             SearchBox.Focus();
@@ -117,6 +179,13 @@ public partial class MainWindow : FluentWindow, IUserNotifier
     {
         var dialog = new Views.PasswordDialog(heading, message, okText, isNew, error) { Owner = this };
         return dialog.ShowDialog() == true ? dialog.Password : null;
+    }
+
+    public string? LinkSecret()
+    {
+        var dialog = new Views.LinkDialog(_keylo) { Owner = this };
+        dialog.ShowDialog();
+        return dialog.CreatedName is null ? null : dialog.LinkedCount > 1 ? $"{dialog.CreatedName}|{dialog.LinkedCount}" : dialog.CreatedName;
     }
 
     public Task ShowAccessKeyAsync(string name, string token)

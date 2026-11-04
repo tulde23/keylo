@@ -11,9 +11,13 @@ using Microsoft.Win32;
 
 namespace Keylo.App.ViewModels;
 
-public sealed record ProviderItem(string Id, string DisplayName)
+public sealed record ProviderItem(string Id, string DisplayName, bool IsConfigured)
 {
     public string PushLabel => $"Push to {DisplayName}";
+
+    public string ToolTip => IsConfigured
+        ? $"Copy this secret into {DisplayName}"
+        : $"Set up {DisplayName} first: Settings → Vault providers";
 }
 
 /// <summary>The right-hand panel: viewing, editing or creating one secret.</summary>
@@ -28,6 +32,7 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     private byte[]? _binaryValue;
     private bool _valuesLoaded;
     private bool _loading;
+    private LinkedSecrets.Link? _link;
 
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsViewing), nameof(Title))]
     private bool _isEditing;
@@ -62,7 +67,8 @@ public sealed partial class SecretDetailViewModel : ObservableObject
         _hideTimer.Tick += (_, _) => HideValue();
 
         Categories = new ObservableCollection<string>(keylo.Store.Categories());
-        Providers = new ObservableCollection<ProviderItem>(keylo.Providers.All.Select(p => new ProviderItem(p.Id, p.DisplayName)));
+        Providers = new ObservableCollection<ProviderItem>(keylo.Providers.All.Select(p => new ProviderItem(p.Id, p.DisplayName,
+            p.IsConfigured(keylo.Config.Providers.GetValueOrDefault(p.Id) ?? new Dictionary<string, string>()))));
         TypeChoices = new ObservableCollection<TypeChoice>([new TypeChoice(null), .. keylo.Types.Select(t => new TypeChoice(t))]);
 
         if (info is null)
@@ -81,6 +87,24 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     }
 
     public bool IsNew { get; }
+
+    /// <summary>Pinned secrets lead the Home list.</summary>
+    public bool IsPinned => _info is not null && _keylo.Activity.IsPinned(_info.Name);
+
+    [RelayCommand]
+    private async Task TogglePin()
+    {
+        if (_info is null) return;
+        var pin = !IsPinned;
+        _keylo.Activity.SetPinned(_info.Name, pin);
+        _notify.Success(pin ? $"Pinned '{_info.Name}' to Home." : $"Unpinned '{_info.Name}'.");
+        await _reload(_info.Name);
+    }
+
+    private void Used(string action)
+    {
+        if (_info is not null) _keylo.Activity.RecordUse(_info.Name, action);
+    }
     public bool IsViewing => !IsEditing;
     public string Title => IsNew ? "New secret" : Name;
     public ObservableCollection<string> Categories { get; }
@@ -91,6 +115,16 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     public ObservableCollection<FieldViewModel> Fields { get; } = [];
 
     public SecretTypeDefinition? Type => SelectedType?.Definition;
+
+    /// <summary>A link to an item in another vault: values are read live; only name, category, notes and icon are edited here.</summary>
+    public bool IsLinked => _link is not null;
+    public bool IsNotLinked => !IsLinked;
+    public bool ShowFieldEditors => IsTyped && !IsLinked;
+
+    public string LinkDescription => _link is null ? "" :
+        $"Linked to “{_link.Title}” in {_keylo.Providers.FindLinked(_link.Target.Provider)?.DisplayName ?? _link.Target.Provider}" +
+        (_link.Where is { Length: > 0 } where ? $" · {where}" : "") +
+        (_link.OnlyField is { } only ? $" · only its {_link.Fields.FirstOrDefault(f => f.Id == only)?.Label ?? only}" : "");
     public bool IsTyped => Type is not null;
     public bool IsPlain => !IsTyped;
     public string? TypeName => Type?.Name;
@@ -175,9 +209,17 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     private void Load(SecretInfo info)
     {
         _info = info;
+        _link = LinkedSecrets.Read(info);
         _loading = true;
-        SelectedType = TypeChoices.FirstOrDefault(t => t.Id is not null && t.Id.Equals(info.Type, StringComparison.OrdinalIgnoreCase)) ?? TypeChoices[0];
+        SelectedType = _link is { } link
+            ? new TypeChoice(LinkedSecrets.AsType(link, _keylo.Providers.FindLinked(link.Target.Provider)?.DisplayName ?? link.Target.Provider))
+            : TypeChoices.FirstOrDefault(t => t.Id is not null && t.Id.Equals(info.Type, StringComparison.OrdinalIgnoreCase)) ?? TypeChoices[0];
         _loading = false;
+        if (_link is not null) Providers.Clear(); // Pushing a link elsewhere makes no sense.
+        OnPropertyChanged(nameof(IsLinked));
+        OnPropertyChanged(nameof(IsNotLinked));
+        OnPropertyChanged(nameof(ShowFieldEditors));
+        OnPropertyChanged(nameof(LinkDescription));
 
         Name = info.Name;
         Category = info.Category ?? "";
@@ -230,6 +272,14 @@ public sealed partial class SecretDetailViewModel : ObservableObject
         try
         {
             await _keylo.EnsureValueAccessAsync($"{why} '{_info.Name}'");
+            if (_link is not null)
+            {
+                var values = await _keylo.ResolveLinkedAsync(_info);
+                foreach (var field in Fields) field.Value = values.GetValueOrDefault(field.Id) ?? "";
+                _valuesLoaded = true;
+                return true;
+            }
+
             var bytes = _keylo.Store.Get(_info.Name).Value;
 
             if (Type is { } type && string.Equals(_info.Type, type.Id, StringComparison.OrdinalIgnoreCase))
@@ -269,6 +319,7 @@ public sealed partial class SecretDetailViewModel : ObservableObject
         }
 
         if (!await LoadValueAsync("show")) return;
+        Used("viewed");
         IsValueVisible = true;
         _hideTimer.Stop();
         _hideTimer.Start();
@@ -308,6 +359,7 @@ public sealed partial class SecretDetailViewModel : ObservableObject
         }
 
         _keylo.CopyToClipboard(Value);
+        Used("copied");
         if (!visible) Value = "";
         _notify.Success($"Copied. Clears from the clipboard in {_keylo.Config.ClipboardSeconds}s.");
     }
@@ -328,6 +380,7 @@ public sealed partial class SecretDetailViewModel : ObservableObject
         else
         {
             _keylo.CopyToClipboard(field.Value);
+            Used("copied");
             _notify.Success(field.IsSecret ? $"{field.Label} copied. Clears from the clipboard in {_keylo.Config.ClipboardSeconds}s." : $"{field.Label} copied.");
         }
 
@@ -339,48 +392,15 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     {
         if (string.IsNullOrEmpty(_info?.Username)) return;
         _keylo.CopyToClipboard(_info.Username);
+        Used("copied");
         _notify.Success("Key copied.");
-    }
-
-    /// <summary>
-    /// Copies the <c>keylo get</c> command that prints this secret (every field, or key and value),
-    /// for pasting into Claude Code or a script. It holds no secret, so it goes on the normal
-    /// clipboard and isn't cleared.
-    /// </summary>
-    [RelayCommand]
-    private void CopyGetCommand()
-    {
-        if (_info is null) return;
-        try
-        {
-            System.Windows.Clipboard.SetText(BuildGetCommand(_info));
-            _notify.Success("Command copied.");
-        }
-        catch (System.Runtime.InteropServices.COMException)
-        {
-            _notify.Error("The clipboard is busy. Try again.");
-        }
-    }
-
-    internal static string BuildGetCommand(SecretInfo info) =>
-        $"keylo get {Quote(info.Name)}{(string.IsNullOrEmpty(info.Username) && info.Type is null ? "" : " --both")}";
-
-    /// <summary>Double quotes, escaped for bash (Claude Code's shell); also fine in PowerShell for ordinary names.</summary>
-    private static string Quote(string text)
-    {
-        var escaped = new StringBuilder(text.Length + 2).Append('"');
-        foreach (var ch in text)
-        {
-            if (ch is '"' or '\\' or '$' or '`') escaped.Append('\\');
-            escaped.Append(ch);
-        }
-        return escaped.Append('"').ToString();
     }
 
     [RelayCommand]
     private async Task Edit()
     {
-        if (!await LoadValueAsync("edit", derive: false)) return;
+        // A link's values stay in its vault; editing it only changes name, category, notes and icon.
+        if (_link is null && !await LoadValueAsync("edit", derive: false)) return;
         IsValueVisible = !IsBinary;
         IsEditing = true;
         _hideTimer.Stop();
@@ -452,18 +472,25 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     private async Task Export()
     {
         if (_info is null) return;
-        var dialog = new SaveFileDialog { Title = "Export value", FileName = _info.Name + (IsTyped ? ".json" : "") };
+        var dialog = new SaveFileDialog { Title = "Export value", FileName = _info.Name + (IsTyped || IsLinked ? ".json" : "") };
         if (dialog.ShowDialog() != true) return;
 
         try
         {
             await _keylo.EnsureValueAccessAsync($"export '{_info.Name}'");
+            if (_link is not null)
+            {
+                await File.WriteAllBytesAsync(dialog.FileName, JsonSerializer.SerializeToUtf8Bytes(await _keylo.ResolveLinkedAsync(_info), new JsonSerializerOptions { WriteIndented = true }));
+                _notify.Success($"Exported to {dialog.FileName}. That file is not encrypted.");
+                return;
+            }
             var secret = _keylo.Store.Get(_info.Name);
             // Typed secrets export every field as JSON; plain ones their raw bytes.
             var bytes = Type is { } type && _info.Type is not null
                 ? JsonSerializer.SerializeToUtf8Bytes(TypedSecrets.ReadFields(type, _info, secret.Value, derive: false), new JsonSerializerOptions { WriteIndented = true })
                 : secret.Value;
             await File.WriteAllBytesAsync(dialog.FileName, bytes);
+            Used("exported");
             _notify.Success($"Exported to {dialog.FileName}. That file is not encrypted.");
         }
         catch (Exception ex) when (ex is KeyloException or IOException or UnauthorizedAccessException)
@@ -476,7 +503,11 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     private async Task Save()
     {
         SecretDraft draft;
-        if (Type is { } type)
+        if (_link is not null)
+        {
+            draft = LinkedSecrets.Draft(Name, _link, Category, Notes, Icon, Color);
+        }
+        else if (Type is { } type)
         {
             var values = Fields.ToDictionary(f => f.Id, f => (string?)f.Value, StringComparer.OrdinalIgnoreCase);
             if (type.Primary is { } primary && string.IsNullOrEmpty(values.GetValueOrDefault(primary.Id)))
@@ -510,6 +541,7 @@ public sealed partial class SecretDetailViewModel : ObservableObject
         {
             await _keylo.EnsureBrowseAsync();
             var saved = _keylo.Store.Save(draft, originalName: IsNew ? null : _info?.Name);
+            if (!IsNew && _info is not null) _keylo.Activity.Renamed(_info.Name, saved.Name);
 
             _notify.Success(IsNew ? $"Added '{saved.Name}'." : $"Saved '{saved.Name}'.");
             Value = "";
@@ -530,12 +562,18 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     private async Task Delete()
     {
         if (_info is null) return;
-        if (!await _notify.ConfirmAsync("Delete secret", $"Delete '{_info.Name}'? This can't be undone.", "Delete")) return;
+        var confirmed = _link is { } link
+            ? await _notify.ConfirmAsync("Remove link",
+                $"Remove '{_info.Name}' from Keylo? Only the link is removed — “{link.Title}” stays in {_keylo.Providers.FindLinked(link.Target.Provider)?.DisplayName ?? link.Target.Provider}.",
+                "Remove link")
+            : await _notify.ConfirmAsync("Delete secret", $"Delete '{_info.Name}'? This can't be undone.", "Delete");
+        if (!confirmed) return;
 
         try
         {
             await _keylo.EnsureBrowseAsync();
             _keylo.Store.Delete(_info.Name);
+            _keylo.Activity.Removed([_info.Name]);
             _notify.Success($"Deleted '{_info.Name}'.");
             await _reload(null);
         }

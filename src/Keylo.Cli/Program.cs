@@ -33,6 +33,9 @@ internal static class Program
         keylo run --env VAR=NAME [...] -- CMD [ARGS]
                                                 Run CMD with secrets as environment variables
                                                 (NAME:FIELD maps one field, e.g. prod-db:password or x:username)
+        keylo link NAME --item ITEM [--vault V] [--account A] [--field F] [--category C] [--provider 1password]
+                                                Link to an item in another vault (read live, never copied)
+        keylo link --search QUERY [--account A]   Find items to link
         keylo push PROVIDER [NAME...] [--category C] [--all]
                                                 Push secrets to another vault (e.g. 1password)
         keylo provider list | status ID | set ID KEY VALUE
@@ -45,8 +48,8 @@ internal static class Program
                                                 Create a key (shown once; --add-to-claude registers the MCP server instead)
         keylo keys revoke NAME                  Revoke a key
         keylo mcp                               Run the MCP server for AI agents (needs KEYLO_ACCESS_KEY)
-        keylo unlock | lock | status
-        keylo config [hello session|always|never | session-minutes N | clipboard-seconds N]
+        keylo unlock | lock | status | version
+        keylo config [hello session|always|never | session-minutes N | clipboard-seconds N | audit-days N|forever]
         """;
 
     private static readonly string[] Flags = ["clip", "yes", "overwrite", "delete-originals", "flat", "all", "json", "force", "dry-run", "password-stdin", "both", "allow-get", "add-to-claude", "help"];
@@ -71,6 +74,7 @@ internal static class Program
             var exit = command switch
             {
                 "ui" or "app" => LaunchApp(),
+                "version" or "--version" or "-v" => PrintVersion(),
                 "list" or "ls" or "search" => await ListAsync(context, args),
                 "categories" or "cats" => await CategoriesAsync(context, args),
                 "types" => Types(context, args),
@@ -81,6 +85,7 @@ internal static class Program
                 "import" => await ImportAsync(context, args),
                 "run" => await RunAsync(context, args),
                 "push" => await PushAsync(context, args),
+                "link" => await LinkAsync(context, args),
                 "provider" or "providers" => await ProviderAsync(context, args),
                 "keys" or "key" => await KeysAsync(context, args),
                 "mcp" => await Mcp.McpServer.RunAsync(),
@@ -112,6 +117,9 @@ internal static class Program
         public KeyloConfig Config { get; } = KeyloConfig.Load();
         public SecretStore Store { get; } = new();
         public SecretTypeCatalog Types { get; } = new();
+
+        public ProviderRegistry Registry => _registry ??= new ProviderRegistry();
+        private ProviderRegistry? _registry;
         public AccessGate Gate { get; }
 
         public Context() => Gate = new AccessGate(Config, new WindowsHelloVerifier());
@@ -152,6 +160,12 @@ internal static class Program
 
         /// <summary>Settings and pushes always need Windows Hello (or hello = never).</summary>
         public Task ValueAsync(string what) => Gate.EnsureAsync(IntPtr.Zero, $"Keylo: {what}", valueAccess: true);
+    }
+
+    private static int PrintVersion()
+    {
+        Console.WriteLine($"keylo {KeyloVersion.Of(typeof(Program).Assembly)}");
+        return 0;
     }
 
     private static int LaunchApp()
@@ -228,6 +242,30 @@ internal static class Program
             throw new UsageException("--both prints to the terminal; it can't be combined with --clip, --out or --field.");
 
         var info = c.Store.Find(name) ?? throw new SecretNotFoundException(name);
+        if (LinkedSecrets.IsLinked(info))
+        {
+            await c.AuthorizeAsync(SecretOperation.Get, [info], $"read '{name}'");
+            var link = LinkedSecrets.Read(info)!;
+            var values = await LinkedSecrets.ResolveAsync(info, c.Registry, c.Config);
+            if (both)
+            {
+                Console.WriteLine($"type: link ({link.Target.Provider}: {link.Title})");
+                foreach (var (id, text) in values) Console.WriteLine($"{id}: {text}");
+                return 0;
+            }
+
+            var linkedField = PickLinkedField(info, link, values, field);
+            if (outFile is not null)
+            {
+                File.WriteAllText(outFile, linkedField);
+                Terminal.Info($"Wrote it to {Path.GetFullPath(outFile)}");
+                return 0;
+            }
+            if (clip) return CopyWithTimeout(c, linkedField, "Value");
+            Console.WriteLine(linkedField);
+            return 0;
+        }
+
         var type = c.Types.Find(info.Type);
         if (field is "username" or "key")
         {
@@ -509,6 +547,9 @@ internal static class Program
     /// <summary>A secret's main value, or one field, as text.</summary>
     private static string FieldValue(Context c, SecretInfo info, string? field)
     {
+        if (LinkedSecrets.Read(info) is { } link)
+            return PickLinkedField(info, link, LinkedSecrets.ResolveAsync(info, c.Registry, c.Config).GetAwaiter().GetResult(), field);
+
         if (field?.ToLowerInvariant() is "username" or "key")
             return info.Username ?? throw new KeyloException($"'{info.Name}' has no username.");
 
@@ -525,6 +566,84 @@ internal static class Program
         return chosen is not null && TypedSecrets.ReadFields(type, info, secret.Value).TryGetValue(chosen.Id, out var value)
             ? value
             : throw new KeyloException($"'{info.Name}' has no {chosen?.Label ?? "value"}.");
+    }
+
+    /// <summary>One field of a resolved link: its main field by default; "key" means username.</summary>
+    private static string PickLinkedField(SecretInfo info, LinkedSecrets.Link link, Dictionary<string, string> values, string? field)
+    {
+        var id = field?.ToLowerInvariant() switch
+        {
+            null or "value" => link.MainField,
+            "key" => "username",
+            _ => field,
+        };
+        return id is not null && values.TryGetValue(id, out var value)
+            ? value
+            : throw new KeyloException($"'{info.Name}' has no {(field is null ? "value" : $"field '{field}'")} in {link.Title}. Fields: {string.Join(", ", values.Keys)}.");
+    }
+
+    /// <summary>
+    /// keylo link NAME --item ITEM: a secret that points at an item in another vault (1Password by
+    /// default); values are read from there on every use. keylo link --search QUERY finds items.
+    /// </summary>
+    private static async Task<int> LinkAsync(Context c, Args args)
+    {
+        var providerId = args.Option("provider") ?? "1password";
+        var search = args.Option("search");
+        var item = args.Option("item");
+        var account = args.Option("account");
+        var vaultFilter = args.Option("vault");
+        var only = args.Option("field");
+        var category = args.Option("category");
+        var notes = args.Option("notes");
+        args.ThrowOnUnknown(maxPositionals: 1);
+
+        var provider = c.Registry.FindLinked(providerId)
+                       ?? throw new UsageException($"No linked vault '{providerId}'. Available: {string.Join(", ", c.Registry.Linked.Select(p => p.Id))}.");
+        var settings = new Dictionary<string, string>(c.Config.Providers.GetValueOrDefault(provider.Id) ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
+        if (account is not null) settings["account"] = account;
+
+        if (search is not null)
+        {
+            var found = (await provider.SearchAsync(search, settings)).Where(i => vaultFilter is null || string.Equals(i.VaultName, vaultFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (found.Count == 0)
+            {
+                Terminal.Info("Nothing matches.");
+                return 1;
+            }
+            PrintTable(["TITLE", "VAULT", "ACCOUNT", "CATEGORY", "ID"], found.Select(i => new[] { i.Title, i.VaultName ?? "", i.Location ?? "", i.Category ?? "", i.ItemId }));
+            return 0;
+        }
+
+        var name = SecretStore.NormalizeName(args.Positional(0, "secret name"));
+        if (item is null) throw new UsageException("Usage: keylo link NAME --item ITEM [--vault V] [--account A] [--field F] [--category C]   (find items with --search QUERY)");
+        await c.BrowseAsync();
+        if (c.Store.Exists(name)) throw new SecretExistsException(name);
+
+        // ITEM is an id or a title; a title must match exactly one item.
+        var candidates = (await provider.SearchAsync(null, settings))
+            .Where(i => vaultFilter is null || string.Equals(i.VaultName, vaultFilter, StringComparison.OrdinalIgnoreCase))
+            .Where(i => i.ItemId == item || string.Equals(i.Title, item, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var chosen = candidates.Count switch
+        {
+            1 => candidates[0],
+            0 => throw new KeyloException($"No item '{item}' in {provider.DisplayName}. Try: keylo link --search \"{item}\""),
+            _ => throw new KeyloException($"'{item}' matches {candidates.Count} items ({string.Join("; ", candidates.Select(i => $"{i.VaultName} · {i.Location} · {i.ItemId}"))}). Use --vault, --account or the id."),
+        };
+
+        var target = new LinkTarget(provider.Id, chosen.ItemId, chosen.VaultId, chosen.Location);
+        var fields = await provider.DescribeAsync(target, settings);
+        if (only is not null && fields.All(f => !f.Id.Equals(only, StringComparison.OrdinalIgnoreCase)))
+            throw new UsageException($"{chosen.Title} has no field '{only}'. Fields: {string.Join(", ", fields.Select(f => f.Id))}.");
+
+        var where = string.Join(" · ", new[] { chosen.VaultName, chosen.Location }.Where(x => !string.IsNullOrEmpty(x)));
+        var link = new LinkedSecrets.Link(target, chosen.Title, where, fields, only?.ToLowerInvariant());
+        category ??= LinkedSecrets.DefaultCategory(provider.DisplayName, chosen,
+            severalLocations: (await provider.SearchAsync(null, settings)).Select(i => i.Location).Distinct().Count() > 1);
+        c.Store.Save(LinkedSecrets.Draft(name, link, category == "" ? null : category, notes, icon: null, color: null));
+        Terminal.Info($"Linked '{name}' to {chosen.Title} in {provider.DisplayName} ({where}), category '{category}'. Fields: {string.Join(", ", link.VisibleFields.Select(f => f.Id))}.");
+        return 0;
     }
 
     private static async Task<int> PushAsync(Context c, Args args)
@@ -817,6 +936,7 @@ internal static class Program
             Console.WriteLine($"hello             {c.Config.Hello.ToString().ToLowerInvariant()}");
             Console.WriteLine($"session-minutes   {c.Config.SessionMinutes}");
             Console.WriteLine($"clipboard-seconds {c.Config.ClipboardSeconds}");
+            Console.WriteLine($"audit-days        {(c.Config.AuditRetentionDays == 0 ? "forever" : c.Config.AuditRetentionDays)}");
             return 0;
         }
 
@@ -838,8 +958,12 @@ internal static class Program
             case "clipboard-seconds":
                 c.Config.ClipboardSeconds = int.TryParse(value, out var seconds) ? seconds : throw new UsageException("Expected a number of seconds.");
                 break;
+            case "audit-days":
+                c.Config.AuditRetentionDays = value.Equals("forever", StringComparison.OrdinalIgnoreCase) ? 0
+                    : int.TryParse(value, out var days) && days >= 0 ? days : throw new UsageException("Expected a number of days, or forever.");
+                break;
             default:
-                throw new UsageException("Settings: hello, session-minutes, clipboard-seconds.");
+                throw new UsageException("Settings: hello, session-minutes, clipboard-seconds, audit-days.");
         }
 
         c.Config.Save();

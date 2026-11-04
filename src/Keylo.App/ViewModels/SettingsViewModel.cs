@@ -151,6 +151,8 @@ public sealed partial class ProviderSettingsViewModel : ObservableObject
     }
 }
 
+public sealed record RetentionOption(int Days, string Label);
+
 public sealed record AuditEntry(string Time, string Operation, string Secrets, string Key, string Via);
 
 public sealed partial class SettingsViewModel : ObservableObject
@@ -161,7 +163,18 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private HelloMode _hello;
     [ObservableProperty] private double _sessionMinutes;
     [ObservableProperty] private double _clipboardSeconds;
-    [ObservableProperty] private bool _isBusy;
+    [ObservableProperty] private RetentionOption _auditRetention = RetentionOptions[1];
+
+    public static IReadOnlyList<RetentionOption> RetentionOptions { get; } =
+        [new(30, "30 days"), new(90, "90 days"), new(365, "1 year"), new(0, "Forever")];
+    [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(SaveCommand))] private bool _isBusy;
+
+    /// <summary>Whether the page differs from what's saved (drives the Save button's look).</summary>
+    [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(RevertCommand))] private bool _isDirty;
+
+    private string _baseline = "";
+    private bool _loading;
+    private ChangeWatcher _watcher = null!;
 
     private readonly Action _restored;
 
@@ -171,6 +184,11 @@ public sealed partial class SettingsViewModel : ObservableObject
         _notify = notify;
         _restored = restored;
         SecretTypes = new SecretTypesViewModel(keylo, notify);
+        About = new AboutViewModel(keylo);
+        PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(Hello) or nameof(SessionMinutes) or nameof(ClipboardSeconds) or nameof(AuditRetention)) UpdateDirty();
+        };
         Revert();
     }
 
@@ -286,18 +304,64 @@ public sealed partial class SettingsViewModel : ObservableObject
     public IReadOnlyList<HelloMode> HelloModes { get; } = Enum.GetValues<HelloMode>();
     public ObservableCollection<AccessKeyViewModel> AccessKeys { get; } = [];
     public SecretTypesViewModel SecretTypes { get; }
+    public AboutViewModel About { get; }
+
+    /// <summary>Everything Save would write, as text, to compare with what was loaded.</summary>
+    private string Snapshot() => System.Text.Json.JsonSerializer.Serialize(new
+    {
+        Hello,
+        session = (int)SessionMinutes,
+        clipboard = (int)ClipboardSeconds,
+        audit = AuditRetention.Days,
+        keys = AccessKeys.Select(k => new
+        {
+            id = k.Original?.Id,
+            k.Name,
+            scope = k.Scope.Value,
+            categories = k.Categories.Where(c => c.IsSelected).Select(c => c.Name),
+            approved = k.ApprovedSecrets,
+            k.AllowGet,
+            k.Expires,
+        }),
+        providers = Providers.Select(p => p.ToSettings()),
+    });
+
+    private void UpdateDirty()
+    {
+        if (!_loading) IsDirty = Snapshot() != _baseline;
+    }
+
+    private bool CanSave() => IsDirty && !IsBusy;
+
+    private void WatchForChanges()
+    {
+        _watcher = new ChangeWatcher(UpdateDirty);
+        _watcher.Watch(AccessKeys);
+        foreach (var key in AccessKeys) WatchKey(key);
+        foreach (var provider in Providers) _watcher.Watch(provider.Settings);
+    }
+
+    private void WatchKey(AccessKeyViewModel key)
+    {
+        _watcher.Watch(key);
+        _watcher.Watch(key.Categories);
+        _watcher.Watch(key.ApprovedSecrets);
+    }
     public ObservableCollection<ProviderSettingsViewModel> Providers { get; } = [];
     public ObservableCollection<AuditEntry> Audit { get; } = [];
     public string DataDirectory => KeyloPaths.DefaultDataDirectory;
     public string PluginDirectory => Path.Combine(KeyloPaths.DefaultDataDirectory, "plugins");
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(IsDirty))]
     public void Revert()
     {
+        _loading = true;
         var config = _keylo.Config;
         Hello = config.Hello;
         SessionMinutes = config.SessionMinutes;
         ClipboardSeconds = config.ClipboardSeconds;
+        AuditRetention = RetentionOptions.FirstOrDefault(o => o.Days == config.AuditRetentionDays)
+                         ?? new RetentionOption(config.AuditRetentionDays, $"{config.AuditRetentionDays} days");
 
         AccessKeys.Clear();
         var categories = CategoryChoices();
@@ -308,7 +372,13 @@ public sealed partial class SettingsViewModel : ObservableObject
             Providers.Add(new ProviderSettingsViewModel(provider, config.Providers.GetValueOrDefault(provider.Id) ?? new Dictionary<string, string>()));
 
         SecretTypes.Load();
+        About.Refresh();
         LoadAudit();
+
+        _loading = false;
+        WatchForChanges();
+        _baseline = Snapshot();
+        IsDirty = false;
     }
 
     /// <summary>
@@ -345,7 +415,16 @@ public sealed partial class SettingsViewModel : ObservableObject
             _keylo.Config.AccessKeys.Add(key);
             _keylo.Config.Save();
 
-            AccessKeys.Add(AccessKeyViewModel.From(key, CategoryChoices()));
+            // The new key is saved already: count it as part of the saved state unless other edits are pending.
+            var wasDirty = IsDirty;
+            var row = AccessKeyViewModel.From(key, CategoryChoices());
+            AccessKeys.Add(row);
+            WatchKey(row);
+            if (!wasDirty)
+            {
+                _baseline = Snapshot();
+                IsDirty = false;
+            }
             await _notify.ShowAccessKeyAsync(name, token);
             _notify.Info($"Created '{name}'. Rename it and set its categories or secrets, then Save settings.");
         }
@@ -362,7 +441,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (key is not null) AccessKeys.Remove(key);
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanSave))]
     private async Task Save()
     {
         if (AccessKeys.Any(k => k.Name.Trim().Length == 0))
@@ -383,6 +462,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             Hello = Hello,
             SessionMinutes = (int)SessionMinutes,
             ClipboardSeconds = (int)ClipboardSeconds,
+            AuditRetentionDays = AuditRetention.Days,
             AccessKeys = keys.Select(k => k.Key).ToList(),
             Providers = Providers.ToDictionary(p => p.Id, p => p.ToSettings(), StringComparer.OrdinalIgnoreCase),
         };
@@ -406,6 +486,18 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             IsBusy = false;
         }
+    }
+
+    [RelayCommand]
+    private void OpenAuditLog()
+    {
+        var path = AuditLog.PathIn(KeyloPaths.DefaultDataDirectory);
+        if (!File.Exists(path))
+        {
+            _notify.Info("The audit log is empty.");
+            return;
+        }
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("notepad.exe", $"\"{path}\"") { UseShellExecute = false })?.Dispose();
     }
 
     [RelayCommand]

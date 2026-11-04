@@ -31,6 +31,36 @@ public static class ClaudeCode
         await RunAsync(cli, ["mcp", "add", ServerName, "--scope", "user", "--env", $"{Security.AccessKeys.EnvironmentVariable}={token}", "--", keyloExe, "mcp"]);
     }
 
+    public sealed record Registration(bool Registered, string? Command, Security.AccessKey? Key, bool HasToken, bool PointsAt);
+
+    /// <summary>
+    /// Whether Claude Code has Keylo's server registered at user scope (~/.claude.json), which
+    /// access key it was given (matched by hash; the token is never returned), and whether it runs
+    /// <paramref name="keyloExe"/>.
+    /// </summary>
+    public static Registration Inspect(KeyloConfig config, string keyloExe)
+    {
+        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude.json");
+        try
+        {
+            if (!File.Exists(path)) return new Registration(false, null, null, false, false);
+
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path),
+                new System.Text.Json.JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = System.Text.Json.JsonCommentHandling.Skip });
+            if (!doc.RootElement.TryGetProperty("mcpServers", out var servers) || !servers.TryGetProperty(ServerName, out var server))
+                return new Registration(false, null, null, false, false);
+
+            var command = server.TryGetProperty("command", out var c) ? c.GetString() : null;
+            var token = server.TryGetProperty("env", out var env) && env.TryGetProperty(Security.AccessKeys.EnvironmentVariable, out var t) ? t.GetString() : null;
+            var pointsAt = command is not null && string.Equals(Path.GetFullPath(command), Path.GetFullPath(keyloExe), StringComparison.OrdinalIgnoreCase);
+            return new Registration(true, command, Security.AccessKeys.Find(config, token), !string.IsNullOrEmpty(token), pointsAt);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException)
+        {
+            return new Registration(false, null, null, false, false);
+        }
+    }
+
     private static async Task RunAsync(string cli, IReadOnlyList<string> args, bool allowFailure = false)
     {
         ProcessStartInfo psi;

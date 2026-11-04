@@ -91,6 +91,18 @@ public sealed class AccessGate(KeyloConfig config, IUserVerifier verifier, strin
                 : $"Windows Hello verification failed{(detail is null ? "" : $" ({detail})")}.");
     }
 
+    /// <summary>
+    /// Slides an active session's expiry to a full session length from now (Session mode only).
+    /// Called on user activity in the app, so the session lasts while someone is at the keyboard;
+    /// agents and the CLI never call it. Writes at most every 30 seconds.
+    /// </summary>
+    public void ExtendSession()
+    {
+        if (config.Hello != HelloMode.Session || ReadSession() is not { } expires) return;
+        var extended = DateTimeOffset.UtcNow.AddMinutes(config.SessionMinutes);
+        if (extended - expires > TimeSpan.FromSeconds(30)) WriteSession(extended);
+    }
+
     public void Lock()
     {
         _browseUnlocked = false;

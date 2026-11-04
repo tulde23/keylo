@@ -19,4 +19,7 @@ public interface IUserNotifier
 
     /// <summary>Shows a newly created access key (the only time it's visible) and how to register it with Claude Code.</summary>
     Task ShowAccessKeyAsync(string name, string token);
+
+    /// <summary>Shows the link dialog: the new secret's name ("first|count" when several were linked), or null when canceled.</summary>
+    string? LinkSecret();
 }

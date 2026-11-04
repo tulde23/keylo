@@ -31,12 +31,23 @@ public sealed class KeyloService : IDisposable
 
     public SecretTypeCatalog TypeCatalog { get; } = new();
 
+    /// <summary>Pinned secrets and recent uses (Home).</summary>
+    public Activity Activity { get; } = new();
+
     /// <summary>Built-in and custom secret types, cached; call <see cref="RefreshTypes"/> after editing them.</summary>
     public IReadOnlyList<SecretTypeDefinition> Types => _types ??= LoadTypes();
     private IReadOnlyList<SecretTypeDefinition>? _types;
 
     public SecretTypeDefinition? TypeOf(string? id) =>
-        id is null ? null : Types.FirstOrDefault(t => t.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+        id is null ? null
+        : id == LinkedSecrets.TypeId ? LinkedType
+        : Types.FirstOrDefault(t => t.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>For list icons and subtitles; a linked secret's real fields come from <see cref="LinkedSecrets.AsType"/>.</summary>
+    private static readonly SecretTypeDefinition LinkedType = new() { Id = LinkedSecrets.TypeId, Name = "Linked", Icon = "Link24", IsBuiltIn = true };
+
+    /// <summary>A linked secret's current values, read from its vault.</summary>
+    public Task<Dictionary<string, string>> ResolveLinkedAsync(SecretInfo info) => LinkedSecrets.ResolveAsync(info, Providers, Config);
 
     public void RefreshTypes() => _types = null;
 
@@ -71,6 +82,17 @@ public sealed class KeyloService : IDisposable
     /// <summary>A fresh Windows Hello check regardless of session (unless Hello is off), for exporting everything.</summary>
     public Task ConfirmAsync(string what) => Gate.ConfirmAsync(WindowHandle, $"Keylo: {what}");
 
+    private DateTime _lastActivity;
+
+    /// <summary>The user did something in the window: slide the Windows Hello session (throttled).</summary>
+    public void NoteActivity()
+    {
+        var now = DateTime.UtcNow;
+        if (now - _lastActivity < TimeSpan.FromSeconds(20)) return;
+        _lastActivity = now;
+        Gate.ExtendSession();
+    }
+
     public void Lock()
     {
         Gate.Lock();
@@ -102,8 +124,30 @@ public sealed class KeyloService : IDisposable
         Config.Hello = fresh.Hello;
         Config.SessionMinutes = fresh.SessionMinutes;
         Config.ClipboardSeconds = fresh.ClipboardSeconds;
+        Config.AuditRetentionDays = fresh.AuditRetentionDays;
         Config.AccessKeys = fresh.AccessKeys;
         Config.Providers = fresh.Providers;
+    }
+
+    /// <summary>
+    /// Keeps access keys pointing at a category through a plain rename. A delete or a merge into
+    /// another category (<paramref name="newName"/> null or <paramref name="merged"/>) just removes it
+    /// from keys: a key never silently gains another category's secrets. Narrowing or keeping a
+    /// key's reach needs no Windows Hello.
+    /// </summary>
+    public void UpdateKeysForCategory(string oldName, string? newName, bool merged = false)
+    {
+        RefreshConfig();
+        var changed = false;
+        foreach (var key in Config.AccessKeys)
+        {
+            var i = key.Categories.FindIndex(c => c.Equals(oldName, StringComparison.OrdinalIgnoreCase));
+            if (i < 0) continue;
+            changed = true;
+            if (newName is null || merged || key.Categories.Contains(newName, StringComparer.OrdinalIgnoreCase)) key.Categories.RemoveAt(i);
+            else key.Categories[i] = newName.Trim();
+        }
+        if (changed) Config.Save();
     }
 
     /// <summary>Saves settings after a fresh Windows Hello check (they decide what skips it).</summary>
@@ -115,6 +159,7 @@ public sealed class KeyloService : IDisposable
         Config.Hello = updated.Hello;
         Config.SessionMinutes = updated.SessionMinutes;
         Config.ClipboardSeconds = updated.ClipboardSeconds;
+        Config.AuditRetentionDays = updated.AuditRetentionDays;
         Config.AccessKeys = updated.AccessKeys;
         Config.Providers = updated.Providers;
         Config.Save();

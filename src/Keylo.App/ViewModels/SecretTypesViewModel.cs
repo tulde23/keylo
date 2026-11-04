@@ -74,10 +74,34 @@ public sealed partial class SecretTypesViewModel(KeyloService keylo, IUserNotifi
 {
     public ObservableCollection<SecretTypeViewModel> Types { get; } = [];
 
+    [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(SaveCommand))] private bool _isDirty;
+
+    private string _baseline = "";
+    private bool _loading;
+
+    private string Snapshot() => System.Text.Json.JsonSerializer.Serialize(Types.Select(t => t.ToModel()));
+
+    private void UpdateDirty()
+    {
+        if (!_loading) IsDirty = Snapshot() != _baseline;
+    }
+
     public void Load()
     {
+        _loading = true;
         Types.Clear();
         foreach (var type in keylo.Types) Types.Add(SecretTypeViewModel.From(type));
+        _loading = false;
+
+        var watcher = new ChangeWatcher(UpdateDirty);
+        watcher.Watch(Types);
+        foreach (var type in Types) watcher.Watch(type.Fields);
+        Types.CollectionChanged += (_, e) =>
+        {
+            foreach (var added in e.NewItems?.OfType<SecretTypeViewModel>() ?? []) watcher.Watch(added.Fields);
+        };
+        _baseline = Snapshot();
+        IsDirty = false;
     }
 
     [RelayCommand]
@@ -101,7 +125,7 @@ public sealed partial class SecretTypesViewModel(KeyloService keylo, IUserNotifi
         Types.Remove(type);
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(IsDirty))]
     private void Save()
     {
         try

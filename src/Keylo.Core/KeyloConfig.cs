@@ -28,6 +28,9 @@ public sealed class KeyloConfig
     public int SessionMinutes { get; set; } = 15;
     public int ClipboardSeconds { get; set; } = 30;
 
+    /// <summary>Days of audit log to keep (older entries are pruned as new ones are written); 0 keeps everything.</summary>
+    public int AuditRetentionDays { get; set; } = 90;
+
     /// <summary>Keys that let tools use some secrets without Windows Hello. See <see cref="Security.AccessKey"/>.</summary>
     public List<Security.AccessKey> AccessKeys { get; set; } = [];
 
@@ -62,6 +65,7 @@ public sealed class KeyloConfig
     {
         SessionMinutes = Math.Clamp(SessionMinutes, 1, 24 * 60);
         ClipboardSeconds = Math.Clamp(ClipboardSeconds, 5, 600);
+        AuditRetentionDays = AuditRetentionDays <= 0 ? 0 : Math.Clamp(AuditRetentionDays, 7, 3650);
         return this;
     }
 }

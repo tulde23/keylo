@@ -1,0 +1,248 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using Keylo.App.Services;
+using Keylo.Core;
+using Keylo.Core.Providers;
+using Wpf.Ui.Controls;
+
+namespace Keylo.App.Views;
+
+/// <summary>Searches a linked vault (1Password or a plugin's) and creates a Keylo secret that points at an item.</summary>
+public partial class LinkDialog : FluentWindow
+{
+    private sealed record ResultRow(LinkedItemSummary Item)
+    {
+        public string Title => Item.Title;
+        public string Subtitle => string.Join(" · ", new[] { Item.VaultName, Item.Location, Item.Category }.Where(s => !string.IsNullOrEmpty(s)));
+    }
+
+    private sealed record FieldChoice(LinkedField? Field, string Label);
+
+    private readonly KeyloService _keylo;
+    private IReadOnlyList<LinkedField> _fields = [];
+    private IReadOnlyList<LinkedItemSummary> _items = [];
+    private string? _suggestedCategory;
+    private int _searchId;
+
+    public LinkDialog(KeyloService keylo)
+    {
+        InitializeComponent();
+        _keylo = keylo;
+
+        ProviderBox.ItemsSource = keylo.Providers.Linked;
+        ProviderBox.SelectedIndex = 0;
+        ProviderBox.Visibility = keylo.Providers.Linked.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        CategoryBox.ItemsSource = keylo.Store.Categories();
+
+        Loaded += async (_, _) =>
+        {
+            SearchBox.Focus();
+            await SearchAsync();
+        };
+    }
+
+    /// <summary>The new secret's name, once linked.</summary>
+    public string? CreatedName { get; private set; }
+
+    private ILinkedVaultProvider? Provider => ProviderBox.SelectedItem as ILinkedVaultProvider;
+
+    private IReadOnlyDictionary<string, string> Settings =>
+        Provider is { } p ? _keylo.Config.Providers.GetValueOrDefault(p.Id) ?? new Dictionary<string, string>() : new Dictionary<string, string>();
+
+    private async void OnProviderChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (IsLoaded) await SearchAsync();
+    }
+
+    private async void OnSearch(object sender, RoutedEventArgs e) => await SearchAsync();
+
+    private async void OnSearchKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) await SearchAsync();
+    }
+
+    private async Task SearchAsync()
+    {
+        if (Provider is not { } provider) return;
+        var id = ++_searchId;
+        SetBusy(true);
+        Status.Text = "";
+        try
+        {
+            var items = await provider.SearchAsync(SearchBox.Text, Settings);
+            if (id != _searchId) return;
+            _items = items;
+            Results.ItemsSource = items.Select(i => new ResultRow(i)).ToList();
+            Status.Text = items.Count == 0 ? "Nothing matches." : $"{items.Count} item{(items.Count == 1 ? "" : "s")}. Choose one to link.";
+        }
+        catch (KeyloException ex)
+        {
+            if (id == _searchId) Status.Text = ex.Message;
+        }
+        finally
+        {
+            if (id == _searchId) SetBusy(false);
+        }
+    }
+
+    private List<LinkedItemSummary> Selected => Results.SelectedItems.OfType<ResultRow>().Select(r => r.Item).ToList();
+
+    private bool SeveralLocations => _items.Select(i => i.Location).Distinct().Count() > 1;
+
+    private async void OnItemSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (Provider is not { } provider) return;
+        var selected = Selected;
+        LinkButton.IsEnabled = false;
+        LinkButton.Content = selected.Count > 1 ? $"Link {selected.Count} items" : "Link";
+        if (selected.Count == 0)
+        {
+            Details.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        // Several items: each gets all its fields, a name from its title, and its own default category
+        // (or the one typed here).
+        if (selected.Count > 1)
+        {
+            NamePanel.Visibility = FieldPanel.Visibility = Visibility.Collapsed;
+            if (CategoryBox.Text == _suggestedCategory) CategoryBox.Text = _suggestedCategory = "";
+            CategoryHint.Visibility = Visibility.Visible;
+            FieldsText.Text = $"{selected.Count} items, each linked with all its fields and named after its title.";
+            Details.Visibility = Visibility.Visible;
+            LinkButton.IsEnabled = true;
+            return;
+        }
+
+        var item = selected[0];
+        NamePanel.Visibility = FieldPanel.Visibility = Visibility.Visible;
+        CategoryHint.Visibility = Visibility.Collapsed;
+        Details.Visibility = Visibility.Collapsed;
+        SetBusy(true);
+        try
+        {
+            _fields = await provider.DescribeAsync(Target(item), Settings);
+            NameBox.Text = SuggestName(item.Title, new HashSet<string>());
+
+            // Suggest "1Password · Vault", unless the user typed their own category.
+            if (string.IsNullOrWhiteSpace(CategoryBox.Text) || CategoryBox.Text == _suggestedCategory)
+            {
+                _suggestedCategory = LinkedSecrets.DefaultCategory(provider.DisplayName, item, SeveralLocations);
+                CategoryBox.Text = _suggestedCategory;
+            }
+            FieldBox.ItemsSource = new[] { new FieldChoice(null, "All fields") }
+                .Concat(_fields.Select(f => new FieldChoice(f, $"Only {f.Label}{(f.Secret ? "" : " (not secret)")}")))
+                .ToList();
+            FieldBox.SelectedIndex = 0;
+            FieldsText.Text = _fields.Count == 0 ? "This item has no fields." : "Fields: " + string.Join(", ", _fields.Select(f => f.Secret ? $"{f.Label} 🔒" : f.Label));
+            Details.Visibility = Visibility.Visible;
+            LinkButton.IsEnabled = _fields.Count > 0;
+            Status.Text = "";
+        }
+        catch (KeyloException ex)
+        {
+            Status.Text = ex.Message;
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    private async void OnLink(object sender, RoutedEventArgs e)
+    {
+        if (Provider is not { } provider) return;
+        var selected = Selected;
+        if (selected.Count == 0) return;
+
+        var typedCategory = string.IsNullOrWhiteSpace(CategoryBox.Text) ? null : CategoryBox.Text.Trim();
+        LinkButton.IsEnabled = false;
+        try
+        {
+            await _keylo.EnsureBrowseAsync();
+
+            if (selected.Count == 1)
+            {
+                var name = SecretStore.NormalizeName(NameBox.Text);
+                if (_keylo.Store.Exists(name)) throw new SecretExistsException(name);
+                var only = (FieldBox.SelectedItem as FieldChoice)?.Field?.Id;
+                _keylo.Store.Save(LinkedSecrets.Draft(name, MakeLink(selected[0], _fields, only), typedCategory));
+                CreatedName = name;
+                DialogResult = true;
+                return;
+            }
+
+            SetBusy(true);
+            var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var failed = new List<string>();
+            foreach (var item in selected)
+            {
+                try
+                {
+                    var fields = await provider.DescribeAsync(Target(item), Settings);
+                    var name = SuggestName(item.Title, taken);
+                    var category = typedCategory ?? LinkedSecrets.DefaultCategory(provider.DisplayName, item, SeveralLocations);
+                    _keylo.Store.Save(LinkedSecrets.Draft(name, MakeLink(item, fields, null), category));
+                    taken.Add(name);
+                    CreatedName ??= name;
+                }
+                catch (KeyloException ex)
+                {
+                    failed.Add($"{item.Title}: {ex.Message}");
+                }
+            }
+
+            LinkedCount = taken.Count;
+            if (failed.Count == 0)
+            {
+                DialogResult = true;
+                return;
+            }
+            Status.Text = $"Linked {taken.Count} of {selected.Count}. " + string.Join(" ", failed);
+            if (taken.Count > 0) CancelButton.Content = "Close";
+        }
+        catch (KeyloException ex)
+        {
+            Status.Text = ex.Message;
+        }
+        finally
+        {
+            SetBusy(false);
+            LinkButton.IsEnabled = Selected.Count > 0;
+        }
+    }
+
+    /// <summary>How many secrets were linked (several when more than one item was chosen).</summary>
+    public int LinkedCount { get; private set; } = 1;
+
+    private LinkedSecrets.Link MakeLink(LinkedItemSummary item, IReadOnlyList<LinkedField> fields, string? only)
+    {
+        var where = string.Join(" · ", new[] { item.VaultName, item.Location }.Where(x => !string.IsNullOrEmpty(x)));
+        return new LinkedSecrets.Link(Target(item), item.Title, where, fields, only);
+    }
+
+    private void OnCancel(object sender, RoutedEventArgs e) => DialogResult = CreatedName is not null;
+
+    private LinkTarget Target(LinkedItemSummary item) => new(Provider!.Id, item.ItemId, item.VaultId, item.Location);
+
+    /// <summary>"GitHub (work)" → "github--work" style slug, unique among existing secrets and <paramref name="taken"/>.</summary>
+    private string SuggestName(string title, IReadOnlySet<string> taken)
+    {
+        var name = new string(title.Trim().ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '-').ToArray()).Trim('-');
+        while (name.Contains("--")) name = name.Replace("--", "-");
+        if (name.Length == 0) name = "linked";
+        if (name.Length > 100) name = name[..100];
+        var candidate = name;
+        for (var n = 2; taken.Contains(candidate) || _keylo.Store.Exists(candidate); n++) candidate = $"{name}-{n}";
+        return candidate;
+    }
+
+    private void SetBusy(bool busy)
+    {
+        Busy.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        Results.Opacity = busy ? 0.3 : 1;
+        Results.IsEnabled = !busy;
+        SearchButton.IsEnabled = !busy;
+    }
+}
