@@ -41,7 +41,7 @@ internal static class Program
         keylo restore FILE [--overwrite] [--dry-run] [--password-stdin]
                                                 Restore a backup (existing secrets are skipped unless --overwrite)
         keylo keys                              List access keys (let tools use secrets without Windows Hello)
-        keylo keys create NAME [--category C]... [--secret S]... [--allow-get] [--expires-days N] [--add-to-claude]
+        keylo keys create NAME [--all | --category C... --secret S...] [--allow-get] [--expires-days N] [--add-to-claude]
                                                 Create a key (shown once; --add-to-claude registers the MCP server instead)
         keylo keys revoke NAME                  Revoke a key
         keylo mcp                               Run the MCP server for AI agents (needs KEYLO_ACCESS_KEY)
@@ -692,7 +692,8 @@ internal static class Program
                 {
                     k.Name,
                     k.Id,
-                    string.Join(", ", k.Categories.Select(cat => $"cat:{cat}").Concat(k.Secrets)) is { Length: > 0 } covers ? covers : "(approval only)",
+                    k.Scope == KeyScope.All ? "everything"
+                        : string.Join(", ", k.Categories.Select(cat => $"cat:{cat}").Concat(k.Secrets)) is { Length: > 0 } covers ? covers : "nothing (asks each time)",
                     k.AllowGet ? "run, get" : "run",
                     k.Expires is { } e ? (k.IsExpired(now) ? "expired" : e.LocalDateTime.ToString("yyyy-MM-dd")) : "never",
                 }));
@@ -712,6 +713,7 @@ internal static class Program
                 var categories = args.Options("category");
                 var secrets = args.Options("secret");
                 var allowGet = args.Flag("allow-get");
+                var everything = args.Flag("all");
                 var expiresDays = args.Option("expires-days");
                 var addToClaude = args.Flag("add-to-claude");
                 args.ThrowOnUnknown(maxPositionals: 2);
@@ -729,6 +731,7 @@ internal static class Program
                 key.Categories = categories.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                 key.Secrets = secrets.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                 key.AllowGet = allowGet;
+                key.Scope = everything ? KeyScope.All : KeyScope.Selected;
                 c.Config.AccessKeys.Add(key);
                 c.Config.Save();
 

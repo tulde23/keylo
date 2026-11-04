@@ -202,13 +202,33 @@ internal sealed class KeyloTools
             : throw new AccessDeniedException("The user declined. Don't ask again unless they bring it up.");
     }
 
-    /// <summary>The key's own scope, or else a Keylo approval window (with Windows Hello).</summary>
-    private static async Task AuthorizeAsync(AccessKey key, SecretOperation operation, IReadOnlyList<SecretInfo> secrets, string? reason, string? command)
+    // Approvals last for the Hello session length (config.sessionMinutes), per secret: a get
+    // approval also covers running with it, not the other way round.
+    private readonly Dictionary<(SecretOperation Operation, string Name), DateTimeOffset> _approved = new();
+    private readonly Lock _approvedLock = new();
+
+    private bool ApprovedRecently(SecretOperation operation, IEnumerable<string> names)
+    {
+        var now = DateTimeOffset.Now;
+        lock (_approvedLock)
+            return names.All(n =>
+                (_approved.TryGetValue((operation, n.ToLowerInvariant()), out var until) && until > now) ||
+                (operation == SecretOperation.Run && _approved.TryGetValue((SecretOperation.Get, n.ToLowerInvariant()), out var getUntil) && getUntil > now));
+    }
+
+    /// <summary>The key's own scope, a recent approval, or else a Keylo approval window (with Windows Hello).</summary>
+    private async Task AuthorizeAsync(AccessKey key, SecretOperation operation, IReadOnlyList<SecretInfo> secrets, string? reason, string? command)
     {
         var names = secrets.Select(s => s.Name).ToList();
+        var verb = operation.ToString().ToLowerInvariant();
         if (key.Allows(operation, secrets))
         {
-            AuditLog.Write(operation.ToString().ToLowerInvariant(), names, key, "access key");
+            AuditLog.Write(verb, names, key, "access key");
+            return;
+        }
+        if (ApprovedRecently(operation, names))
+        {
+            AuditLog.Write(verb, names, key, "approved earlier this session");
             return;
         }
 
@@ -218,7 +238,10 @@ internal sealed class KeyloTools
         if (result == ApprovalResult.Denied)
             throw new AccessDeniedException($"The user denied access to {string.Join(", ", names)}. Don't retry; ask them if it's needed.");
 
-        AuditLog.Write(operation.ToString().ToLowerInvariant(), names, key, result == ApprovalResult.AllowedAlways ? "approved (added to key)" : "approved once");
+        var until = DateTimeOffset.Now.AddMinutes(KeyloConfig.Load().SessionMinutes);
+        lock (_approvedLock)
+            foreach (var name in names) _approved[(operation, name.ToLowerInvariant())] = until;
+        AuditLog.Write(verb, names, key, result == ApprovalResult.AllowedAlways ? "approved (added to key)" : "approved for the session");
     }
 
     // ------------------------------------------------------------------ helpers

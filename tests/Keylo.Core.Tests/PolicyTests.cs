@@ -83,6 +83,16 @@ public sealed class AccessKeyTests
     }
 
     [Fact]
+    public void Scope_all_covers_everything_and_an_empty_key_covers_nothing()
+    {
+        var key = new AccessKey { Scope = KeyScope.All };
+        Assert.True(key.Allows(SecretOperation.Run, [Info("anything", null), Info("bank", "personal")]));
+        Assert.False(key.Allows(SecretOperation.Get, [Info("anything", null)]));
+
+        Assert.False(new AccessKey().Covers(Info("anything", "dev")));
+    }
+
+    [Fact]
     public void Every_secret_must_be_covered()
     {
         var key = Config().Config.AccessKeys[0];

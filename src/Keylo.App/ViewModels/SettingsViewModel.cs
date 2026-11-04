@@ -10,11 +10,39 @@ using Keylo.Core.Security;
 
 namespace Keylo.App.ViewModels;
 
+public enum ScopeChoice { Everything, Categories, Nothing }
+
+public sealed record ScopeOption(ScopeChoice Value, string Label, string Description);
+
 public sealed partial class AccessKeyViewModel : ObservableObject
 {
+    public static IReadOnlyList<ScopeOption> ScopeOptions { get; } =
+    [
+        new(ScopeChoice.Everything, "Everything", "Every secret, no approval windows."),
+        new(ScopeChoice.Categories, "Only these categories", "Secrets in the chosen categories; anything else asks you."),
+        new(ScopeChoice.Nothing, "Nothing — ask me each time", "Every use opens an approval window. An approval lasts for your Keylo session."),
+    ];
+
     [ObservableProperty] private string _name = "";
-    [ObservableProperty] private string _categories = "";
-    [ObservableProperty] private string _secrets = "";
+
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(ShowCategories))]
+    private ScopeOption _scope = ScopeOptions[2];
+
+    public bool ShowCategories => Scope.Value == ScopeChoice.Categories;
+
+    /// <summary>Secrets added by "Always allow" in approval windows (they stay covered whatever the scope).</summary>
+    public ObservableCollection<string> ApprovedSecrets { get; } = [];
+
+    public bool HasApproved => ApprovedSecrets.Count > 0;
+
+    public string ApprovedText => $"Also allowed (from approvals): {string.Join(", ", ApprovedSecrets)}";
+
+    [RelayCommand]
+    private void ClearApproved()
+    {
+        ApprovedSecrets.Clear();
+        OnPropertyChanged(nameof(HasApproved));
+    }
     [ObservableProperty] private bool _allowGet;
     [ObservableProperty] private DateTime? _expires;
 
@@ -23,20 +51,35 @@ public sealed partial class AccessKeyViewModel : ObservableObject
 
     public bool IsNew => Original is null;
 
+    /// <summary>Every category, ticked where the key covers it.</summary>
+    public ObservableCollection<PickItem> Categories { get; } = [];
+
+
     public string Details => Original is null
         ? "New — the key is created and shown once when you save"
         : $"id {Original.Id} · created {Original.Created.LocalDateTime:MMM d, yyyy}" +
           (Original.IsExpired(DateTimeOffset.Now) ? " · EXPIRED" : "");
 
-    public static AccessKeyViewModel From(AccessKey key) => new()
+    /// <summary>
+    /// A row for <paramref name="key"/>, offering every existing category and secret. Names the key
+    /// covers that no longer exist (deleted or renamed) stay listed, ticked, so saving doesn't drop them silently.
+    /// </summary>
+    public static AccessKeyViewModel From(AccessKey key, IEnumerable<string> allCategories)
     {
-        Original = key,
-        Name = key.Name,
-        Categories = string.Join(", ", key.Categories),
-        Secrets = string.Join(", ", key.Secrets),
-        AllowGet = key.AllowGet,
-        Expires = key.Expires?.LocalDateTime.Date,
-    };
+        var vm = new AccessKeyViewModel { Original = key, Name = key.Name, AllowGet = key.AllowGet, Expires = key.Expires?.LocalDateTime.Date };
+        vm.Scope = ScopeOptions.First(o => o.Value == (key.Scope == KeyScope.All ? ScopeChoice.Everything
+            : key.Categories.Count > 0 ? ScopeChoice.Categories : ScopeChoice.Nothing));
+        Fill(vm.Categories, allCategories, key.Categories);
+        foreach (var secret in key.Secrets) vm.ApprovedSecrets.Add(secret);
+        return vm;
+    }
+
+    private static void Fill(ObservableCollection<PickItem> items, IEnumerable<string> all, IEnumerable<string> selected)
+    {
+        var chosen = selected.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in all.Concat(chosen).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase))
+            items.Add(new PickItem(name) { IsSelected = chosen.Contains(name) });
+    }
 
     /// <summary>The edited key; new rows get a freshly generated key and its one-time token.</summary>
     public (AccessKey Key, string? Token) ToModel()
@@ -47,15 +90,26 @@ public sealed partial class AccessKeyViewModel : ObservableObject
             : (new AccessKey { Id = Original.Id, Hash = Original.Hash, Created = Original.Created }, (string?)null);
 
         key.Name = Name.Trim();
-        key.Categories = Split(Categories);
-        key.Secrets = Split(Secrets);
+        key.Scope = Scope.Value == ScopeChoice.Everything ? KeyScope.All : KeyScope.Selected;
+        key.Categories = Scope.Value == ScopeChoice.Categories ? Categories.Where(c => c.IsSelected).Select(c => c.Name).ToList() : [];
+        key.Secrets = [.. ApprovedSecrets];
         key.AllowGet = AllowGet;
         key.Expires = expires;
         return (key, token);
     }
+}
 
-    private static List<string> Split(string value) =>
-        value.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+/// <summary>One choice in a <see cref="Views.MultiPicker"/>.</summary>
+public sealed partial class PickItem(string name) : ObservableObject
+{
+    public string Name { get; } = name;
+    [ObservableProperty] private bool _isSelected;
+
+    /// <summary>Matches the picker's search box.</summary>
+    [ObservableProperty] private bool _isMatch = true;
+
+    [RelayCommand]
+    private void Remove() => IsSelected = false;
 }
 
 public sealed partial class ProviderSettingViewModel(string key, string description, string value) : ObservableObject
@@ -246,7 +300,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         ClipboardSeconds = config.ClipboardSeconds;
 
         AccessKeys.Clear();
-        foreach (var key in config.AccessKeys) AccessKeys.Add(AccessKeyViewModel.From(key));
+        var categories = CategoryChoices();
+        foreach (var key in config.AccessKeys) AccessKeys.Add(AccessKeyViewModel.From(key, categories));
 
         Providers.Clear();
         foreach (var provider in _keylo.Providers.All)
@@ -256,9 +311,49 @@ public sealed partial class SettingsViewModel : ObservableObject
         LoadAudit();
     }
 
+    /// <summary>
+    /// Creates and saves a key straight away (after Windows Hello) and shows its token, the only time
+    /// it's visible. Its name and scope are then edited in its row and saved with the other settings.
+    /// </summary>
+    /// <summary>Category names an access key can be scoped to.</summary>
+    private List<string> CategoryChoices()
+    {
+        try
+        {
+            return _keylo.Categories.All().Select(c => c.Name).ToList();
+        }
+        catch (KeyloException)
+        {
+            return [];
+        }
+    }
+
     [RelayCommand]
-    private void AddAccessKey() =>
-        AccessKeys.Add(new AccessKeyViewModel { Name = AccessKeys.Count == 0 ? "Claude Code" : $"Key {AccessKeys.Count + 1}" });
+    private async Task AddAccessKey()
+    {
+        var taken = AccessKeys.Select(k => k.Name.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var name = !taken.Contains("Claude Code") ? "Claude Code"
+            : Enumerable.Range(2, 100).Select(i => $"Key {i}").First(n => !taken.Contains(n));
+
+        try
+        {
+            await _keylo.ConfirmAsync($"create access key '{name}'");
+
+            // Saved on its own (from disk), so unsaved edits elsewhere on this page stay pending.
+            _keylo.RefreshConfig();
+            var (key, token) = Keylo.Core.Security.AccessKeys.Create(name);
+            _keylo.Config.AccessKeys.Add(key);
+            _keylo.Config.Save();
+
+            AccessKeys.Add(AccessKeyViewModel.From(key, CategoryChoices()));
+            await _notify.ShowAccessKeyAsync(name, token);
+            _notify.Info($"Created '{name}'. Rename it and set its categories or secrets, then Save settings.");
+        }
+        catch (KeyloException ex)
+        {
+            _notify.Error(ex.Message);
+        }
+    }
 
     /// <summary>Removing a row revokes the key when you save.</summary>
     [RelayCommand]

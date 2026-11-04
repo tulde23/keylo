@@ -9,6 +9,20 @@
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:SettingsViewModel}">
 
+    <UserControl.Resources>
+        <!-- A hover-for-help icon next to a field label; put the explanation in its ToolTip. -->
+        <Style x:Key="InfoIcon" TargetType="ui:SymbolIcon">
+            <Setter Property="Symbol" Value="Info16" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Cursor" Value="Help" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+            <Setter Property="ToolTipService.InitialShowDelay" Value="100" />
+            <Setter Property="ToolTipService.ShowDuration" Value="60000" />
+        </Style>
+    </UserControl.Resources>
+
     <DockPanel>
         <!-- Footer -->
         <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Padding="28,12">
@@ -169,7 +183,7 @@
                 </DockPanel>
 
                 <ui:InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Margin="0,8,0,12" Title="Keys are shown once"
-                            Message="A new key appears after you save, with the command to add it to Claude Code. Keylo keeps only a hash. A key only skips approval for the categories and secrets you list — leave both blank and every use asks you first. Delete a key to revoke it." />
+                            Message="New key creates a key right away (after Windows Hello) and shows it once, with the command to add it to Claude Code. Then choose what it can use without asking and Save settings. Keylo keeps only a hash; delete a key to revoke it." />
 
                 <ItemsControl ItemsSource="{Binding AccessKeys}" Margin="0,0,0,28">
                     <ItemsControl.ItemTemplate>
@@ -182,6 +196,11 @@
                                                    CommandParameter="{Binding}" />
                                         <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Key24" FontSize="18" Margin="0,0,10,0"
                                                        Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                        <ui:SymbolIcon DockPanel.Dock="Right" Style="{StaticResource InfoIcon}" Margin="8,0,4,0">
+                                            <ui:SymbolIcon.ToolTip>
+                                                <TextBlock MaxWidth="340" TextWrapping="Wrap" Text="Your name for the key, e.g. the tool or machine that uses it. It's shown in approval windows and the audit log, so you can tell which agent asked." />
+                                            </ui:SymbolIcon.ToolTip>
+                                        </ui:SymbolIcon>
                                         <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Key name, e.g. Claude Code" FontWeight="SemiBold" />
                                     </DockPanel>
                                     <TextBlock Text="{Binding Details}" FontSize="11" Margin="28,0,0,12" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
@@ -189,21 +208,56 @@
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="12" />
-                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="200" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel>
-                                            <TextBlock Text="Categories" Style="{StaticResource FieldLabel}" />
-                                            <ui:TextBox Text="{Binding Categories, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="dev, cloud" />
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                <TextBlock Text="Can use without asking" Style="{StaticResource FieldLabel}" Margin="0" />
+                                                <ui:SymbolIcon Style="{StaticResource InfoIcon}">
+                                            <ui:SymbolIcon.ToolTip>
+                                                <TextBlock MaxWidth="340" TextWrapping="Wrap" Text="Which secrets this key can use without an approval window. Everything: no prompts at all. Only these categories: the ones you pick; anything else asks you. Nothing: every use asks you, and an approval then lasts for your Keylo session (15 minutes by default)." />
+                                            </ui:SymbolIcon.ToolTip>
+                                        </ui:SymbolIcon>
+                                            </StackPanel>
+                                            <ComboBox ItemsSource="{Binding Source={x:Static vm:AccessKeyViewModel.ScopeOptions}}" SelectedItem="{Binding Scope}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate DataType="{x:Type vm:ScopeOption}">
+                                                        <StackPanel Margin="0,2">
+                                                            <TextBlock Text="{Binding Label}" />
+                                                            <TextBlock Text="{Binding Description}" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
                                         </StackPanel>
                                         <StackPanel Grid.Column="2">
-                                            <TextBlock Text="Expires (optional)" Style="{StaticResource FieldLabel}" />
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                <TextBlock Text="Expires" Style="{StaticResource FieldLabel}" Margin="0" />
+                                                <ui:SymbolIcon Style="{StaticResource InfoIcon}">
+                                            <ui:SymbolIcon.ToolTip>
+                                                <TextBlock MaxWidth="340" TextWrapping="Wrap" Text="Optional. After this date the key stops working and anything using it is treated as having no key. Leave blank for no expiry." />
+                                            </ui:SymbolIcon.ToolTip>
+                                        </ui:SymbolIcon>
+                                            </StackPanel>
                                             <DatePicker SelectedDate="{Binding Expires}" />
                                         </StackPanel>
                                     </Grid>
-                                    <TextBlock Text="Individual secrets" Style="{StaticResource FieldLabel}" Margin="0,12,0,4" />
-                                    <ui:TextBox Text="{Binding Secrets, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="github-token, npm-token (approvals add to this list)" />
-                                    <ui:ToggleSwitch IsChecked="{Binding AllowGet}" Margin="0,14,0,0"
-                                                     Content="Also allow reading values (get) — they will be visible to the tool" />
+                                    <views:MultiPicker ItemsSource="{Binding Categories}" Placeholder="Choose categories" Margin="0,8,0,0"
+                                                       Visibility="{Binding ShowCategories, Converter={StaticResource VisibleWhen}}" />
+                                    <DockPanel Margin="0,8,0,0" Visibility="{Binding HasApproved, Converter={StaticResource VisibleWhen}}">
+                                        <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Content="Clear" Command="{Binding ClearApprovedCommand}"
+                                                   ToolTip="Forget these 'Always allow' approvals (on save)" />
+                                        <TextBlock Text="{Binding ApprovedText}" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </DockPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                        <ui:ToggleSwitch IsChecked="{Binding AllowGet}" Content="Also let it read values (not just pass them to commands)" />
+                                        <ui:SymbolIcon Style="{StaticResource InfoIcon}">
+                                                <ui:SymbolIcon.ToolTip>
+                                                    <TextBlock MaxWidth="340" TextWrapping="Wrap" Text="Off (recommended): covered secrets can only be passed to commands as environment variables, and values are redacted from command output, so they never enter the AI conversation. On: the tool may also read values directly (get_secret / keylo get), which puts them in the conversation." />
+                                                </ui:SymbolIcon.ToolTip>
+                                            </ui:SymbolIcon>
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
                         </DataTemplate>

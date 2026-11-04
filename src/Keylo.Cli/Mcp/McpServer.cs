@@ -22,7 +22,8 @@ internal static class McpServer
           secret's field schema. Address one field as "name:field" (e.g. "prod-db:connection_string"); a bare name means its main value.
         - Prefer run_with_secrets: values reach the command as environment variables and are redacted from its output, so they never enter this conversation.
         - Use get_secret only when the value itself is needed (e.g. to fill in a login). It returns the value into the conversation.
-        - Using a secret outside your key's scope asks the user to approve it in a Keylo window (with Windows Hello). If they deny it, don't retry; ask them.
+        - Using a secret outside your key's scope asks the user to approve it in a Keylo window (with Windows Hello); an approval
+          lasts for their Keylo session (15 minutes by default). If they deny it, don't retry; ask them.
         - request_access asks the user to add secrets to your key permanently.
         Never write secret values into files, commits or messages unless the user asks.
         """;

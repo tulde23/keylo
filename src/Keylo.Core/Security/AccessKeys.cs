@@ -18,6 +18,16 @@ public enum SecretOperation
     Get,
 }
 
+/// <summary>What an access key covers.</summary>
+public enum KeyScope
+{
+    /// <summary>Its <see cref="AccessKey.Categories"/> and <see cref="AccessKey.Secrets"/> (none of either: nothing).</summary>
+    Selected,
+
+    /// <summary>Every secret.</summary>
+    All,
+}
+
 /// <summary>
 /// Lets a tool such as Claude Code use a set of secrets without Windows Hello. The tool presents the
 /// key in the <see cref="AccessKeys.EnvironmentVariable"/> environment variable; Keylo stores only
@@ -34,8 +44,11 @@ public sealed class AccessKey
     /// <summary>Lowercase hex SHA-256 of the full key.</summary>
     public string Hash { get; set; } = "";
 
+    public KeyScope Scope { get; set; } = KeyScope.Selected;
+
     public List<string> Categories { get; set; } = [];
 
+    /// <summary>Individual secrets, mostly added by "Always allow" in an approval window.</summary>
     public List<string> Secrets { get; set; } = [];
 
     public bool AllowGet { get; set; }
@@ -47,6 +60,7 @@ public sealed class AccessKey
     public bool IsExpired(DateTimeOffset now) => Expires is { } expires && expires <= now;
 
     public bool Covers(SecretInfo secret) =>
+        Scope == KeyScope.All ||
         Secrets.Contains(secret.Name, StringComparer.OrdinalIgnoreCase) ||
         (secret.Category is not null && Categories.Contains(secret.Category, StringComparer.OrdinalIgnoreCase));
 

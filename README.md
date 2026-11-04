@@ -128,7 +128,7 @@ which shows the key once with a button and the command that registers the server
 claude mcp add keylo --scope user --env KEYLO_ACCESS_KEY=kyl_… -- "%LOCALAPPDATA%\Programs\Keylo\keylo.exe" mcp
 ```
 
-or from a terminal: `keylo keys create "Claude Code" --category dev --add-to-claude`.
+or from a terminal: `keylo keys create "Claude Code" --all --add-to-claude` (or `--category dev`).
 
 | Tool | Does |
 |---|---|
@@ -138,11 +138,11 @@ or from a terminal: `keylo keys create "Claude Code" --category dev --add-to-cla
 | `get_secret` | Returns every field, or one — into the AI conversation, so only when needed. |
 | `request_access` | Asks you to add secrets to the key permanently. |
 
-- **A key's scope** is categories and/or individual secrets. It's run-only unless "Also allow
-  reading values" is on. **A key with no categories or secrets covers nothing**: every use asks you.
+- **What a key can use without asking**: *Everything*, *Only these categories*, or *Nothing — ask
+  me each time*. It only passes values to commands unless "Also let it read values" is on.
 - **Outside the scope**, Keylo opens an approval window showing the secrets, the command and the
-  agent's stated reason: Deny, Allow once, or Always allow (adds them to the key). Allowing needs
-  Windows Hello; unanswered requests are denied after 5 minutes.
+  agent's stated reason: Deny, Allow for 15 min (your session length), or Always allow (adds them
+  to the key). Allowing needs Windows Hello; unanswered requests are denied after 5 minutes.
 - **Keys are stored as SHA-256 hashes**, can expire, and are revoked by deleting them. The key
   lives in Claude Code's user config (`~/.claude.json`) — never put it in a project's `.mcp.json`.
   Commands run by the server don't receive it.

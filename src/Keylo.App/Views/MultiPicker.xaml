@@ -1,0 +1,72 @@
+<UserControl x:Class="Keylo.App.Views.MultiPicker"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:vm="clr-namespace:Keylo.App.ViewModels"
+             x:Name="Root">
+    <Grid>
+        <Border x:Name="Box" CornerRadius="4" BorderThickness="1" Padding="6,4,4,4" MinHeight="36"
+                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                Background="{DynamicResource ControlFillColorDefaultBrush}">
+            <DockPanel>
+                <ToggleButton x:Name="AddButton" DockPanel.Dock="Right" VerticalAlignment="Center" Padding="8,3" Margin="6,0,0,0"
+                              ToolTip="Choose">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Add16" FontSize="12" />
+                        <TextBlock Text="Add" FontSize="12" Margin="4,0,0,0" />
+                    </StackPanel>
+                </ToggleButton>
+                <Grid VerticalAlignment="Center">
+                    <TextBlock x:Name="PlaceholderText" Text="{Binding Placeholder, ElementName=Root}" Margin="6,0,0,0" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" TextTrimming="CharacterEllipsis" />
+                    <ItemsControl ItemsSource="{Binding ItemsSource, ElementName=Root}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:PickItem}">
+                                <Border CornerRadius="12" Padding="10,2,4,2" Margin="0,2,6,2"
+                                        Background="{DynamicResource ControlFillColorSecondaryBrush}"
+                                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1"
+                                        Visibility="{Binding IsSelected, Converter={StaticResource VisibleWhen}}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center" />
+                                        <ui:Button Appearance="Transparent" Padding="3" Margin="4,0,0,0" MinWidth="0" MinHeight="0"
+                                                   Icon="{ui:SymbolIcon Dismiss12}" ToolTip="Remove" Command="{Binding RemoveCommand}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </DockPanel>
+        </Border>
+
+        <Popup x:Name="Dropdown" PlacementTarget="{Binding ElementName=Box}" Placement="Bottom" StaysOpen="False"
+               AllowsTransparency="True" PopupAnimation="Fade"
+               IsOpen="{Binding IsChecked, ElementName=AddButton, Mode=TwoWay}">
+            <Border Width="{Binding ActualWidth, ElementName=Box}" MinWidth="260" Margin="0,4,0,0" CornerRadius="8" BorderThickness="1" Padding="8"
+                    Background="{DynamicResource ApplicationBackgroundBrush}"
+                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
+                <StackPanel>
+                    <ui:TextBox x:Name="Search" PlaceholderText="Search…" Icon="{ui:SymbolIcon Search16}" ClearButtonEnabled="True"
+                                TextChanged="OnSearchChanged" Margin="0,0,0,6" />
+                    <ScrollViewer MaxHeight="280" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding ItemsSource, ElementName=Root}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:PickItem}">
+                                    <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Name}" Margin="4,1"
+                                              Visibility="{Binding IsMatch, Converter={StaticResource VisibleWhen}}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <TextBlock x:Name="NoMatches" Text="Nothing matches." Margin="6,6" FontSize="12" Visibility="Collapsed"
+                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                </StackPanel>
+            </Border>
+        </Popup>
+    </Grid>
+</UserControl>

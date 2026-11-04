@@ -52,6 +52,10 @@ public partial class ApprovalWindow : FluentWindow
         }
         else
         {
+            // keylo mcp remembers an approval for the Hello session length.
+            var minutes = KeyloConfig.Load().SessionMinutes;
+            OnceButton.Content = $"Allow for {minutes} min";
+            OnceButton.ToolTip = $"The agent can use {(many ? "these secrets" : "this secret")} again for {minutes} minutes without asking.";
             AlwaysButton.Content = "Always allow";
             AlwaysButton.ToolTip = $"Allow now and add {(many ? "these secrets" : "this secret")} to the access key '{request.KeyName}', so it won't ask again.";
             AlwaysButton.Visibility = request.CanAlwaysAllow && request.KeyId is not null ? Visibility.Visible : Visibility.Collapsed;
