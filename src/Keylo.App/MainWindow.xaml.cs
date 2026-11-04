@@ -59,31 +59,6 @@ public partial class MainWindow : FluentWindow, IUserNotifier
     private static void ApplyBrandAccent(ApplicationTheme theme) =>
         ApplicationAccentColorManager.Apply(System.Windows.Media.Color.FromRgb(0x6D, 0x6A, 0xF6), theme);
 
-    // ---------------------------------------------------------------- action tiles
-
-    private readonly Dictionary<System.Windows.Controls.Button, (string Label, double Width)> _tileLabels = [];
-
-    /// <summary>
-    /// Labelled tiles when there's room above the detail area; icon-only tiles (named in their
-    /// tooltips) when the window or the dividers leave too little, so they never overlap.
-    /// </summary>
-    private void OnActionTilesResized(object sender, SizeChangedEventArgs e)
-    {
-        var tiles = ActionTiles.Children.OfType<System.Windows.Controls.Button>().ToList();
-        foreach (var tile in tiles)
-            if (!_tileLabels.ContainsKey(tile)) _tileLabels[tile] = ((string)tile.Tag, tile.Width);
-
-        var needed = tiles.Sum(t => _tileLabels[t].Width + t.Margin.Left + t.Margin.Right);
-        var compact = e.NewSize.Width < needed;
-        foreach (var tile in tiles)
-        {
-            var (label, width) = _tileLabels[tile];
-            tile.Tag = compact ? "" : label;
-            tile.Width = compact ? 46 : width;
-            tile.Height = compact ? 46 : 58;
-        }
-    }
-
     // ---------------------------------------------------------------- chromeless window
 
     /// <summary>Empty parts of the top bar and the lock screen move the window; a double-click maximizes.</summary>
@@ -110,7 +85,7 @@ public partial class MainWindow : FluentWindow, IUserNotifier
     {
         base.OnStateChanged(e);
         var maximized = WindowState == WindowState.Maximized;
-        MaximizeButton.Content = maximized ? "\uE923" : "\uE922";
+        MaximizeIcon.Symbol = maximized ? Wpf.Ui.Controls.SymbolRegular.SquareMultiple24 : Wpf.Ui.Controls.SymbolRegular.Maximize24;
         MaximizeButton.ToolTip = maximized ? "Restore" : "Maximize";
         System.Windows.Automation.AutomationProperties.SetName(MaximizeButton, maximized ? "Restore" : "Maximize");
     }

@@ -1,6 +1,7 @@
 ﻿<Application x:Class="Keylo.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:local="clr-namespace:Keylo.App"
              ShutdownMode="OnMainWindowClose">
@@ -20,6 +21,7 @@
             <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas</FontFamily>
 
             <!-- Brand accent used for the logo tile and avatars on the lock screen. -->
+            <sys:String x:Key="Tagline">Your secrets, kept close.</sys:String>
             <LinearGradientBrush x:Key="BrandBrush" StartPoint="0,0" EndPoint="1,1">
                 <GradientStop Color="#7C6CF6" Offset="0" />
                 <GradientStop Color="#4F8CF7" Offset="1" />

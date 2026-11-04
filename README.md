@@ -1,5 +1,7 @@
 # Keylo
 
+*Your secrets, kept close.*
+
 Local secrets for one Windows machine, stored in Windows Credential Manager, with a command line
 (`keylo`) and a desktop app (`keylow`). No server, no account, no sync.
 

@@ -29,39 +29,41 @@
         </Grid.RowDefinitions>
 
         <!-- Chromeless: no title bar. The top bar (or the lock screen) drags the window; our own buttons sit top-right. -->
-        <StackPanel Grid.Row="0" Grid.RowSpan="2" Panel.ZIndex="10" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+        <!-- Window controls: smaller, grouped and set off by a divider, so they don't read as app actions.
+             Centred on the bar's tile row (bar padding 12 + tile 46 → centre 37). -->
+        <StackPanel Grid.Row="0" Grid.RowSpan="2" Panel.ZIndex="10" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="0,20,12,0">
             <StackPanel.Resources>
-                <Style x:Key="CaptionButton" TargetType="Button">
-                    <Setter Property="Width" Value="46" />
-                    <Setter Property="Height" Value="34" />
-                    <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
-                    <Setter Property="FontSize" Value="10" />
-                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                <Style x:Key="CaptionTile" TargetType="Button">
+                    <Setter Property="Width" Value="34" />
+                    <Setter Property="Height" Value="30" />
+                    <Setter Property="Margin" Value="0" />
+                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
                     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                     <Setter Property="IsTabStop" Value="False" />
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="Button">
-                                <Border x:Name="Bg" Background="Transparent">
+                                <Border x:Name="Bg" CornerRadius="5" Background="Transparent">
                                     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Border>
                                 <ControlTemplate.Triggers>
                                     <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="Bg" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                        <Setter TargetName="Bg" Property="Background" Value="#14FFFFFF" />
                                     </Trigger>
                                     <Trigger Property="IsPressed" Value="True">
-                                        <Setter TargetName="Bg" Property="Background" Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+                                        <Setter TargetName="Bg" Property="Background" Value="#22000000" />
                                     </Trigger>
                                 </ControlTemplate.Triggers>
                             </ControlTemplate>
                         </Setter.Value>
                     </Setter>
                 </Style>
-                <Style x:Key="CloseButton" TargetType="Button" BasedOn="{StaticResource CaptionButton}">
+                <Style x:Key="CloseTile" TargetType="Button" BasedOn="{StaticResource CaptionTile}">
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="Button">
-                                <Border x:Name="Bg" Background="Transparent">
+                                <Border x:Name="Bg" CornerRadius="5" Background="Transparent">
                                     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Border>
                                 <ControlTemplate.Triggers>
@@ -79,9 +81,21 @@
                     </Setter>
                 </Style>
             </StackPanel.Resources>
-            <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="OnMinimize" ToolTip="Minimize" AutomationProperties.Name="Minimize" />
-            <Button x:Name="MaximizeButton" Style="{StaticResource CaptionButton}" Content="&#xE922;" Click="OnMaximize" ToolTip="Maximize" AutomationProperties.Name="Maximize" />
-            <Button Style="{StaticResource CloseButton}" Content="&#xE8BB;" Click="OnClose" ToolTip="Close" AutomationProperties.Name="Close" />
+            <Rectangle Width="1" Height="24" Margin="0,0,12,0" VerticalAlignment="Center" Fill="{DynamicResource DividerStrokeColorDefaultBrush}" />
+            <Border CornerRadius="7" Padding="2" Background="{DynamicResource ControlFillColorSecondaryBrush}"
+                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1">
+                <StackPanel Orientation="Horizontal">
+                    <Button Style="{StaticResource CaptionTile}" Click="OnMinimize" ToolTip="Minimize" AutomationProperties.Name="Minimize">
+                        <ui:SymbolIcon Symbol="Subtract24" FontSize="14" />
+                    </Button>
+                    <Button x:Name="MaximizeButton" Style="{StaticResource CaptionTile}" Click="OnMaximize" ToolTip="Maximize" AutomationProperties.Name="Maximize">
+                        <ui:SymbolIcon x:Name="MaximizeIcon" Symbol="Maximize24" FontSize="13" />
+                    </Button>
+                    <Button Style="{StaticResource CloseTile}" Click="OnClose" ToolTip="Close" AutomationProperties.Name="Close">
+                        <ui:SymbolIcon Symbol="Dismiss24" FontSize="14" />
+                    </Button>
+                </StackPanel>
+            </Border>
         </StackPanel>
 
         <!-- ============================================================ main -->
@@ -101,11 +115,11 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <Grid.Resources>
-                <!-- A labelled icon tile; Tag holds the label. -->
+                <!-- An icon tile; its name is in the tooltip. -->
                 <Style x:Key="Tile" TargetType="Button">
-                    <Setter Property="Width" Value="78" />
-                    <Setter Property="Height" Value="58" />
-                    <Setter Property="Margin" Value="0,0,8,0" />
+                    <Setter Property="Width" Value="46" />
+                    <Setter Property="Height" Value="46" />
+                    <Setter Property="Margin" Value="0,0,6,0" />
                     <Setter Property="Cursor" Value="Hand" />
                     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                     <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
@@ -118,18 +132,10 @@
                                 <Border x:Name="Bg" CornerRadius="8" BorderThickness="1" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}">
                                     <Grid>
                                         <Border x:Name="Shade" CornerRadius="7" Background="Transparent" />
-                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                            <ContentPresenter HorizontalAlignment="Center" />
-                                            <TextBlock x:Name="Label" Text="{TemplateBinding Tag}" FontSize="11" Margin="0,4,0,0" HorizontalAlignment="Center"
-                                                       Foreground="{TemplateBinding Foreground}" TextTrimming="CharacterEllipsis" />
-                                        </StackPanel>
+                                        <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" />
                                     </Grid>
                                 </Border>
                                 <ControlTemplate.Triggers>
-                                    <!-- Compact (no room for labels): icon only. -->
-                                    <Trigger Property="Tag" Value="">
-                                        <Setter TargetName="Label" Property="Visibility" Value="Collapsed" />
-                                    </Trigger>
                                     <Trigger Property="IsMouseOver" Value="True">
                                         <Setter TargetName="Shade" Property="Background" Value="#14FFFFFF" />
                                     </Trigger>
@@ -150,7 +156,6 @@
                     <Setter Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                 </Style>
                 <Style x:Key="QuietTile" TargetType="Button" BasedOn="{StaticResource Tile}">
-                    <Setter Property="Width" Value="62" />
                     <Setter Property="Background" Value="Transparent" />
                     <Setter Property="BorderBrush" Value="Transparent" />
                     <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
@@ -160,8 +165,10 @@
             <!-- Brand, over the sidebar -->
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="18,0,0,0">
                 <Image Source="{StaticResource LogoImage}" Width="32" Height="32" />
-                <TextBlock Text="Keylo" FontSize="18" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="Keylo" FontSize="17" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                    <TextBlock Text="{StaticResource Tagline}" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                </StackPanel>
             </StackPanel>
 
             <!-- Search, over the list -->
@@ -171,9 +178,9 @@
                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
 
             <!-- Action tiles, over the detail area -->
-            <DockPanel x:Name="ActionTiles" Grid.Column="4" Margin="14,0,150,0" VerticalAlignment="Center" LastChildFill="False"
-                       SizeChanged="OnActionTilesResized">
-                <Button DockPanel.Dock="Right" Style="{StaticResource QuietTile}" Tag="Lock" Command="{Binding LockCommand}" Margin="0"
+            <!-- Right margin: room for the window buttons, which line up with these tiles. -->
+            <DockPanel x:Name="ActionTiles" Grid.Column="4" Margin="14,0,148,0" VerticalAlignment="Center" LastChildFill="False">
+                <Button DockPanel.Dock="Right" Style="{StaticResource QuietTile}" Tag="Lock" Command="{Binding LockCommand}"
                         ToolTip="Lock (Ctrl+L)" AutomationProperties.Name="Lock">
                     <ui:SymbolIcon Symbol="LockClosed24" FontSize="20" />
                 </Button>
@@ -425,7 +432,9 @@
                         <ui:SymbolIcon Symbol="LockClosed24" FontSize="18" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                     </Border>
                 </Grid>
-                <TextBlock Text="Keylo is locked" FontSize="24" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,26,0,6" />
+                <TextBlock Text="{StaticResource Tagline}" FontSize="13" HorizontalAlignment="Center" Margin="0,22,0,0"
+                           Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                <TextBlock Text="Keylo is locked" FontSize="24" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,10,0,6" />
                 <TextBlock Text="Verify with Windows Hello to see your secrets." HorizontalAlignment="Center"
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 <ui:Button Appearance="Primary" HorizontalAlignment="Center" Margin="0,26,0,0" Padding="22,10"

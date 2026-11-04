@@ -56,7 +56,7 @@ public sealed partial class SecretDetailViewModel : ObservableObject
     [ObservableProperty] private bool _generatorSymbols = true;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Type), nameof(IsTyped), nameof(IsPlain), nameof(TypeName), nameof(ShowKey), nameof(Symbol), nameof(Image), nameof(HasImage), nameof(TileBrush))]
+    [NotifyPropertyChangedFor(nameof(Type), nameof(IsTyped), nameof(IsPlain), nameof(TypeName), nameof(ShowKey), nameof(ShowFieldEditors), nameof(Symbol), nameof(Image), nameof(HasImage), nameof(TileBrush))]
     private TypeChoice? _selectedType;
 
     public SecretDetailViewModel(KeyloService keylo, IUserNotifier notify, Func<string?, Task> reload, SecretInfo? info)
