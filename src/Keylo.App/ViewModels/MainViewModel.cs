@@ -465,7 +465,7 @@ public sealed partial class MainViewModel : ObservableObject
                 paths,
                 _keylo.Categories.All().Select(c => c.Name),
                 Secrets.Select(s => s.Name),
-                preferredCategory: SelectedCategory?.Key is { Length: > 0 } key ? key : null);
+                preferredCategory: SelectedCategory?.Key is { Length: > 0 } key && key != HomeKey ? key : null);
             if (options.FileCount == 0)
             {
                 _notify.Error("No files to import there.");
@@ -474,7 +474,7 @@ public sealed partial class MainViewModel : ObservableObject
 
             if (_notify.AskImportOptions(options) is not { } chosen) return;
 
-            var result = SecretImporter.Import(_keylo.Store, paths, chosen.Category, chosen.Overwrite, chosen.SubfolderCategories);
+            var result = SecretImporter.Import(_keylo.Store, paths, chosen.Category, chosen.Overwrite, chosen.SubfolderCategories, chosen.Names, chosen.Types);
             Reload(result.Imported.Count == 1 ? result.Imported[0].Name : null);
 
             var message = $"Imported {result.Imported.Count} secret{(result.Imported.Count == 1 ? "" : "s")}";

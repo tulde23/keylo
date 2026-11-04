@@ -1,6 +1,6 @@
 namespace Keylo.Core;
 
-public sealed record ImportedSecret(string Name, string SourcePath, string? Category);
+public sealed record ImportedSecret(string Name, string SourcePath, string? Category, string? Type = null);
 
 public sealed record SkippedFile(string SourcePath, string Reason);
 
@@ -13,16 +13,26 @@ public static class SecretImporter
     /// Plans and imports. The secret name is the file name without its extension (the full file
     /// name when two files would collide). Every file gets <paramref name="category"/> when it's
     /// given; otherwise files from a directory take their top-level subfolder as the category when
-    /// <paramref name="subfolderCategories"/> is set, and none when it isn't.
+    /// <paramref name="subfolderCategories"/> is set, and none when it isn't. <paramref name="names"/>
+    /// overrides the name of individual files, keyed by their full path. <paramref name="types"/> sets
+    /// a file's type ("" for plain); files it doesn't list get a type guessed from their name and
+    /// content (<see cref="SecretTypeInference"/>) when <paramref name="inferTypes"/> is set.
     /// </summary>
     public static ImportResult Import(
         SecretStore store,
         IEnumerable<string> paths,
         string? category = null,
         bool overwrite = false,
-        bool subfolderCategories = true)
+        bool subfolderCategories = true,
+        IReadOnlyDictionary<string, string>? names = null,
+        IReadOnlyDictionary<string, string>? types = null,
+        bool inferTypes = true)
     {
+        var catalog = new SecretTypeCatalog();
         var planned = Plan(paths, category, subfolderCategories);
+        if (names is { Count: > 0 })
+            planned = (planned.Items.Select(i => names.TryGetValue(i.SourcePath, out var name) && !string.IsNullOrWhiteSpace(name) ? i with { Name = name.Trim() } : i).ToList(),
+                planned.Skipped);
         var imported = new List<ImportedSecret>();
         var skipped = new List<SkippedFile>(planned.Skipped);
 
@@ -38,11 +48,28 @@ public static class SecretImporter
                     continue;
                 }
 
-                store.Save(
-                    new SecretDraft(item.Name, value, item.Category ?? existing?.Category, existing?.Username,
-                        existing?.Notes ?? $"Imported from {Path.GetFileName(item.SourcePath)}", existing?.Icon, existing?.Color),
-                    originalName: existing?.Name);
-                imported.Add(item);
+                var notes = existing?.Notes ?? $"Imported from {Path.GetFileName(item.SourcePath)}";
+                var inferred = SecretTypeInference.Infer(item.SourcePath, value);
+                var typeId = types?.GetValueOrDefault(item.SourcePath) ?? (inferTypes ? inferred?.TypeId : null);
+                var type = string.IsNullOrEmpty(typeId) ? null : catalog.Find(typeId);
+                var text = type is null ? null : TypedSecrets.DecodeText(value);
+
+                SecretDraft draft;
+                if (type is not null && text is not null)
+                {
+                    // The guessed split when the guess was kept; otherwise the whole value goes in the main field.
+                    var fields = inferred?.TypeId == type.Id ? inferred.Fields
+                        : new Dictionary<string, string?> { [type.Primary?.Id ?? type.Fields[0].Id] = text.Trim() };
+                    draft = TypedSecrets.Draft(type, item.Name, fields, item.Category ?? existing?.Category, notes, existing?.Icon, existing?.Color);
+                }
+                else
+                {
+                    type = null;
+                    draft = new SecretDraft(item.Name, value, item.Category ?? existing?.Category, existing?.Username, notes, existing?.Icon, existing?.Color);
+                }
+
+                store.Save(draft, originalName: existing?.Name);
+                imported.Add(item with { Type = type?.Id });
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or KeyloException)
             {

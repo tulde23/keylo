@@ -68,7 +68,7 @@ keylo types                             # all types and fields
 
 - **Home** (the default view) shows pinned secrets (pin button on a secret) and recently used ones — by you in the app, or by agents (from the audit log). Search covers everything; categories show their full lists. The top bar has search for everything (Ctrl+K), New ▾ (import, link from 1Password), Settings and Lock.
 - **Search** across name, category, key, notes and non-secret fields; filter by category in the sidebar.
-- **Import** files or folders (button, drag and drop, or `keylow --import PATH`). The dialog
+- **Import** files or folders (button, drag and drop, or `keylow --import PATH`). Each file is listed with its name (from the file name; edit it) and a guessed type: SSH keys, database URLs (split into host, port, user…), tokens and passwords; anything else stays plain. The dialog
   previews the result and lets you use subfolder names, put everything in one existing or new
   category, or leave them uncategorized, and choose whether to replace existing secrets.
 - **Multi-select** with Ctrl/Shift+click (Ctrl+A for all) to move secrets to a category or delete

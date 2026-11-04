@@ -27,9 +27,10 @@ internal static class Program
         keylo edit NAME [--rename NEW] [--category C] [--username U] [--notes N] [--field F=V]...
                                                 Change details or fields ("" clears one)
         keylo rm NAME [--yes]                   Delete a secret
-        keylo import PATH... [--category C | --flat] [--overwrite] [--delete-originals]
+        keylo import PATH... [--category C | --flat] [--overwrite] [--delete-originals] [--plain]
                                                 One secret per file. Subfolders become categories,
                                                 unless --category puts everything in C or --flat sets none
+                                                Types are guessed (SSH key, database URL, token…); --plain keeps them plain
         keylo run --env VAR=NAME [...] -- CMD [ARGS]
                                                 Run CMD with secrets as environment variables
                                                 (NAME:FIELD maps one field, e.g. prod-db:password or x:username)
@@ -52,7 +53,7 @@ internal static class Program
         keylo config [hello session|always|never | session-minutes N | clipboard-seconds N | audit-days N|forever]
         """;
 
-    private static readonly string[] Flags = ["clip", "yes", "overwrite", "delete-originals", "flat", "all", "json", "force", "dry-run", "password-stdin", "both", "allow-get", "add-to-claude", "help"];
+    private static readonly string[] Flags = ["clip", "yes", "overwrite", "delete-originals", "flat", "plain", "all", "json", "force", "dry-run", "password-stdin", "both", "allow-get", "add-to-claude", "help"];
 
     private static async Task<int> Main(string[] argv)
     {
@@ -470,15 +471,16 @@ internal static class Program
         var overwrite = args.Flag("overwrite");
         var deleteOriginals = args.Flag("delete-originals");
         var flat = args.Flag("flat");
+        var plain = args.Flag("plain");
         args.ThrowOnUnknown();
         if (paths.Count == 0) throw new UsageException("Give one or more files or folders to import.");
         if (flat && category is not null) throw new UsageException("Use --category or --flat, not both.");
         await c.BrowseAsync();
 
-        var result = SecretImporter.Import(c.Store, paths, category, overwrite, subfolderCategories: !flat);
+        var result = SecretImporter.Import(c.Store, paths, category, overwrite, subfolderCategories: !flat, inferTypes: !plain);
 
         foreach (var item in result.Imported)
-            Terminal.Info($"  + {item.Name}{(item.Category is null ? "" : $"  [{item.Category}]")}");
+            Terminal.Info($"  + {item.Name}{(item.Type is null ? "" : $"  ({item.Type})")}{(item.Category is null ? "" : $"  [{item.Category}]")}");
         foreach (var skip in result.Skipped)
             Terminal.Info($"  - {skip.SourcePath}: {skip.Reason}");
         Terminal.Info($"Imported {result.Imported.Count}, skipped {result.Skipped.Count}.");

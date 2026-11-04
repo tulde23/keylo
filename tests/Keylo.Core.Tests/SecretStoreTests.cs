@@ -29,6 +29,51 @@ public sealed class SecretStoreTests : IDisposable
     }
 
     [Fact]
+    public void Import_names_default_to_the_file_name_and_can_be_overridden()
+    {
+        var folder = Directory.CreateTempSubdirectory("keylo-import-").FullName;
+        try
+        {
+            var a = Path.Combine(folder, "github-token.txt");
+            var b = Path.Combine(folder, "db.env");
+            File.WriteAllText(a, "tok");
+            File.WriteAllText(b, "pw");
+
+            var result = SecretImporter.Import(_store, [a, b], names: new Dictionary<string, string> { [b] = "  prod-db  " }, inferTypes: false);
+
+            Assert.Equal(["github-token", "prod-db"], result.Imported.Select(i => i.Name).Order());
+            Assert.Equal("pw", Encoding.UTF8.GetString(_store.Get("prod-db").Value));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Import_guesses_types_unless_told_otherwise()
+    {
+        var folder = Directory.CreateTempSubdirectory("keylo-import-").FullName;
+        try
+        {
+            var url = Path.Combine(folder, "orders-db.txt");
+            var token = Path.Combine(folder, "github-token");
+            File.WriteAllText(url, "postgres://alice:pw@db.local:5432/orders\n");
+            File.WriteAllText(token, "ghp_123\n");
+
+            SecretImporter.Import(_store, [url, token], types: new Dictionary<string, string> { [token] = "" });
+
+            var db = _store.Get("orders-db");
+            Assert.Equal(("database", "db.local"), (db.Info.Type, db.Info.Fields!["host"]));
+            Assert.Null(_store.Find("github-token")!.Type); // chosen plain
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Large_value_goes_to_an_encrypted_file_and_delete_removes_it()
     {
         var value = RandomBytes(SecretStore.MaxInlineBytes + 1);

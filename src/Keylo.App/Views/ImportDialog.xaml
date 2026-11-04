@@ -8,7 +8,7 @@
                  mc:Ignorable="d"
                  d:DataContext="{d:DesignInstance vm:ImportOptionsViewModel}"
                  Title="Import secrets"
-                 Width="560" SizeToContent="Height"
+                 Width="760" SizeToContent="Height"
                  ResizeMode="NoResize" ShowInTaskbar="False"
                  WindowStartupLocation="CenterOwner"
                  ExtendsContentIntoTitleBar="True"
@@ -62,35 +62,51 @@
                 </DockPanel>
             </Border>
 
-            <!-- Preview -->
-            <TextBlock Text="PREVIEW" Style="{StaticResource SectionLabel}" />
-            <Border Style="{StaticResource Surface}" Padding="16,10" Margin="0,0,0,22">
-                <StackPanel>
+            <!-- Every file, with an editable name -->
+            <DockPanel Margin="0,0,0,6">
+                <TextBlock DockPanel.Dock="Right" FontSize="12" Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                           Text="Names come from the files and types are guessed; change either" VerticalAlignment="Bottom" />
+                <TextBlock Text="SECRETS TO CREATE" Style="{StaticResource SectionLabel}" Margin="0" />
+            </DockPanel>
+            <Border Style="{StaticResource Surface}" Padding="12,8" Margin="0,0,0,22">
+                <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding Preview}">
                         <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type vm:ImportPreviewRow}">
-                                <Grid Margin="0,4">
+                            <DataTemplate DataType="{x:Type vm:ImportRowViewModel}">
+                                <Grid Margin="0,3">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="{Binding Name}" FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
-                                        <Border CornerRadius="8" Padding="6,0" Margin="8,0,0,0" Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
-                                                Visibility="{Binding Exists, Converter={StaticResource VisibleWhen}}">
-                                            <TextBlock Text="exists" FontSize="11" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
-                                        </Border>
-                                    </StackPanel>
-                                    <Border Grid.Column="1" CornerRadius="10" Padding="8,1" Background="{DynamicResource ControlFillColorSecondaryBrush}">
+                                    <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" FontFamily="{StaticResource MonoFont}"
+                                                ToolTip="{Binding FileName}" ClearButtonEnabled="False" />
+                                    <ComboBox Grid.Column="3" Width="150" Margin="8,0,0,0" VerticalAlignment="Center"
+                                              ItemsSource="{Binding TypeChoices}" SelectedItem="{Binding Type}" ToolTip="Type (guessed from the file)">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type vm:TypeChoice}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <ui:SymbolIcon Symbol="{Binding Symbol}" FontSize="14" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                                    <TextBlock Text="{Binding Name}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <Border Grid.Column="1" CornerRadius="8" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center"
+                                            Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                                            Visibility="{Binding HasProblem, Converter={StaticResource VisibleWhen}}">
+                                        <TextBlock Text="{Binding Problem}" FontSize="11" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                                    </Border>
+                                    <Border Grid.Column="2" CornerRadius="10" Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center"
+                                            Background="{DynamicResource ControlFillColorSecondaryBrush}">
                                         <TextBlock Text="{Binding Category}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                     </Border>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <TextBlock Text="{Binding MoreText}" FontSize="12" Margin="0,4,0,0" Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                               Visibility="{Binding MoreText, Converter={StaticResource VisibleWhen}}" />
-                </StackPanel>
+                </ScrollViewer>
             </Border>
 
             <DockPanel>
