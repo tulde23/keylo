@@ -1,0 +1,88 @@
+<ui:FluentWindow x:Class="Keylo.App.Views.PushDialog"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 xmlns:views="clr-namespace:Keylo.App.Views"
+                 Title="Push"
+                 Width="560" SizeToContent="Height"
+                 ResizeMode="NoResize" ShowInTaskbar="False"
+                 WindowStartupLocation="CenterOwner"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round">
+    <StackPanel>
+        <ui:TitleBar Title="" ShowMinimize="False" ShowMaximize="False" />
+        <StackPanel Margin="28,0,28,24">
+
+            <!-- Heading -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                <Border Width="40" Height="40" CornerRadius="10" Background="{StaticResource BrandBrush}">
+                    <ui:SymbolIcon Symbol="CloudArrowUp24" FontSize="20" Foreground="White" />
+                </Border>
+                <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                    <TextBlock x:Name="Heading" FontSize="20" FontWeight="SemiBold" />
+                    <TextBlock Text="Check where it's going before anything is sent." FontSize="12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </StackPanel>
+
+            <!-- From → To -->
+            <Grid Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="44" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Style="{StaticResource Surface}" Padding="14,12">
+                    <StackPanel>
+                        <TextBlock Text="FROM KEYLO" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
+                        <DockPanel>
+                            <views:IconTile x:Name="SecretTile" Width="36" Height="36" CornerRadius="10" GlyphSize="18" DockPanel.Dock="Left" />
+                            <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+                                <TextBlock x:Name="SecretName" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="SecretDetail" FontSize="12" TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+
+                <ui:SymbolIcon Grid.Column="1" Symbol="ArrowRight24" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+
+                <Border Grid.Column="2" Style="{StaticResource Surface}" Padding="14,12">
+                    <StackPanel>
+                        <TextBlock x:Name="ToLabel" Style="{StaticResource SectionLabel}" Margin="0,0,0,8" />
+                        <DockPanel>
+                            <Border DockPanel.Dock="Left" Width="36" Height="36" CornerRadius="10" Background="#0572EC">
+                                <ui:SymbolIcon Symbol="Vault24" FontSize="18" Foreground="White" />
+                            </Border>
+                            <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+                                <TextBlock x:Name="VaultName" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="VaultDetail" FontSize="12" TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- New item vs update -->
+            <Border x:Name="StatusChip" CornerRadius="8" Padding="12,8" Margin="0,0,0,12">
+                <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon x:Name="StatusIcon" FontSize="16" VerticalAlignment="Center" />
+                    <TextBlock x:Name="StatusText" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                       Text="It's a copy: later changes in Keylo don't follow unless you push again. The value goes to 1Password over stdin, never on a command line." />
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+                <ui:Button Appearance="Secondary" Content="Cancel" IsCancel="True" Click="OnCancel" Margin="0,0,8,0" Padding="18,8" />
+                <ui:Button x:Name="PushButton" Appearance="Primary" Icon="{ui:SymbolIcon CloudArrowUp24}" IsDefault="True" Click="OnPush" Padding="18,8" />
+            </StackPanel>
+        </StackPanel>
+    </StackPanel>
+</ui:FluentWindow>

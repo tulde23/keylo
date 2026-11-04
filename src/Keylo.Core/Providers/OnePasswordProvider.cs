@@ -223,6 +223,15 @@ public sealed class OnePasswordProvider : IVaultProvider, ILinkedVaultProvider
     }
 
     /// <summary>The id of a Keylo-tagged item with this title, if one was pushed before.</summary>
+    public async Task<PushPreview> PreviewAsync(string secretName, IReadOnlyDictionary<string, string> settings, CancellationToken cancellationToken = default)
+    {
+        settings.TryGetValue("vault", out var vault);
+        var account = settings.TryGetValue("account", out var a) && !string.IsNullOrWhiteSpace(a) ? a.Trim() : null;
+        var target = $"the “{vault}” vault" + (account is null ? " (your default 1Password account)" : $" ({account})");
+        var existing = string.IsNullOrWhiteSpace(vault) ? null : await FindItemIdAsync(secretName, vault, AccountArgs(settings), cancellationToken);
+        return new PushPreview(target, existing is not null, vault, account ?? "Default account");
+    }
+
     private static async Task<string?> FindItemIdAsync(string title, string vault, string[] account, CancellationToken cancellationToken)
     {
         var (code, output, _) = await RunOpAsync(["item", "list", "--vault", vault, "--tags", "keylo", "--format", "json", .. account], null, cancellationToken);

@@ -599,6 +599,14 @@ public sealed partial class SecretDetailViewModel : ObservableObject
                 return;
             }
 
+            // Show exactly where it goes, and whether it replaces an earlier copy, before anything is sent.
+            var preview = await provider.PreviewAsync(_info.Name, settings);
+            var detail = string.Join(" · ", new[] { TypeName ?? "Plain secret", HasCategory ? Category : null }.Where(s => !string.IsNullOrEmpty(s)));
+            if (!_notify.ConfirmPush(new Views.PushConfirmation(
+                    provider.DisplayName, _info.Name, detail, Symbol, Image, TileBrush,
+                    preview.Destination ?? preview.Target, preview.DestinationDetail ?? "", preview.Exists)))
+                return;
+
             await _keylo.EnsureValueAccessAsync($"push '{_info.Name}' to {provider.DisplayName}");
             var result = await provider.PushAsync(_keylo.Store.Get(_info.Name), settings);
             if (result.Succeeded) _notify.Success($"{provider.DisplayName}: {result.Message}");

@@ -156,6 +156,8 @@ public partial class MainWindow : FluentWindow, IUserNotifier
         return dialog.ShowDialog() == true ? dialog.Password : null;
     }
 
+    public bool ConfirmPush(Views.PushConfirmation push) => new Views.PushDialog(push) { Owner = this }.ShowDialog() == true;
+
     public string? LinkSecret()
     {
         var dialog = new Views.LinkDialog(_keylo) { Owner = this };

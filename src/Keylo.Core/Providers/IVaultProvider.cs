@@ -5,6 +5,13 @@ public sealed record ProviderStatus(bool Ready, string Message);
 
 public sealed record PushResult(string Name, bool Succeeded, string Message, string? RemoteId = null);
 
+/// <summary>Where a push would go, shown to the user before it happens.</summary>
+/// <param name="Target">E.g. "the “Private” vault (my.1password.com)".</param>
+/// <param name="Exists">Whether it would update an item pushed before; null when unknown.</param>
+/// <param name="Destination">The place itself, e.g. the vault name.</param>
+/// <param name="DestinationDetail">Where that is, e.g. the account.</param>
+public sealed record PushPreview(string Target, bool? Exists, string? Destination = null, string? DestinationDetail = null);
+
 /// <summary>
 /// An external vault Keylo can push secrets into (1Password, Bitwarden, KeePass, ...).
 ///
@@ -33,6 +40,10 @@ public interface IVaultProvider
     bool IsConfigured(IReadOnlyDictionary<string, string> settings) => true;
 
     Task<ProviderStatus> GetStatusAsync(IReadOnlyDictionary<string, string> settings, CancellationToken cancellationToken = default);
+
+    /// <summary>Where <paramref name="secretName"/> would be pushed, for a confirmation (no values are read).</summary>
+    Task<PushPreview> PreviewAsync(string secretName, IReadOnlyDictionary<string, string> settings, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new PushPreview(DisplayName, null));
 
     /// <summary>Creates the secret in the external vault, or updates the item Keylo pushed before.</summary>
     Task<PushResult> PushAsync(Secret secret, IReadOnlyDictionary<string, string> settings, CancellationToken cancellationToken = default);

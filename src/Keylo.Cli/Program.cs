@@ -37,7 +37,7 @@ internal static class Program
         keylo link NAME --item ITEM [--vault V] [--account A] [--field F] [--category C] [--provider 1password]
                                                 Link to an item in another vault (read live, never copied)
         keylo link --search QUERY [--account A]   Find items to link
-        keylo push PROVIDER [NAME...] [--category C] [--all]
+        keylo push PROVIDER [NAME...] [--category C] [--all] [--yes]
                                                 Push secrets to another vault (e.g. 1password)
         keylo provider list | status ID | set ID KEY VALUE
         keylo backup FILE [--force] [--password-stdin]
@@ -654,6 +654,7 @@ internal static class Program
         var names = args.PositionalsFrom(1);
         var category = args.Option("category");
         var all = args.Flag("all");
+        var yes = args.Flag("yes");
         args.ThrowOnUnknown();
 
         var registry = new ProviderRegistry();
@@ -674,6 +675,17 @@ internal static class Program
         {
             Terminal.Info("Nothing to push.");
             return 0;
+        }
+
+        // Show where it all goes before anything is read or sent.
+        var target = (await provider.PreviewAsync(selected[0].Name, settings)).Target;
+        Terminal.Info($"Pushing {selected.Count} secret(s) to {provider.DisplayName}: {target}");
+        foreach (var info in selected.Take(10)) Terminal.Info($"  {info.Name}");
+        if (selected.Count > 10) Terminal.Info($"  …and {selected.Count - 10} more");
+        if (!yes && !Terminal.Confirm("Push them? (existing Keylo-pushed items are updated)"))
+        {
+            Terminal.Info("Nothing pushed.");
+            return 1;
         }
 
         await c.ValueAsync($"push {selected.Count} secret(s) to {provider.DisplayName}");
