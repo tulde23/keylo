@@ -25,7 +25,7 @@ public sealed record BackupSummary(string Path, int Secrets, int Categories, int
 public sealed record RestoreResult(int Added, int Replaced, int Skipped, int CategoriesAdded, IReadOnlyList<string> Errors);
 
 /// <summary>
-/// Password-protected backups, portable to another Windows account or PC (unlike DPAPI).
+/// Password-protected backups, portable between accounts, PCs and Macs (unlike DPAPI or the keychain).
 ///
 /// File layout (all integers little-endian):
 ///   "KEYLOBK1"  8-byte magic

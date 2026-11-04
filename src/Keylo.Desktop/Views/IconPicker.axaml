@@ -1,0 +1,95 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ic="using:FluentIcons.Avalonia"
+             xmlns:fc="using:FluentIcons.Common"
+             xmlns:views="using:Keylo.Desktop.Views"
+             x:Class="Keylo.Desktop.Views.IconPicker">
+
+    <UserControl.Styles>
+        <Style Selector="ListBox.swatches, ListBox.glyphs">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="ListBox.swatches > ListBoxItem">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Panel Width="30" Height="30" Margin="0,0,6,0" Background="Transparent">
+                        <Ellipse Name="Ring" Stroke="{DynamicResource TextPrimary}" StrokeThickness="2" IsVisible="False" />
+                        <ContentPresenter Name="PART_ContentPresenter" Margin="4" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+                    </Panel>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="ListBox.swatches > ListBoxItem:selected /template/ Ellipse#Ring">
+            <Setter Property="IsVisible" Value="True" />
+        </Style>
+        <Style Selector="ListBox.glyphs > ListBoxItem">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="Bg" Width="38" Height="38" Margin="0,0,4,4" CornerRadius="8" Background="Transparent" BorderThickness="1" BorderBrush="Transparent">
+                        <ContentPresenter Name="PART_ContentPresenter" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="ListBox.glyphs > ListBoxItem:pointerover /template/ Border#Bg">
+            <Setter Property="Background" Value="{DynamicResource SubtleHover}" />
+        </Style>
+        <Style Selector="ListBox.glyphs > ListBoxItem:selected /template/ Border#Bg">
+            <Setter Property="Background" Value="{DynamicResource SubtleHover}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentFill}" />
+        </Style>
+    </UserControl.Styles>
+
+    <StackPanel>
+        <!-- Colours -->
+        <ListBox Name="ColorList" Classes="swatches" SelectionChanged="OnColorChanged" Margin="0,0,0,10"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel />
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                    <Ellipse Fill="{Binding Converter={x:Static views:Convert.ToBrush}}" ToolTip.Tip="{Binding}" />
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- Icons -->
+        <ListBox Name="IconList" Classes="glyphs" SelectionChanged="OnIconChanged" MaxHeight="176"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel />
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="fc:Symbol">
+                    <ic:SymbolIcon Symbol="{Binding}" FontSize="20" Foreground="{DynamicResource TextPrimary}" />
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Spacing="8">
+            <Button Padding="10,5" FontSize="12" Click="OnUpload" ToolTip.Tip="PNG, JPG, GIF, BMP or ICO. Scaled to fit, never cropped.">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <ic:SymbolIcon Symbol="ImageAdd" FontSize="14" />
+                    <TextBlock Text="Upload image…" />
+                </StackPanel>
+            </Button>
+            <Border Name="UploadedPreview" Width="30" Height="30" CornerRadius="7" IsVisible="False" ToolTip.Tip="Uploaded image in use" ClipToBounds="True" />
+            <Button Classes="subtle" Padding="8,4" FontSize="12" Click="OnReset">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <ic:SymbolIcon Symbol="ArrowReset" FontSize="14" />
+                    <TextBlock Text="Reset to default" />
+                </StackPanel>
+            </Button>
+        </StackPanel>
+        <TextBlock Name="UploadError" Classes="small" Foreground="{DynamicResource Critical}" TextWrapping="Wrap" IsVisible="False" Margin="0,6,0,0" />
+    </StackPanel>
+</UserControl>

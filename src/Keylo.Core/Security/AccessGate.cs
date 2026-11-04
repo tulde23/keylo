@@ -114,7 +114,7 @@ public sealed class AccessGate(KeyloConfig config, IUserVerifier verifier, strin
         try
         {
             if (!File.Exists(_sessionPath)) return null;
-            var raw = ProtectedData.Unprotect(File.ReadAllBytes(_sessionPath), SessionEntropy, DataProtectionScope.CurrentUser);
+            var raw = Platform.KeyloPlatform.Current.DataProtector.Unprotect(File.ReadAllBytes(_sessionPath), SessionEntropy);
             if (raw.Length != 8) return null;
 
             var expires = new DateTimeOffset(BinaryPrimitives.ReadInt64LittleEndian(raw), TimeSpan.Zero);
@@ -133,6 +133,6 @@ public sealed class AccessGate(KeyloConfig config, IUserVerifier verifier, strin
         var raw = new byte[8];
         BinaryPrimitives.WriteInt64LittleEndian(raw, expires.UtcTicks);
         Directory.CreateDirectory(Path.GetDirectoryName(_sessionPath)!);
-        File.WriteAllBytes(_sessionPath, ProtectedData.Protect(raw, SessionEntropy, DataProtectionScope.CurrentUser));
+        File.WriteAllBytes(_sessionPath, Platform.KeyloPlatform.Current.DataProtector.Protect(raw, SessionEntropy));
     }
 }

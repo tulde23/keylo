@@ -141,7 +141,7 @@ internal sealed class KeyloTools
     {
         var (_, key) = LoadKey();
         var command = RequiredString(args, "command");
-        var shell = (OptionalString(args, "shell") ?? "powershell").ToLowerInvariant();
+        var shell = (OptionalString(args, "shell") ?? ShellCommand.DefaultShell).ToLowerInvariant();
         var workingDirectory = OptionalString(args, "working_directory");
         var timeout = TimeSpan.FromSeconds(Math.Clamp(OptionalInt(args, "timeout_seconds") ?? 120, 1, 600));
         var reason = OptionalString(args, "reason");
@@ -413,8 +413,8 @@ internal sealed class KeyloTools
                   "description": "Environment variable -> secret name, which maps its main value, or 'name:field' for one field (see the fields from search_secrets), e.g. {\"GITHUB_TOKEN\": \"github-token\", \"DB_URL\": \"prod-db:connection_string\", \"DB_USER\": \"prod-db:username\"}.",
                   "additionalProperties": { "type": "string" }
                 },
-                "command": { "type": "string", "description": "The command line. Reference variables in the shell's syntax: $env:VAR (powershell), %VAR% (cmd), $VAR (bash)." },
-                "shell": { "type": "string", "enum": ["powershell", "cmd", "bash"], "description": "Default powershell (pwsh if installed). bash is Git Bash." },
+                "command": { "type": "string", "description": "The command line. Reference variables in the shell's syntax: $env:VAR (powershell), %VAR% (cmd), $VAR (bash, zsh, sh)." },
+                "shell": { "type": "string", "enum": ["powershell", "cmd", "bash", "zsh", "sh"], "description": "Windows: powershell (default; pwsh if installed), cmd, or bash (Git Bash). macOS: zsh (default), bash, sh, or powershell if installed." },
                 "working_directory": { "type": "string", "description": "Defaults to the server's working directory (the project Claude Code was started in)." },
                 "timeout_seconds": { "type": "integer", "description": "Default 120, max 600. The process tree is killed on timeout." },
                 "reason": { "type": "string", "description": "Why you need these secrets; shown to the user if approval is needed." }

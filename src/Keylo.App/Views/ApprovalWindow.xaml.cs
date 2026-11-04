@@ -98,7 +98,7 @@ public partial class ApprovalWindow : FluentWindow
         try
         {
             var config = KeyloConfig.Load();
-            var gate = new AccessGate(config, new WindowsHelloVerifier());
+            var gate = new AccessGate(config, Keylo.Core.Platform.KeyloPlatform.Current.Verifier);
             var what = result == ApprovalResult.AllowedAlways
                 ? $"Keylo: give '{_request.KeyName}' lasting access to {string.Join(", ", _request.Secrets)}"
                 : $"Keylo: allow '{_request.KeyName}' to {(_request.Operation == SecretOperation.Get ? "read" : "use")} {string.Join(", ", _request.Secrets)}";

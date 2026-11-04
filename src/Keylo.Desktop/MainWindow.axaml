@@ -1,0 +1,259 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ic="using:FluentIcons.Avalonia"
+        xmlns:vm="using:Keylo.App.ViewModels"
+        xmlns:views="using:Keylo.Desktop.Views"
+        mc:Ignorable="d"
+        x:Class="Keylo.Desktop.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="Keylo"
+        Icon="/Assets/keylo.png"
+        Width="1180" Height="760" MinWidth="1080" MinHeight="560"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource BaseFill}"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="PreferSystemChrome"
+        ExtendClientAreaTitleBarHeightHint="70"
+        DragDrop.AllowDrop="True">
+
+    <Panel>
+        <!-- ============================================================ main -->
+        <DockPanel IsVisible="{Binding !IsLocked}">
+
+            <!-- Top bar: brand over the sidebar, search over the list, action tiles over the detail area.
+                 Its columns follow the sidebar and list widths (code-behind), so search stays above the list.
+                 The window's own buttons sit in it: top-left on macOS, top-right on Windows. -->
+            <Border Name="TopBar" DockPanel.Dock="Top" Margin="0,0,0,12" Padding="0,12" Height="70"
+                    Background="{DynamicResource TopBarFill}" BorderBrush="{DynamicResource CardStroke}" BorderThickness="0,0,0,1"
+                    PointerPressed="OnDragArea">
+                <Grid Name="TopGrid" ColumnDefinitions="232,6,340,6,*">
+                    <!-- Brand, over the sidebar -->
+                    <StackPanel Name="Brand" Orientation="Horizontal" VerticalAlignment="Center" Margin="18,0,0,0" IsHitTestVisible="False">
+                        <Image Source="/Assets/keylo.png" Width="32" Height="32" />
+                        <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="Keylo" FontSize="17" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}" />
+                            <TextBlock Text="{StaticResource Tagline}" FontSize="11" Foreground="{DynamicResource TextTertiary}" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Search, over the list -->
+                    <TextBox Name="SearchBox" Grid.Column="2" Margin="14,0" VerticalAlignment="Center" Classes="clearButton"
+                             Text="{Binding SearchText}">
+                        <TextBox.InnerLeftContent>
+                            <ic:SymbolIcon Symbol="Search" FontSize="16" Margin="10,0,0,0" Foreground="{DynamicResource TextSecondary}" />
+                        </TextBox.InnerLeftContent>
+                    </TextBox>
+
+                    <!-- Action tiles, over the detail area -->
+                    <DockPanel Name="ActionTiles" Grid.Column="4" Margin="14,0" VerticalAlignment="Center" LastChildFill="False">
+                        <Button DockPanel.Dock="Right" Classes="tile quiet" Command="{Binding LockCommand}" Name="LockTile">
+                            <ic:SymbolIcon Symbol="LockClosed" FontSize="20" />
+                        </Button>
+                        <Button DockPanel.Dock="Right" Classes="tile quiet" Command="{Binding OpenSettingsCommand}" ToolTip.Tip="Settings">
+                            <ic:SymbolIcon Symbol="Settings" FontSize="20" />
+                        </Button>
+                        <Button Classes="tile primary" Command="{Binding NewSecretCommand}" Name="NewTile">
+                            <ic:SymbolIcon Symbol="Add" FontSize="20" Foreground="{DynamicResource OnAccent}" />
+                        </Button>
+                        <Button Classes="tile" Command="{Binding ImportFilesCommand}" ToolTip.Tip="Import files as secrets">
+                            <ic:SymbolIcon Symbol="DocumentAdd" FontSize="20" />
+                        </Button>
+                        <Button Classes="tile" Command="{Binding ImportFolderCommand}" ToolTip.Tip="Import a folder; subfolders become categories">
+                            <ic:SymbolIcon Symbol="FolderOpen" FontSize="20" />
+                        </Button>
+                        <Button Classes="tile" Command="{Binding LinkFromVaultCommand}" ToolTip.Tip="Link to a 1Password item (read live, never copied)">
+                            <ic:SymbolIcon Symbol="Link" FontSize="20" />
+                        </Button>
+                    </DockPanel>
+                </Grid>
+            </Border>
+
+            <Grid Name="Body">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="232" MinWidth="180" MaxWidth="420" />
+                    <ColumnDefinition Width="6" />
+                    <ColumnDefinition Width="340" MinWidth="240" MaxWidth="720" />
+                    <ColumnDefinition Width="6" />
+                    <ColumnDefinition Width="*" MinWidth="380" />
+                </Grid.ColumnDefinitions>
+
+                <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns" Focusable="False" DragCompleted="OnSplitterDragged" />
+                <GridSplitter Grid.Column="3" Background="Transparent" ResizeDirection="Columns" Focusable="False" DragCompleted="OnSplitterDragged" />
+
+                <!-- Sidebar: categories -->
+                <DockPanel Grid.Column="0" Margin="12,4,2,12">
+                    <DockPanel DockPanel.Dock="Top" Margin="8,0,0,4">
+                        <Button DockPanel.Dock="Right" Classes="subtle" Padding="6,2" FontSize="12" Command="{Binding OpenCategoryManagerCommand}"
+                                ToolTip.Tip="Create, rename, merge, delete, and set icons">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <ic:SymbolIcon Symbol="Edit" FontSize="14" />
+                                <TextBlock Text="Manage" />
+                            </StackPanel>
+                        </Button>
+                        <TextBlock Text="CATEGORIES" Classes="section" Margin="0" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <ListBox Classes="nav" ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory}"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:CategoryItem">
+                                <Grid ColumnDefinitions="Auto,*,Auto" Margin="2,1">
+                                    <views:IconTile Width="18" Height="18" CornerRadius="4" Image="{Binding Image}" IsVisible="{Binding HasImage}" />
+                                    <ic:SymbolIcon Symbol="{Binding Icon}" FontSize="16" IsVisible="{Binding !HasImage}"
+                                                   Foreground="{Binding IconBrush, Converter={x:Static views:Convert.BrushOrSecondary}}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Label}" Margin="10,0,8,0" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                    <Border Grid.Column="2" CornerRadius="9" Padding="7,1" MinWidth="22" Background="{DynamicResource ControlFill2}">
+                                        <TextBlock Text="{Binding Count}" FontSize="11" HorizontalAlignment="Center" Foreground="{DynamicResource TextSecondary}" />
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+
+                <!-- Secret list -->
+                <Border Grid.Column="2" CornerRadius="8,0,0,0" BorderThickness="1,1,0,0"
+                        Background="{DynamicResource LayerFill}" BorderBrush="{DynamicResource CardStroke}">
+                    <DockPanel Margin="14,14,14,8">
+                        <DockPanel DockPanel.Dock="Top" Margin="4,0,4,6">
+                            <TextBlock DockPanel.Dock="Right" FontSize="12" Foreground="{DynamicResource TextTertiary}" Text="{Binding CountText}" />
+                            <TextBlock Text="{Binding ListTitle}" FontWeight="SemiBold" FontSize="14" />
+                        </DockPanel>
+
+                        <Panel>
+                            <ListBox Name="SecretList" Classes="nav" ItemsSource="{Binding VisibleSecrets}" SelectedItem="{Binding SelectedSecret}"
+                                     SelectionMode="Multiple" SelectionChanged="OnSecretSelectionChanged"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:SecretItemViewModel">
+                                        <StackPanel Background="Transparent">
+                                            <StackPanel.ContextMenu>
+                                                <ContextMenu>
+                                                    <MenuItem Header="{Binding IsPinned, Converter={x:Static views:Convert.PinMenuText}}" Click="OnTogglePin" />
+                                                </ContextMenu>
+                                            </StackPanel.ContextMenu>
+                                            <!-- Home's group headings (Pinned, Recently used) sit above each group's first row. -->
+                                            <TextBlock Text="{Binding GroupHeader}" Classes="section" Margin="-2,8,0,8"
+                                                       IsVisible="{Binding GroupHeader, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                            <Grid ColumnDefinitions="Auto,*,Auto" Margin="2">
+                                                <views:IconTile Width="36" Height="36" CornerRadius="10" GlyphSize="18"
+                                                                Fill="{Binding AvatarBrush}" Image="{Binding Image}" Symbol="{Binding Icon}" Text="{Binding Initial}" />
+                                                <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TextPrimary}" />
+                                                    <TextBlock Text="{Binding DisplaySubtitle}" FontSize="12" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"
+                                                               Foreground="{DynamicResource TextSecondary}" />
+                                                </StackPanel>
+                                                <Button Grid.Column="2" Classes="subtle" Padding="6" Margin="4,0,0,0" VerticalAlignment="Center"
+                                                        ToolTip.Tip="Unpin from Home" Click="OnTogglePin" IsVisible="{Binding IsPinned}">
+                                                    <ic:SymbolIcon Symbol="Pin" FontSize="14" Foreground="{DynamicResource AccentText}" />
+                                                </Button>
+                                            </Grid>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="16"
+                                        IsVisible="{Binding VisibleCount, Converter={x:Static views:Convert.IsZero}}">
+                                <ic:SymbolIcon Symbol="Search" FontSize="40" Foreground="{DynamicResource TextTertiary}" />
+                                <TextBlock Text="{Binding EmptyTitle}" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,10,0,4" />
+                                <TextBlock Text="{Binding EmptyText}" TextWrapping="Wrap" TextAlignment="Center" FontSize="12" Foreground="{DynamicResource TextSecondary}" />
+                            </StackPanel>
+                        </Panel>
+                    </DockPanel>
+                </Border>
+
+                <!-- Detail / editor / empty state -->
+                <Border Grid.Column="4" BorderThickness="1,1,0,0" Background="{DynamicResource LayerFill}" BorderBrush="{DynamicResource CardStroke}">
+                    <Panel>
+                        <!-- Several secrets selected: bulk actions -->
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="420" IsVisible="{Binding IsMultiSelect}">
+                            <Border Width="64" Height="64" CornerRadius="18" Background="{StaticResource BrandBrush}" HorizontalAlignment="Center">
+                                <ic:SymbolIcon Symbol="Multiselect" FontSize="30" Foreground="White" />
+                            </Border>
+                            <TextBlock Text="{Binding SelectionText}" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,16,0,22" />
+                            <Border Classes="surface" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Text="MOVE TO CATEGORY" Classes="section" />
+                                    <DockPanel>
+                                        <Button DockPanel.Dock="Right" Classes="accent" Margin="8,0,0,0" Command="{Binding MoveSelectedCommand}">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <ic:SymbolIcon Symbol="FolderArrowRight" FontSize="16" />
+                                                <TextBlock Text="Move" />
+                                            </StackPanel>
+                                        </Button>
+                                        <ComboBox IsEditable="True" HorizontalAlignment="Stretch" ItemsSource="{Binding CategoryNames}" Text="{Binding BulkCategory}"
+                                                  ToolTip.Tip="Pick a category, type a new one, or leave empty for none" />
+                                    </DockPanel>
+                                </StackPanel>
+                            </Border>
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Classes="danger" Command="{Binding DeleteSelectedCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <ic:SymbolIcon Symbol="Delete" FontSize="16" Foreground="White" />
+                                        <TextBlock Text="Delete selected" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="subtle" Content="Clear selection" Command="{Binding ClearSelectionCommand}" HorizontalAlignment="Left" />
+                            </DockPanel>
+                        </StackPanel>
+
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" IsVisible="{Binding ShowEmptyState}">
+                            <Image Source="/Assets/keylo.png" Width="72" Height="72" Opacity="0.9" HorizontalAlignment="Center" />
+                            <TextBlock Text="Select a secret" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,16,0,6" />
+                            <TextBlock Name="EmptyHints" HorizontalAlignment="Center" TextAlignment="Center" FontSize="12" LineHeight="20"
+                                       Foreground="{DynamicResource TextSecondary}" />
+                        </StackPanel>
+
+                        <views:SecretDetailView DataContext="{Binding Detail}" IsVisible="{Binding $parent[Window].((vm:MainViewModel)DataContext).HasDetail}" />
+                    </Panel>
+                </Border>
+
+                <!-- Settings and the category manager take over the list + detail area -->
+                <Border Grid.Column="2" Grid.ColumnSpan="3" BorderThickness="1,1,0,0" CornerRadius="8,0,0,0"
+                        Background="{DynamicResource BaseFill}" BorderBrush="{DynamicResource CardStroke}" IsVisible="{Binding IsOverlayOpen}">
+                    <Panel>
+                        <views:SettingsView DataContext="{Binding Settings}" IsVisible="{Binding $parent[Window].((vm:MainViewModel)DataContext).IsSettingsOpen}" />
+                        <views:CategoryManagerView DataContext="{Binding CategoryManager}"
+                                                   IsVisible="{Binding $parent[Window].((vm:MainViewModel)DataContext).IsCategoryManagerOpen}" />
+                    </Panel>
+                </Border>
+            </Grid>
+        </DockPanel>
+
+        <!-- ============================================================ lock screen -->
+        <Grid Background="Transparent" PointerPressed="OnDragArea" IsVisible="{Binding IsLocked}">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="360">
+                <Panel Width="96" Height="96" HorizontalAlignment="Center">
+                    <Image Source="/Assets/keylo.png">
+                        <Image.Effect>
+                            <DropShadowEffect BlurRadius="48" OffsetX="0" OffsetY="0" Opacity="0.6" Color="#6366F1" />
+                        </Image.Effect>
+                    </Image>
+                    <!-- Lock badge on the corner of the logo. -->
+                    <Border Width="34" Height="34" CornerRadius="17" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-8,-8"
+                            Background="{DynamicResource BaseFill}">
+                        <ic:SymbolIcon Symbol="LockClosed" FontSize="18" Foreground="{DynamicResource TextPrimary}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                </Panel>
+                <TextBlock Text="{StaticResource Tagline}" FontSize="13" HorizontalAlignment="Center" Margin="0,22,0,0" Foreground="{DynamicResource AccentText}" />
+                <TextBlock Text="Keylo is locked" FontSize="24" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,10,0,6" />
+                <TextBlock Name="LockHint" HorizontalAlignment="Center" Foreground="{DynamicResource TextSecondary}" />
+                <Button Classes="accent" HorizontalAlignment="Center" Margin="0,26,0,0" Padding="22,10"
+                        Command="{Binding UnlockCommand}" IsEnabled="{Binding !IsUnlocking}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <ic:SymbolIcon Symbol="Fingerprint" FontSize="18" />
+                        <TextBlock Name="UnlockText" />
+                    </StackPanel>
+                </Button>
+                <ProgressBar IsIndeterminate="True" Width="120" Margin="0,18,0,0" IsVisible="{Binding IsUnlocking}" />
+                <TextBlock Text="{Binding LockMessage}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,16,0,0"
+                           Foreground="{DynamicResource TextTertiary}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Toasts -->
+        <StackPanel Name="Toasts" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="24" Spacing="8" />
+    </Panel>
+</Window>

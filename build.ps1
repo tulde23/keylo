@@ -20,8 +20,9 @@ if (git -C $root status --porcelain 2>$null) { $commit += '-dirty' }
 $stamp = "-p:InformationalVersion=1.0.0+$(Get-Date -Format yyyyMMdd).$commit"
 
 # Framework-dependent (uses the installed .NET 10 runtime); both executables share one folder of DLLs.
+# keylo targets Windows and macOS; this script builds the Windows one (build.sh builds macOS).
 foreach ($project in 'src\Keylo.Cli', 'src\Keylo.App') {
-    dotnet publish (Join-Path $root $project) -c Release -r win-x64 --self-contained false -o $dist -nologo -v q $stamp
+    dotnet publish (Join-Path $root $project) -c Release -r win-x64 -f net10.0-windows10.0.19041.0 --self-contained false -o $dist -nologo -v q $stamp
     if ($LASTEXITCODE -ne 0) { throw "publish failed for $project" }
 }
 

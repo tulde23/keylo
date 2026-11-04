@@ -4,7 +4,9 @@
     <!-- Defaulted here because the SDK sets it later than this file is read. -->
     <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
-    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="'$(TargetFramework)' == '' Or $(TargetFramework.Contains('-windows'))">10.0.17763.0</SupportedOSPlatformVersion>
+    <!-- keylo's Windows build references Windows-only projects; this lets macOS restore them (it builds only net10.0). -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <Version>1.0.0</Version>
@@ -13,8 +15,14 @@
   </PropertyGroup>
 
   <!-- keylo.exe and keylow.exe build into one folder so the CLI can start the app next to it. -->
-  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Keylo.Cli' Or '$(MSBuildProjectName)' == 'Keylo.App'">
+  <PropertyGroup Condition="('$(MSBuildProjectName)' == 'Keylo.Cli' Or '$(MSBuildProjectName)' == 'Keylo.App') And '$(TargetFramework)' != 'net10.0'">
     <OutputPath>$(MSBuildThisFileDirectory)bin\$(Configuration)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <!-- The macOS build of keylo (net10.0) goes to its own folder. -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Keylo.Cli' And '$(TargetFramework)' == 'net10.0'">
+    <OutputPath>$(MSBuildThisFileDirectory)bin\$(Configuration)\macos\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
 

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Keylo.Platform.MacOS</RootNamespace>
+    <TargetFramework>net10.0</TargetFramework>
+    <SupportedOSPlatformVersion></SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Keylo.Core\Keylo.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Compiled on the Mac by build.sh (swiftc), not by MSBuild. -->
+    <None Include="helper\keylo-mac.swift" />
+  </ItemGroup>
+
+</Project>

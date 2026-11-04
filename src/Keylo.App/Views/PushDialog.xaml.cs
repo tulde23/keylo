@@ -1,20 +1,9 @@
 using System.Windows;
 using System.Windows.Media;
+using Keylo.App.ViewModels;
 using Wpf.Ui.Controls;
 
 namespace Keylo.App.Views;
-
-/// <summary>What a push will do, for <see cref="PushDialog"/>.</summary>
-public sealed record PushConfirmation(
-    string ProviderName,
-    string SecretName,
-    string SecretDetail,
-    SymbolRegular SecretSymbol,
-    ImageSource? SecretImage,
-    Brush SecretTileBrush,
-    string Destination,
-    string DestinationDetail,
-    bool? Exists);
 
 /// <summary>Confirms a push to another vault: from which secret, to which vault and account, new or update.</summary>
 public partial class PushDialog : FluentWindow
@@ -28,9 +17,9 @@ public partial class PushDialog : FluentWindow
 
         SecretName.Text = push.SecretName;
         SecretDetail.Text = push.SecretDetail;
-        SecretTile.Symbol = push.SecretSymbol;
-        SecretTile.Image = push.SecretImage;
-        SecretTile.Fill = push.SecretTileBrush;
+        SecretTile.Symbol = push.SecretSymbol as SymbolRegular? ?? SymbolRegular.Key24;
+        SecretTile.Image = push.SecretImage as ImageSource;
+        SecretTile.Fill = (Brush)push.SecretTileBrush;
 
         VaultName.Text = push.Destination;
         VaultDetail.Text = push.DestinationDetail;

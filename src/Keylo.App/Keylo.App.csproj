@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Keylo.Core\Keylo.Core.csproj" />
+    <ProjectReference Include="..\Keylo.UI\Keylo.UI.csproj" />
+    <ProjectReference Include="..\Keylo.Platform.Windows\Keylo.Platform.Windows.csproj" />
   </ItemGroup>
 
 </Project>

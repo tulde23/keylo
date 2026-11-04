@@ -1,0 +1,105 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ic="using:FluentIcons.Avalonia"
+             xmlns:vm="using:Keylo.App.ViewModels"
+             xmlns:views="using:Keylo.Desktop.Views"
+             x:Class="Keylo.Desktop.Views.CategoryManagerView"
+             x:DataType="vm:CategoryManagerViewModel">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="28,24">
+        <StackPanel MaxWidth="820">
+            <DockPanel Margin="0,0,0,6">
+                <Button DockPanel.Dock="Right" Classes="subtle" ToolTip.Tip="Close"
+                        Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).CloseSettingsCommand}">
+                    <ic:SymbolIcon Symbol="Dismiss" FontSize="18" />
+                </Button>
+                <TextBlock Text="Categories" Classes="heading" />
+            </DockPanel>
+            <TextBlock Margin="0,0,0,22" Classes="small secondary" TextWrapping="Wrap"
+                       Text="Rename a category to rename it on every secret in it; rename onto an existing one to merge. Icons and colours are shown in the sidebar, and on secrets that don't have their own." />
+
+            <!-- ==================================================== new -->
+            <TextBlock Text="NEW CATEGORY" Classes="section" />
+            <Border Classes="surface" Margin="0,0,0,28">
+                <StackPanel>
+                    <DockPanel>
+                        <views:IconTile DockPanel.Dock="Left" Width="40" Height="40" CornerRadius="10" GlyphSize="20" Margin="0,0,12,0"
+                                        Fill="{Binding NewTileBrush}" Image="{Binding NewImage}" Symbol="{Binding NewSymbol}" />
+                        <Button DockPanel.Dock="Right" Classes="accent" Command="{Binding CreateCommand}" Margin="12,0,0,0" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <ic:SymbolIcon Symbol="Add" FontSize="16" />
+                                <TextBlock Text="Create" />
+                            </StackPanel>
+                        </Button>
+                        <TextBox Text="{Binding NewName}" Watermark="Category name" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <Expander Header="Icon and colour" Margin="0,12,0,0" HorizontalAlignment="Stretch">
+                        <views:IconPicker Icon="{Binding NewIcon}" Color="{Binding NewColor}" Margin="0,4,0,0" />
+                    </Expander>
+                </StackPanel>
+            </Border>
+
+            <!-- ==================================================== existing -->
+            <TextBlock Text="YOUR CATEGORIES" Classes="section" />
+            <TextBlock Text="No categories yet." FontSize="12" Foreground="{DynamicResource TextTertiary}"
+                       IsVisible="{Binding Rows.Count, Converter={x:Static views:Convert.IsZero}}" />
+            <ItemsControl ItemsSource="{Binding Rows}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:CategoryRowViewModel">
+                        <Border Classes="surface" Margin="0,0,0,10" Padding="14,12">
+                            <StackPanel>
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Left" Classes="subtle" Padding="0" Margin="0,0,12,0" ToolTip.Tip="Change icon and colour"
+                                            Click="OnToggleStyle">
+                                        <views:IconTile Width="40" Height="40" CornerRadius="10" GlyphSize="20"
+                                                        Fill="{Binding TileBrush}" Image="{Binding Image}" Symbol="{Binding Symbol}" />
+                                    </Button>
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Spacing="6">
+                                        <TextBlock Text="{Binding CountText}" FontSize="12" VerticalAlignment="Center" Margin="12,0,6,0"
+                                                   Width="72" TextAlignment="Right" Foreground="{DynamicResource TextSecondary}" />
+                                        <Button Command="{Binding $parent[ItemsControl].((vm:CategoryManagerViewModel)DataContext).SaveCommand}" CommandParameter="{Binding}">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <ic:SymbolIcon Symbol="Save" FontSize="16" />
+                                                <TextBlock Text="Save" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Classes="subtle" ToolTip.Tip="Delete category"
+                                                Command="{Binding $parent[ItemsControl].((vm:CategoryManagerViewModel)DataContext).AskDeleteCommand}" CommandParameter="{Binding}">
+                                            <ic:SymbolIcon Symbol="Delete" FontSize="18" />
+                                        </Button>
+                                    </StackPanel>
+                                    <TextBox Text="{Binding Name}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                                </DockPanel>
+
+                                <views:IconPicker Icon="{Binding Icon}" Color="{Binding Color}" Margin="52,12,0,0" IsVisible="{Binding IsEditingStyle}" />
+
+                                <!-- Delete: where do the secrets go? -->
+                                <Border CornerRadius="6" Padding="12" Margin="52,12,0,0" Background="{DynamicResource CriticalBg}" IsVisible="{Binding IsConfirmingDelete}">
+                                    <DockPanel>
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Spacing="6">
+                                            <Button Content="Cancel" Margin="8,0,0,0"
+                                                    Command="{Binding $parent[ItemsControl].((vm:CategoryManagerViewModel)DataContext).CancelDeleteCommand}" CommandParameter="{Binding}" />
+                                            <Button Classes="danger"
+                                                    Command="{Binding $parent[ItemsControl].((vm:CategoryManagerViewModel)DataContext).DeleteCommand}" CommandParameter="{Binding}">
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <ic:SymbolIcon Symbol="Delete" FontSize="16" Foreground="White" />
+                                                    <TextBlock Text="Delete category" />
+                                                </StackPanel>
+                                            </Button>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock VerticalAlignment="Center" Margin="0,0,10,0">
+                                                <Run Text="Move its" /> <Run Text="{Binding CountText, Mode=OneWay}" /> <Run Text="to" />
+                                            </TextBlock>
+                                            <ComboBox ItemsSource="{Binding DeleteTargets}" SelectedItem="{Binding DeleteTarget}" MinWidth="200" />
+                                        </StackPanel>
+                                    </DockPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

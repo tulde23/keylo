@@ -1,0 +1,63 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ic="using:FluentIcons.Avalonia"
+             xmlns:vm="using:Keylo.App.ViewModels"
+             x:Class="Keylo.Desktop.Views.MultiPicker"
+             x:Name="Root">
+    <Panel>
+        <Border Name="Box" CornerRadius="4" BorderThickness="1" Padding="6,4,4,4" MinHeight="36"
+                BorderBrush="{DynamicResource ControlStroke}" Background="{DynamicResource ControlFill}">
+            <DockPanel>
+                <ToggleButton Name="AddButton" DockPanel.Dock="Right" VerticalAlignment="Center" Padding="8,3" Margin="6,0,0,0" ToolTip.Tip="Choose">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <ic:SymbolIcon Symbol="Add" FontSize="12" />
+                        <TextBlock Text="Add" FontSize="12" />
+                    </StackPanel>
+                </ToggleButton>
+                <Panel VerticalAlignment="Center">
+                    <TextBlock Name="PlaceholderText" Margin="6,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource TextTertiary}" TextTrimming="CharacterEllipsis" />
+                    <ItemsControl Name="Chips">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PickItem">
+                                <Border CornerRadius="12" Padding="10,2,4,2" Margin="0,2,6,2" Background="{DynamicResource ControlFill2}"
+                                        BorderBrush="{DynamicResource ControlStroke}" BorderThickness="1" IsVisible="{Binding IsSelected}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center" />
+                                        <Button Classes="subtle" Padding="3" Margin="4,0,0,0" MinWidth="0" MinHeight="0" ToolTip.Tip="Remove" Command="{Binding RemoveCommand}">
+                                            <ic:SymbolIcon Symbol="Dismiss" FontSize="11" />
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Panel>
+            </DockPanel>
+        </Border>
+
+        <Popup Name="Dropdown" PlacementTarget="{Binding #Box}" Placement="BottomEdgeAlignedLeft" IsLightDismissEnabled="True"
+               IsOpen="{Binding #AddButton.IsChecked, Mode=TwoWay}">
+            <Border Width="{Binding #Box.Bounds.Width}" MinWidth="260" Margin="0,4,0,0" CornerRadius="8" BorderThickness="1" Padding="8"
+                    Background="{DynamicResource PopupFill}" BorderBrush="{DynamicResource ControlStroke}">
+                <StackPanel>
+                    <TextBox Name="Search" Watermark="Search…" Classes="clearButton" Margin="0,0,0,6" />
+                    <ScrollViewer MaxHeight="280" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl Name="Checklist">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PickItem">
+                                    <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Name}" Margin="4,1" IsVisible="{Binding IsMatch}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <TextBlock Name="NoMatches" Text="Nothing matches." Margin="6" FontSize="12" IsVisible="False" Foreground="{DynamicResource TextTertiary}" />
+                </StackPanel>
+            </Border>
+        </Popup>
+    </Panel>
+</UserControl>

@@ -1,0 +1,106 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+             x:Class="Keylo.Desktop.App"
+             Name="Keylo"
+             RequestedThemeVariant="Default">
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <!-- Keylo's colour tokens, after Windows 11's (the WPF app uses those), in light and dark. -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="TextPrimary" Color="#E4000000" />
+                    <SolidColorBrush x:Key="TextSecondary" Color="#9E000000" />
+                    <SolidColorBrush x:Key="TextTertiary" Color="#72000000" />
+                    <SolidColorBrush x:Key="BaseFill" Color="#F3F3F3" />
+                    <SolidColorBrush x:Key="TopBarFill" Color="#FBFBFB" />
+                    <SolidColorBrush x:Key="LayerFill" Color="#F9F9F9" />
+                    <SolidColorBrush x:Key="CardFill" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="CardStroke" Color="#14000000" />
+                    <SolidColorBrush x:Key="ControlFill" Color="#B3FFFFFF" />
+                    <SolidColorBrush x:Key="ControlFill2" Color="#0A000000" />
+                    <SolidColorBrush x:Key="ControlStroke" Color="#17000000" />
+                    <SolidColorBrush x:Key="SubtleHover" Color="#0A000000" />
+                    <SolidColorBrush x:Key="SubtlePressed" Color="#06000000" />
+                    <SolidColorBrush x:Key="Divider" Color="#14000000" />
+                    <SolidColorBrush x:Key="PopupFill" Color="#FCFCFC" />
+                    <SolidColorBrush x:Key="AccentFill" Color="#5B58E8" />
+                    <SolidColorBrush x:Key="AccentText" Color="#4B48D6" />
+                    <SolidColorBrush x:Key="OnAccent" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="Caution" Color="#9D5D00" />
+                    <SolidColorBrush x:Key="CautionBg" Color="#FFF4CE" />
+                    <SolidColorBrush x:Key="Success" Color="#0F7B0F" />
+                    <SolidColorBrush x:Key="SuccessBg" Color="#DFF6DD" />
+                    <SolidColorBrush x:Key="Critical" Color="#C42B1C" />
+                    <SolidColorBrush x:Key="CriticalBg" Color="#FDE7E9" />
+                    <SolidColorBrush x:Key="InfoBg" Color="#F0EFFE" />
+                    <!-- Fluent's expander, recoloured to match Keylo's cards. -->
+                    <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="ExpanderHeaderBackgroundPointerOver" Color="#F6F6F6" />
+                    <SolidColorBrush x:Key="ExpanderHeaderBackgroundPressed" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="ExpanderHeaderBackgroundDisabled" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="ExpanderHeaderBorderBrush" Color="#14000000" />
+                    <SolidColorBrush x:Key="ExpanderHeaderBorderBrushPointerOver" Color="#14000000" />
+                    <SolidColorBrush x:Key="ExpanderHeaderBorderBrushPressed" Color="#14000000" />
+                    <SolidColorBrush x:Key="ExpanderContentBackground" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="ExpanderContentBorderBrush" Color="#14000000" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="TextPrimary" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="TextSecondary" Color="#C5FFFFFF" />
+                    <SolidColorBrush x:Key="TextTertiary" Color="#87FFFFFF" />
+                    <SolidColorBrush x:Key="BaseFill" Color="#202020" />
+                    <SolidColorBrush x:Key="TopBarFill" Color="#2B2B2B" />
+                    <SolidColorBrush x:Key="LayerFill" Color="#272727" />
+                    <SolidColorBrush x:Key="CardFill" Color="#0DFFFFFF" />
+                    <SolidColorBrush x:Key="CardStroke" Color="#33000000" />
+                    <SolidColorBrush x:Key="ControlFill" Color="#0FFFFFFF" />
+                    <SolidColorBrush x:Key="ControlFill2" Color="#15FFFFFF" />
+                    <SolidColorBrush x:Key="ControlStroke" Color="#14FFFFFF" />
+                    <SolidColorBrush x:Key="SubtleHover" Color="#0FFFFFFF" />
+                    <SolidColorBrush x:Key="SubtlePressed" Color="#0AFFFFFF" />
+                    <SolidColorBrush x:Key="Divider" Color="#15FFFFFF" />
+                    <SolidColorBrush x:Key="PopupFill" Color="#2C2C2C" />
+                    <SolidColorBrush x:Key="AccentFill" Color="#B9B7FB" />
+                    <SolidColorBrush x:Key="AccentText" Color="#C7C6FC" />
+                    <SolidColorBrush x:Key="OnAccent" Color="#16151F" />
+                    <SolidColorBrush x:Key="Caution" Color="#FCE100" />
+                    <SolidColorBrush x:Key="CautionBg" Color="#433519" />
+                    <SolidColorBrush x:Key="Success" Color="#6CCB5F" />
+                    <SolidColorBrush x:Key="SuccessBg" Color="#393D1B" />
+                    <SolidColorBrush x:Key="Critical" Color="#FF99A4" />
+                    <SolidColorBrush x:Key="CriticalBg" Color="#442726" />
+                    <SolidColorBrush x:Key="InfoBg" Color="#2A2940" />
+                    <!-- Fluent's expander, recoloured to match Keylo's cards. -->
+                    <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="#2D2D2D" />
+                    <SolidColorBrush x:Key="ExpanderHeaderBackgroundPointerOver" Color="#333333" />
+                    <SolidColorBrush x:Key="ExpanderHeaderBackgroundPressed" Color="#2D2D2D" />
+                    <SolidColorBrush x:Key="ExpanderHeaderBackgroundDisabled" Color="#2D2D2D" />
+                    <SolidColorBrush x:Key="ExpanderHeaderBorderBrush" Color="#33000000" />
+                    <SolidColorBrush x:Key="ExpanderHeaderBorderBrushPointerOver" Color="#33000000" />
+                    <SolidColorBrush x:Key="ExpanderHeaderBorderBrushPressed" Color="#33000000" />
+                    <SolidColorBrush x:Key="ExpanderContentBackground" Color="#2D2D2D" />
+                    <SolidColorBrush x:Key="ExpanderContentBorderBrush" Color="#33000000" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
+            <sys:String x:Key="Tagline">Your secrets, kept close.</sys:String>
+            <FontFamily x:Key="MonoFont">SF Mono, Menlo, Cascadia Mono, Consolas, monospace</FontFamily>
+            <LinearGradientBrush x:Key="BrandBrush" StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#7C6CF6" Offset="0" />
+                <GradientStop Color="#4F8CF7" Offset="1" />
+            </LinearGradientBrush>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme>
+            <FluentTheme.Palettes>
+                <ColorPaletteResources x:Key="Light" Accent="#5B58E8" RegionColor="#F3F3F3" />
+                <ColorPaletteResources x:Key="Dark" Accent="#8B88F8" RegionColor="#202020" />
+            </FluentTheme.Palettes>
+        </FluentTheme>
+        <StyleInclude Source="avares://KeyloApp/Styles.axaml" />
+    </Application.Styles>
+</Application>

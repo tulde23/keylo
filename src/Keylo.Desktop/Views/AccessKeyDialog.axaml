@@ -1,0 +1,60 @@
+<views:DialogWindow xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ic="using:FluentIcons.Avalonia"
+                    xmlns:views="using:Keylo.Desktop.Views"
+                    x:Class="Keylo.Desktop.Views.AccessKeyDialog"
+                    Title="Access key created" Width="600">
+    <StackPanel Margin="28,24">
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+            <Border Width="40" Height="40" CornerRadius="10" Background="{StaticResource BrandBrush}">
+                <ic:SymbolIcon Symbol="Key" FontSize="20" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <TextBlock Name="Heading" FontSize="20" FontWeight="SemiBold" Margin="12,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+
+        <Border Classes="warning" Margin="0,0,0,16">
+            <DockPanel>
+                <ic:SymbolIcon Symbol="Warning" FontSize="18" Foreground="{DynamicResource Caution}" VerticalAlignment="Top" Margin="0,0,10,0" />
+                <StackPanel>
+                    <TextBlock Text="Shown only once" FontWeight="SemiBold" />
+                    <TextBlock Classes="small" TextWrapping="Wrap"
+                               Text="Keylo stores only a hash of this key. Add it to Claude Code now; if it's lost, delete the key and create a new one." />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <TextBlock Text="ACCESS KEY" Classes="section" />
+        <Border Classes="surface" Padding="12,8" Margin="0,0,0,16">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Classes="subtle" ToolTip.Tip="Copy key" Click="OnCopyKey">
+                    <ic:SymbolIcon Symbol="Copy" FontSize="18" />
+                </Button>
+                <TextBox Name="TokenText" Classes="value mono" VerticalAlignment="Center" FontSize="13" />
+            </DockPanel>
+        </Border>
+
+        <TextBlock Text="REGISTER WITH CLAUDE CODE (USER SCOPE)" Classes="section" />
+        <Border Classes="surface" Padding="12,8" Margin="0,0,0,6">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Classes="subtle" ToolTip.Tip="Copy command" Click="OnCopyCommand" VerticalAlignment="Top">
+                    <ic:SymbolIcon Symbol="Copy" FontSize="18" />
+                </Button>
+                <TextBox Name="CommandText" Classes="value mono" FontSize="12.5" />
+            </DockPanel>
+        </Border>
+        <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8" Foreground="{DynamicResource TextTertiary}"
+                   Text="Run it in any terminal, or use the button below. Never put the key in a project's .mcp.json — it would end up in the repository. Copies clear from the clipboard automatically." />
+
+        <TextBlock Name="Status" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0" MinHeight="16" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0" Spacing="8">
+            <Button Name="RegisterButton" Classes="accent big" Click="OnRegister">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <ic:SymbolIcon Symbol="PlugConnected" FontSize="16" />
+                    <TextBlock Text="Add to Claude Code" />
+                </StackPanel>
+            </Button>
+            <Button Classes="big" Content="Done" IsCancel="True" Click="OnDone" />
+        </StackPanel>
+    </StackPanel>
+</views:DialogWindow>

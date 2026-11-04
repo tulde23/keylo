@@ -2,8 +2,9 @@
 
 *Your secrets, kept close.*
 
-Local secrets for one Windows machine, stored in Windows Credential Manager, with a command line
-(`keylo`) and a desktop app (`keylow`). No server, no account, no sync.
+Local secrets for one machine, with a command line (`keylo`) and a desktop app. On Windows they
+live in Credential Manager (app: `keylow`); on macOS in your login keychain (app: Keylo.app).
+No server, no account, no sync. Backups move between the two.
 
 ## Install
 
@@ -13,6 +14,34 @@ Local secrets for one Windows machine, stored in Windows Credential Manager, wit
 
 This adds Keylo to your user PATH and the Start menu. Requires the .NET 10 runtime.
 `./install.ps1 -Uninstall` removes the program but leaves your secrets.
+
+## macOS
+
+Keylo.app (the same app, on Avalonia) plus the `keylo` command and its MCP server, on Apple
+silicon or Intel.
+
+```zsh
+./build.sh --install    # needs the .NET 10 SDK and Xcode command-line tools (swiftc)
+```
+
+This builds `dist/Keylo.app` (self-contained: no .NET install needed to run it), copies it to
+`~/Applications`, and links `~/.local/bin/keylo` to the command inside it. Run `keylo` with no
+arguments to open the app. `./install.sh --uninstall` removes the program but leaves your secrets.
+
+- `keylo` is the app's own executable in command-line mode, so the keychain sees one app. It's
+  ad-hoc signed: macOS asks once per secret to let Keylo use the keychain (choose **Always Allow**),
+  and may ask again after a rebuild.
+- Keylo locks when the screen locks.
+
+- Secrets are generic-password items in your **login keychain** (service `Keylo`, visible in
+  Keychain Access). Large values are AES-256-GCM files sealed with a master key kept in the keychain.
+- **Touch ID** (or Apple Watch, or your password) replaces Windows Hello; access-key approvals show a
+  native alert, then Touch ID.
+- Copied values are marked concealed and transient, so clipboard managers skip them.
+- `keylo-mac` (built from `src/Keylo.Platform.MacOS/helper`) handles Touch ID, the pasteboard and
+  alerts; it sits inside Keylo.app next to `keylo`.
+- The login keychain is locked in SSH sessions; `KEYLO_KEYCHAIN=/path/to.keychain-db` points Keylo at
+  another keychain (`tests/macos-smoke.sh` uses a throwaway one).
 
 ## Use
 
@@ -95,15 +124,17 @@ keylo types                             # all types and fields
 
 ## Backups
 
-Keylo's normal storage only opens for your Windows account on this PC. A backup (Settings →
-Backup & restore, or `keylo backup`) is what gets your secrets onto a new PC or survives a lost account.
+Keylo's normal storage only opens for your account on this machine. A backup (Settings →
+Backup & restore, or `keylo backup`) is what gets your secrets onto a new machine or survives a lost
+account. The format is the same on Windows and macOS, so a backup made on one restores on the other
+(linked secrets need that vault's CLI signed in there too).
 
 - One `.keylo` file: every secret's value and details, categories (including empty ones and their
   styles) and uploaded icons.
 - Encrypted with **AES-256-GCM**; the key comes from your password via **PBKDF2-SHA256, 600,000
   iterations** and a random salt. The header is authenticated too, and nothing — not even secret
   names — is readable without the password. A wrong password or any change to the file is rejected.
-- Creating one always asks for Windows Hello (it exports everything). Passwords must be at least
+- Creating one always asks for Windows Hello / Touch ID (it exports everything). Passwords must be at least
   10 characters; the CLI prompts for them (or reads `--password-stdin`) and never accepts one as an argument.
 - **There is no recovery.** Keep the password somewhere other than Keylo.
 
@@ -186,6 +217,23 @@ Add others by building a class library that references `Keylo.Core`, implementin
 Plugins run as you with full trust.
 
 ## Develop
+
+| Project | |
+|---|---|
+| `Keylo.Core` | Everything OS-neutral (`net10.0`): secrets, types, search, links, access keys, backups, MCP-facing logic |
+| `Keylo.Platform.Windows` | Credential Manager, DPAPI, Windows Hello, clipboard, process ancestry — an `IKeyloPlatform` |
+| `Keylo.Platform.MacOS` | Keychain, Touch ID (via the `keylo-mac` Swift helper), pasteboard, `ps` ancestry |
+| `Keylo.UI` | View models and services shared by both apps; toolkit bits (icons, brushes, timers, pickers) come from an `IUiHost` |
+| `Keylo.App` | `keylow`, the Windows app (WPF + WPF-UI) |
+| `Keylo.Desktop` | Keylo.app, the macOS app (Avalonia); `KeyloApp --cli` is the macOS `keylo` |
+| `Keylo.Cli` | `keylo` and the MCP server; builds for Windows and macOS |
+
+Another OS means implementing `IKeyloPlatform` in a new `Keylo.Platform.*` project; Core needs no
+changes. The tests include an in-memory platform for this.
+
+On a Mac, `tests/macos-smoke.sh` checks the command line and MCP server against a throwaway
+keychain, and `tests/macos-ui-snapshots.sh` (after `./build.sh --debug`) renders the app's screens
+to PNGs, which works without a display (e.g. over SSH).
 
 ```powershell
 dotnet build

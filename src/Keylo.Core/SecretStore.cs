@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
-using Keylo.Core.Native;
+using Keylo.Core.Platform;
 
 namespace Keylo.Core;
 
@@ -20,7 +20,8 @@ public sealed class SecretStore
 {
     public const string DefaultPrefix = "Keylo:";
 
-    public const int MaxInlineBytes = Native.CredentialApi.CRED_MAX_CREDENTIAL_BLOB_SIZE - 1;
+    /// <summary>Values up to this size live in the OS store itself (one byte of the blob is the kind tag).</summary>
+    public static int MaxInlineBytes => Credentials.MaxBlobBytes - 1;
     public const int MaxValueBytes = 4 * 1024 * 1024;
     public const int MaxNameLength = 128;
     public const int MaxCategoryLength = 64;
@@ -35,6 +36,9 @@ public sealed class SecretStore
     private const string TypeAttribute = "KeyloType";
     private const string FieldAttributePrefix = "KeyloField:";
 
+    private static ICredentialStore Credentials => KeyloPlatform.Current.Credentials;
+    private static IDataProtector Protector => KeyloPlatform.Current.DataProtector;
+
     private readonly string _prefix;
     private readonly string _blobDirectory;
 
@@ -45,7 +49,7 @@ public sealed class SecretStore
     }
 
     public IReadOnlyList<SecretInfo> List() =>
-        CredentialVault.Enumerate(_prefix + "*")
+        Credentials.Enumerate(_prefix)
             .Select(ToInfo)
             .OfType<SecretInfo>()
             .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
@@ -60,13 +64,13 @@ public sealed class SecretStore
             .ToList();
 
     public SecretInfo? Find(string name) =>
-        CredentialVault.Read(Target(name)) is { } raw ? ToInfo(raw) : null;
+        Credentials.Read(Target(name)) is { } raw ? ToInfo(raw) : null;
 
     public bool Exists(string name) => Find(name) is not null;
 
     public Secret Get(string name)
     {
-        var raw = CredentialVault.Read(Target(name)) ?? throw new SecretNotFoundException(name);
+        var raw = Credentials.Read(Target(name)) ?? throw new SecretNotFoundException(name);
         var info = ToInfo(raw) ?? throw new KeyloException($"'{name}' is not a Keylo secret or is corrupt.");
 
         if (raw.Blob[0] == KindInline)
@@ -77,7 +81,7 @@ public sealed class SecretStore
         if (!File.Exists(path))
             throw new KeyloException($"The encrypted file for '{name}' is missing ({path}).");
 
-        var value = ProtectedData.Unprotect(File.ReadAllBytes(path), Entropy(id), DataProtectionScope.CurrentUser);
+        var value = Protector.Unprotect(File.ReadAllBytes(path), Entropy(id));
         if (value.Length != length)
             throw new KeyloException($"The encrypted file for '{name}' does not match its entry.");
 
@@ -103,7 +107,7 @@ public sealed class SecretStore
         var renaming = false;
         if (originalName is not null)
         {
-            previous = CredentialVault.Read(Target(originalName)) ?? throw new SecretNotFoundException(originalName);
+            previous = Credentials.Read(Target(originalName)) ?? throw new SecretNotFoundException(originalName);
             renaming = !string.Equals(originalName, name, StringComparison.Ordinal);
             var caseOnly = renaming && string.Equals(originalName, name, StringComparison.OrdinalIgnoreCase);
             if (renaming && !caseOnly && Exists(name))
@@ -140,15 +144,15 @@ public sealed class SecretStore
             // Credential Manager names are case-insensitive, so a case-only rename has to remove
             // the old entry first or the write lands on it and keeps the old spelling.
             if (renaming && string.Equals(originalName, name, StringComparison.OrdinalIgnoreCase))
-                CredentialVault.Delete(Target(originalName!));
+                Credentials.Delete(Target(originalName!));
 
-            CredentialVault.Write(Target(name), blob, username, notes, attributes);
+            Credentials.Write(Target(name), blob, username, notes, attributes);
         }
         catch
         {
             if (newFileId is { } orphan) TryDelete(BlobPath(orphan));
-            if (previous is not null && !CredentialVault.Exists(previous.Target))
-                CredentialVault.Write(previous.Target, previous.Blob, previous.UserName, previous.Comment, previous.Attributes);
+            if (previous is not null && Credentials.Read(previous.Target) is null)
+                Credentials.Write(previous.Target, previous.Blob, previous.UserName, previous.Comment, previous.Attributes);
             throw;
         }
         finally
@@ -157,7 +161,7 @@ public sealed class SecretStore
         }
 
         if (renaming && !string.Equals(originalName, name, StringComparison.OrdinalIgnoreCase))
-            CredentialVault.Delete(Target(originalName!));
+            Credentials.Delete(Target(originalName!));
 
         if (previous is not null && previous.Blob[0] == KindFile)
         {
@@ -175,7 +179,7 @@ public sealed class SecretStore
     /// </summary>
     public SecretInfo UpdateDetails(string name, string? category = null, string? icon = null, string? color = null)
     {
-        var raw = CredentialVault.Read(Target(name)) ?? throw new SecretNotFoundException(name);
+        var raw = Credentials.Read(Target(name)) ?? throw new SecretNotFoundException(name);
         var info = ToInfo(raw) ?? throw new KeyloException($"'{name}' is not a Keylo secret or is corrupt.");
 
         var attributes = Attributes(
@@ -186,7 +190,7 @@ public sealed class SecretStore
 
         try
         {
-            CredentialVault.Write(raw.Target, raw.Blob, raw.UserName, raw.Comment, attributes);
+            Credentials.Write(raw.Target, raw.Blob, raw.UserName, raw.Comment, attributes);
         }
         finally
         {
@@ -210,10 +214,10 @@ public sealed class SecretStore
 
     public bool Delete(string name)
     {
-        var raw = CredentialVault.Read(Target(name));
+        var raw = Credentials.Read(Target(name));
         if (raw is null) return false;
 
-        CredentialVault.Delete(raw.Target);
+        Credentials.Delete(raw.Target);
         if (raw.Blob.Length > 0 && raw.Blob[0] == KindFile)
             TryDelete(BlobPath(ReadFileReference(raw.Blob).Id));
         return true;
@@ -289,13 +293,13 @@ public sealed class SecretStore
         foreach (var (id, value) in fields ?? new Dictionary<string, string>())
         {
             if (string.IsNullOrEmpty(value)) continue;
-            if (Encoding.UTF8.GetByteCount(value) > Native.CredentialApi.CRED_MAX_VALUE_SIZE)
-                throw new KeyloException($"'{id}' is longer than {Native.CredentialApi.CRED_MAX_VALUE_SIZE} bytes. Shorten it, or use a secret field for long text.");
+            if (Encoding.UTF8.GetByteCount(value) > Credentials.MaxAttributeBytes)
+                throw new KeyloException($"'{id}' is longer than {Credentials.MaxAttributeBytes} bytes. Shorten it, or use a secret field for long text.");
             if (value.Any(char.IsControl))
                 throw new KeyloException($"'{id}' cannot contain line breaks or control characters.");
             attributes[FieldAttributePrefix + id] = value;
         }
-        if (attributes.Count > 64) throw new KeyloException("Too many fields (Credential Manager allows 64 attributes).");
+        if (attributes.Count > Credentials.MaxAttributes) throw new KeyloException($"Too many fields (the system store allows {Credentials.MaxAttributes} attributes).");
     }
 
     private static Dictionary<string, string> Attributes(string? category, string? icon, string? color)
@@ -364,7 +368,7 @@ public sealed class SecretStore
         Directory.CreateDirectory(_blobDirectory);
         var path = BlobPath(id);
         var temp = path + ".tmp";
-        File.WriteAllBytes(temp, ProtectedData.Protect(value, Entropy(id), DataProtectionScope.CurrentUser));
+        File.WriteAllBytes(temp, Protector.Protect(value, Entropy(id)));
         File.Move(temp, path, overwrite: true);
     }
 

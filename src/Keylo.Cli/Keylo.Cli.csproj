@@ -1,14 +1,30 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AssemblyName>keylo</AssemblyName>
     <RootNamespace>Keylo.Cli</RootNamespace>
+    <!-- Windows (with keylow next to it) and macOS (net10.0). -->
+    <TargetFramework></TargetFramework>
+    <TargetFrameworks>net10.0-windows10.0.19041.0;net10.0</TargetFrameworks>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(TargetFramework.Contains('-windows'))">
     <ApplicationIcon>..\Keylo.App\Assets\keylo.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Keylo.Core\Keylo.Core.csproj" />
+    <!-- The macOS app runs the CLI in-process (KeyloApp, cli argument). -->
+    <InternalsVisibleTo Include="KeyloApp" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$(TargetFramework.Contains('-windows'))">
+    <ProjectReference Include="..\Keylo.Platform.Windows\Keylo.Platform.Windows.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="!$(TargetFramework.Contains('-windows'))">
+    <ProjectReference Include="..\Keylo.Platform.MacOS\Keylo.Platform.MacOS.csproj" />
   </ItemGroup>
 
 </Project>

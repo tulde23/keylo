@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Keylo.Core\Keylo.Core.csproj" />
+    <ProjectReference Include="..\..\src\Keylo.Platform.Windows\Keylo.Platform.Windows.csproj" />
   </ItemGroup>
 
   <ItemGroup>

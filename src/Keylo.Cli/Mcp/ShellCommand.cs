@@ -16,9 +16,12 @@ internal static class ShellCommand
         var psi = shell switch
         {
             "powershell" or "pwsh" => PowerShell(command),
-            "cmd" => Cmd(command),
-            "bash" => Bash(command),
-            _ => throw new ArgumentException("shell must be powershell, cmd or bash."),
+            "cmd" when OperatingSystem.IsWindows() => Cmd(command),
+            "bash" when OperatingSystem.IsWindows() => Bash(command),
+            "bash" or "zsh" or "sh" => Unix("/bin/" + shell, command),
+            _ => throw new ArgumentException(OperatingSystem.IsWindows()
+                ? "shell must be powershell, cmd or bash."
+                : "shell must be zsh, bash, sh or powershell (if installed)."),
         };
 
         if (workingDirectory is not null)
@@ -66,11 +69,23 @@ internal static class ShellCommand
 
     private static ProcessStartInfo PowerShell(string command)
     {
-        var exe = CommandRunner.Resolve("pwsh") ?? CommandRunner.Resolve("powershell") ?? "powershell.exe";
+        var exe = CommandRunner.Resolve("pwsh") ?? CommandRunner.Resolve("powershell")
+                  ?? (OperatingSystem.IsWindows() ? "powershell.exe" : throw new KeyloException("PowerShell (pwsh) isn't installed. Use shell \"zsh\" instead."));
         var psi = new ProcessStartInfo(exe);
         foreach (var arg in (string[])["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
                      "[Console]::OutputEncoding = [Text.Encoding]::UTF8; $OutputEncoding = [Text.Encoding]::UTF8; " + command])
             psi.ArgumentList.Add(arg);
+        return psi;
+    }
+
+    /// <summary>The shell agents get when they don't name one.</summary>
+    public static string DefaultShell => OperatingSystem.IsWindows() ? "powershell" : "zsh";
+
+    private static ProcessStartInfo Unix(string shell, string command)
+    {
+        var psi = new ProcessStartInfo(shell);
+        psi.ArgumentList.Add("-c");
+        psi.ArgumentList.Add(command);
         return psi;
     }
 

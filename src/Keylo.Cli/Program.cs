@@ -55,8 +55,18 @@ internal static class Program
 
     private static readonly string[] Flags = ["clip", "yes", "overwrite", "delete-originals", "flat", "plain", "all", "json", "force", "dry-run", "password-stdin", "both", "allow-get", "add-to-claude", "help"];
 
-    private static async Task<int> Main(string[] argv)
+    /// <summary>
+    /// This keylo: keylo.exe on Windows; on macOS the keylo launcher inside Keylo.app, which runs the
+    /// app's own executable (one code signature, so the keychain sees one app).
+    /// </summary>
+    internal static string SelfPath =>
+        Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "keylo.exe" : "keylo") is var path && File.Exists(path)
+            ? path : Environment.ProcessPath!;
+
+    /// <summary>The entry point; also called by the macOS app (KeyloApp --cli ARGS).</summary>
+    internal static async Task<int> Main(string[] argv)
     {
+        InstallPlatform();
         Console.OutputEncoding = new UTF8Encoding(false);
 
         try
@@ -123,7 +133,7 @@ internal static class Program
         private ProviderRegistry? _registry;
         public AccessGate Gate { get; }
 
-        public Context() => Gate = new AccessGate(Config, new WindowsHelloVerifier());
+        public Context() => Gate = new AccessGate(Config, Keylo.Core.Platform.KeyloPlatform.Current.Verifier);
 
         /// <summary>The access key in KEYLO_ACCESS_KEY, if it's valid and unexpired.</summary>
         public AccessKey? Key => _key ??= AccessKeys.FromEnvironment(Config);
@@ -169,8 +179,32 @@ internal static class Program
         return 0;
     }
 
+    private static void InstallPlatform()
+    {
+#if WINDOWS
+        Keylo.Platform.Windows.WindowsPlatform.Install();
+#else
+        if (!OperatingSystem.IsMacOS()) throw new PlatformNotSupportedException("Keylo runs on Windows and macOS.");
+        Keylo.Platform.MacOS.MacPlatform.Install();
+#endif
+    }
+
     private static int LaunchApp()
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            // On macOS keylo lives inside Keylo.app (Contents/MacOS); open the app around it.
+            var bundle = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", ".."));
+            if (OperatingSystem.IsMacOS() && bundle.EndsWith(".app", StringComparison.OrdinalIgnoreCase) && Directory.Exists(bundle))
+            {
+                Process.Start(new ProcessStartInfo("/usr/bin/open", [bundle]) { UseShellExecute = false })?.Dispose();
+                return 0;
+            }
+            Console.WriteLine(Usage);
+            Terminal.Info("The Keylo app isn't installed next to this keylo; everything is also in the keylo command (and the MCP server).");
+            return 0;
+        }
+
         var app = Path.Combine(AppContext.BaseDirectory, "keylow.exe");
         if (!File.Exists(app)) throw new KeyloException($"The Keylo app (keylow.exe) isn't next to keylo.exe ({AppContext.BaseDirectory}).");
         Process.Start(new ProcessStartInfo(app) { UseShellExecute = true })?.Dispose();
@@ -870,7 +904,7 @@ internal static class Program
 
                 if (addToClaude)
                 {
-                    await ClaudeCode.RegisterAsync(Path.Combine(AppContext.BaseDirectory, "keylo.exe"), token);
+                    await ClaudeCode.RegisterAsync(SelfPath, token);
                     Terminal.Info($"Created '{name}' and added Keylo to Claude Code (user scope) with it. Restart Claude Code, or run /mcp, to load it.");
                     return 0;
                 }
@@ -878,7 +912,7 @@ internal static class Program
                 Terminal.Info($"Created '{name}'. This is the only time the key is shown:");
                 Console.WriteLine(token);
                 Terminal.Info("Register it with Claude Code (user scope; never put it in a project's .mcp.json):");
-                Terminal.Info($"  claude mcp add {ClaudeCode.ServerName} --scope user --env {AccessKeys.EnvironmentVariable}={token} -- \"{Path.Combine(AppContext.BaseDirectory, "keylo.exe")}\" mcp");
+                Terminal.Info($"  claude mcp add {ClaudeCode.ServerName} --scope user --env {AccessKeys.EnvironmentVariable}={token} -- \"{SelfPath}\" mcp");
                 return 0;
             }
 
@@ -992,7 +1026,7 @@ internal static class Program
         var seconds = c.Config.ClipboardSeconds;
 
         // A separate hidden process clears the clipboard, so this command can return immediately.
-        var psi = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true };
+        var psi = new ProcessStartInfo(SelfPath) { UseShellExecute = false, CreateNoWindow = true };
         psi.ArgumentList.Add("__clip-clear");
         psi.ArgumentList.Add(sequence.ToString());
         psi.ArgumentList.Add(seconds.ToString());

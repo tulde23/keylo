@@ -31,6 +31,17 @@ public partial class MainWindow : FluentWindow, IUserNotifier
         _viewModel = new MainViewModel(keylo, this);
         DataContext = _viewModel;
 
+        // Home groups its rows into Pinned and Recently used (the view model already orders them).
+        var secretsView = System.Windows.Data.CollectionViewSource.GetDefaultView(_viewModel.VisibleSecrets);
+        _viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName != nameof(MainViewModel.GroupByHome)) return;
+            var grouped = secretsView.GroupDescriptions.Count > 0;
+            if (grouped == _viewModel.GroupByHome) return;
+            if (_viewModel.GroupByHome) secretsView.GroupDescriptions.Add(new System.Windows.Data.PropertyGroupDescription(nameof(SecretItemViewModel.HomeGroup)));
+            else secretsView.GroupDescriptions.Clear();
+        };
+
         _uiState = UiState.Load();
         SidebarColumn.Width = new GridLength(Math.Clamp(_uiState.SidebarWidth, SidebarColumn.MinWidth, SidebarColumn.MaxWidth));
         ListColumn.Width = new GridLength(Math.Clamp(_uiState.ListWidth, ListColumn.MinWidth, ListColumn.MaxWidth));
@@ -144,25 +155,25 @@ public partial class MainWindow : FluentWindow, IUserNotifier
     public void Error(string message) =>
         _snackbar.Show("Something went wrong", message, ControlAppearance.Danger, new SymbolIcon(SymbolRegular.ErrorCircle24), TimeSpan.FromSeconds(7));
 
-    public ImportOptions? AskImportOptions(ImportOptionsViewModel options)
+    public Task<ImportOptions?> AskImportOptionsAsync(ImportOptionsViewModel options)
     {
         var dialog = new Views.ImportDialog(options) { Owner = this };
-        return dialog.ShowDialog() == true ? dialog.Result : null;
+        return Task.FromResult(dialog.ShowDialog() == true ? dialog.Result : null);
     }
 
-    public string? AskPassword(string heading, string message, string okText, bool isNew, string? error = null)
+    public Task<string?> AskPasswordAsync(string heading, string message, string okText, bool isNew, string? error = null)
     {
         var dialog = new Views.PasswordDialog(heading, message, okText, isNew, error) { Owner = this };
-        return dialog.ShowDialog() == true ? dialog.Password : null;
+        return Task.FromResult(dialog.ShowDialog() == true ? dialog.Password : null);
     }
 
-    public bool ConfirmPush(Views.PushConfirmation push) => new Views.PushDialog(push) { Owner = this }.ShowDialog() == true;
+    public Task<bool> ConfirmPushAsync(PushConfirmation push) => Task.FromResult(new Views.PushDialog(push) { Owner = this }.ShowDialog() == true);
 
-    public string? LinkSecret()
+    public Task<string?> LinkSecretAsync()
     {
         var dialog = new Views.LinkDialog(_keylo) { Owner = this };
         dialog.ShowDialog();
-        return dialog.CreatedName is null ? null : dialog.LinkedCount > 1 ? $"{dialog.CreatedName}|{dialog.LinkedCount}" : dialog.CreatedName;
+        return Task.FromResult(dialog.CreatedName is null ? null : dialog.LinkedCount > 1 ? $"{dialog.CreatedName}|{dialog.LinkedCount}" : dialog.CreatedName);
     }
 
     public Task ShowAccessKeyAsync(string name, string token)

@@ -3,6 +3,10 @@
     <Project Path="src/Keylo.App/Keylo.App.csproj" />
     <Project Path="src/Keylo.Cli/Keylo.Cli.csproj" />
     <Project Path="src/Keylo.Core/Keylo.Core.csproj" />
+    <Project Path="src/Keylo.Desktop/Keylo.Desktop.csproj" />
+    <Project Path="src/Keylo.Platform.MacOS/Keylo.Platform.MacOS.csproj" />
+    <Project Path="src/Keylo.Platform.Windows/Keylo.Platform.Windows.csproj" />
+    <Project Path="src/Keylo.UI/Keylo.UI.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Keylo.Core.Tests/Keylo.Core.Tests.csproj" />

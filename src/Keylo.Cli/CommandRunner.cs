@@ -14,7 +14,8 @@ internal static class CommandRunner
 
         ProcessStartInfo psi;
         var extension = Path.GetExtension(executable);
-        if (extension.Equals(".cmd", StringComparison.OrdinalIgnoreCase) || extension.Equals(".bat", StringComparison.OrdinalIgnoreCase))
+        if (OperatingSystem.IsWindows() &&
+            (extension.Equals(".cmd", StringComparison.OrdinalIgnoreCase) || extension.Equals(".bat", StringComparison.OrdinalIgnoreCase)))
         {
             // Batch files (npm.cmd, etc.) only run through cmd.exe. /s /c "..." keeps the inner quoting intact.
             var line = string.Join(' ', new[] { Quote(executable) }.Concat(args.Select(Quote)));
@@ -42,6 +43,8 @@ internal static class CommandRunner
     /// </summary>
     internal static string? Resolve(string command)
     {
+        if (!OperatingSystem.IsWindows()) return ResolveUnix(command);
+
         var extensions = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD")
             .Split(';', StringSplitOptions.RemoveEmptyEntries);
 
@@ -57,6 +60,20 @@ internal static class CommandRunner
         return directories
             .SelectMany(dir => Candidates(Path.Combine(dir.Trim('"'), command)))
             .FirstOrDefault(File.Exists);
+    }
+
+    /// <summary>PATH lookup like a Unix shell (no implicit current directory), executable files only.</summary>
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    private static string? ResolveUnix(string command)
+    {
+        static bool Runnable(string path) =>
+            File.Exists(path) && (File.GetUnixFileMode(path) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0;
+
+        if (command.Contains('/')) return Runnable(Path.GetFullPath(command)) ? Path.GetFullPath(command) : null;
+        return (Environment.GetEnvironmentVariable("PATH") ?? "/usr/bin:/bin")
+            .Split(':', StringSplitOptions.RemoveEmptyEntries)
+            .Select(dir => Path.Combine(dir, command))
+            .FirstOrDefault(Runnable);
     }
 
     private static string Quote(string arg) =>

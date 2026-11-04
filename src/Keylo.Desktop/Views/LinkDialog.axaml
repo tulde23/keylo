@@ -1,0 +1,85 @@
+<views:DialogWindow xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ic="using:FluentIcons.Avalonia"
+                    xmlns:views="using:Keylo.Desktop.Views"
+                    x:Class="Keylo.Desktop.Views.LinkDialog"
+                    x:CompileBindings="False"
+                    Title="Link a secret" Width="620">
+    <StackPanel Margin="28,24">
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+            <Border Width="40" Height="40" CornerRadius="10" Background="{StaticResource BrandBrush}">
+                <ic:SymbolIcon Symbol="Link" FontSize="20" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <TextBlock Text="Link a secret from another vault" FontSize="20" FontWeight="SemiBold" Margin="12,0,0,0" VerticalAlignment="Center" />
+        </StackPanel>
+        <TextBlock Name="Intro" TextWrapping="Wrap" Margin="0,0,0,16" Classes="small secondary" />
+
+        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
+            <ComboBox Name="ProviderBox" MinWidth="140" Margin="0,0,8,0" SelectionChanged="OnProviderChanged">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding DisplayName}" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+            <TextBox Name="SearchBox" Grid.Column="1" Watermark="Search titles, vaults, categories…" KeyDown="OnSearchKeyDown" Classes="clearButton" />
+            <Button Name="SearchButton" Grid.Column="2" Content="Search" Margin="8,0,0,0" Click="OnSearch" />
+        </Grid>
+
+        <Border Classes="surface" Padding="4" Margin="0,0,0,8">
+            <Panel MinHeight="120">
+                <ListBox Name="Results" MaxHeight="260" SelectionMode="Multiple" SelectionChanged="OnItemSelected" Background="Transparent">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="4,2">
+                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="{DynamicResource TextTertiary}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <StackPanel Name="Busy" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="False">
+                    <ProgressBar IsIndeterminate="True" Width="120" />
+                    <TextBlock Text="Waiting for 1Password… approve it if it asks." Classes="small secondary" Margin="0,8,0,0" />
+                </StackPanel>
+            </Panel>
+        </Border>
+        <TextBlock Name="Status" TextWrapping="Wrap" Classes="small secondary" Margin="0,0,0,12" MinHeight="16" />
+
+        <StackPanel Name="Details" IsVisible="False">
+            <Grid ColumnDefinitions="*,12,*" Margin="0,0,0,12">
+                <StackPanel Name="NamePanel">
+                    <TextBlock Text="Name in Keylo" Classes="field" />
+                    <TextBox Name="NameBox" />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="Category" Classes="field" />
+                    <ComboBox Name="CategoryBox" IsEditable="True" HorizontalAlignment="Stretch" />
+                    <TextBlock Name="CategoryHint" Text="Leave blank to use each item's vault (1Password · Vault)." FontSize="11" Margin="0,4,0,0"
+                               IsVisible="False" Foreground="{DynamicResource TextTertiary}" />
+                </StackPanel>
+            </Grid>
+            <StackPanel Name="FieldPanel">
+                <TextBlock Text="Use" Classes="field" />
+                <ComboBox Name="FieldBox" MinWidth="260">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </StackPanel>
+            <TextBlock Name="FieldsText" TextWrapping="Wrap" FontSize="12" Margin="0,6,0,0" Foreground="{DynamicResource TextTertiary}" />
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0" Spacing="8">
+            <Button Name="CancelButton" Classes="big" Content="Cancel" IsCancel="True" Click="OnCancel" />
+            <Button Name="LinkButton" Classes="accent big" IsEnabled="False" Click="OnLink">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <ic:SymbolIcon Symbol="Link" FontSize="16" />
+                    <TextBlock Name="LinkText" Text="Link" />
+                </StackPanel>
+            </Button>
+        </StackPanel>
+    </StackPanel>
+</views:DialogWindow>

@@ -1,0 +1,96 @@
+<views:DialogWindow xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ic="using:FluentIcons.Avalonia"
+                    xmlns:vm="using:Keylo.App.ViewModels"
+                    xmlns:views="using:Keylo.Desktop.Views"
+                    x:Class="Keylo.Desktop.Views.ImportDialog"
+                    x:DataType="vm:ImportOptionsViewModel"
+                    Title="Import secrets" Width="760">
+    <StackPanel Margin="28,24">
+        <TextBlock Text="Import secrets" FontSize="22" FontWeight="SemiBold" />
+        <TextBlock Margin="0,6,0,22" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TextSecondary}">
+            <Run Text="{Binding FileCount, Mode=OneWay}" /><Run Text=" file(s) from " /><Run Text="{Binding Source, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" />
+        </TextBlock>
+
+        <!-- Category -->
+        <TextBlock Text="CATEGORY" Classes="section" />
+        <Border Classes="surface" Margin="0,0,0,16">
+            <StackPanel>
+                <RadioButton GroupName="Category" IsChecked="{Binding IsSubfolders}" IsEnabled="{Binding HasSubfolders}" Margin="0,0,0,10">
+                    <StackPanel>
+                        <TextBlock Text="Use subfolder names" />
+                        <TextBlock Text="Files in cloud/ go into a 'cloud' category, and so on." Classes="small secondary" />
+                    </StackPanel>
+                </RadioButton>
+                <RadioButton GroupName="Category" IsChecked="{Binding IsSingle}" Margin="0,0,0,8" Content="Put everything in one category" />
+                <ComboBox IsEditable="True" HorizontalAlignment="Stretch" ItemsSource="{Binding Categories}" Margin="28,0,0,12"
+                          Text="{Binding Category}" IsEnabled="{Binding IsSingle}" ToolTip.Tip="Pick an existing category or type a new one" />
+                <RadioButton GroupName="Category" IsChecked="{Binding IsNone}" Content="No category" />
+            </StackPanel>
+        </Border>
+
+        <!-- Overwrite -->
+        <Border Classes="surface" Margin="0,0,0,16">
+            <DockPanel>
+                <ToggleSwitch DockPanel.Dock="Right" IsChecked="{Binding Overwrite}" VerticalAlignment="Center" OnContent="" OffContent="" />
+                <StackPanel>
+                    <TextBlock Text="Replace secrets that already exist" />
+                    <TextBlock Classes="small secondary">
+                        <Run Text="{Binding ConflictCount, Mode=OneWay}" /><Run Text=" of these names are already in Keylo. Off: they're skipped." />
+                    </TextBlock>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Every file, with an editable name and type -->
+        <DockPanel Margin="0,0,0,6">
+            <TextBlock DockPanel.Dock="Right" FontSize="12" Foreground="{DynamicResource TextTertiary}" VerticalAlignment="Bottom"
+                       Text="Names come from the files and types are guessed; change either" />
+            <TextBlock Text="SECRETS TO CREATE" Classes="section" Margin="0" />
+        </DockPanel>
+        <Border Classes="surface" Padding="12,8" Margin="0,0,0,22">
+            <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Preview}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ImportRowViewModel">
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,3">
+                                <TextBox Classes="mono" Text="{Binding Name}" ToolTip.Tip="{Binding FileName}" />
+                                <Border Grid.Column="1" CornerRadius="8" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center"
+                                        Background="{DynamicResource CautionBg}" IsVisible="{Binding HasProblem}">
+                                    <TextBlock Text="{Binding Problem}" FontSize="11" Foreground="{DynamicResource Caution}" />
+                                </Border>
+                                <Border Grid.Column="2" Classes="chip" Margin="8,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Category}" Classes="small secondary" />
+                                </Border>
+                                <ComboBox Grid.Column="3" Width="160" Margin="8,0,0,0" VerticalAlignment="Center"
+                                          ItemsSource="{Binding TypeChoices}" SelectedItem="{Binding Type}" ToolTip.Tip="Type (guessed from the file)">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:TypeChoice">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <ic:SymbolIcon Symbol="{Binding Symbol}" FontSize="14" Foreground="{DynamicResource AccentText}" />
+                                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+
+        <DockPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+                <Button Classes="big" Content="Cancel" IsCancel="True" Click="OnCancel" />
+                <Button Classes="accent big" IsDefault="True" Click="OnImport" IsEnabled="{Binding CanImport}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <ic:SymbolIcon Symbol="ArrowDownload" FontSize="16" />
+                        <TextBlock Text="Import" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+            <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource TextTertiary}" Text="Original files are left untouched." />
+        </DockPanel>
+    </StackPanel>
+</views:DialogWindow>

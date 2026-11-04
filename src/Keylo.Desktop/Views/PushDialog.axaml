@@ -1,0 +1,73 @@
+<views:DialogWindow xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ic="using:FluentIcons.Avalonia"
+                    xmlns:views="using:Keylo.Desktop.Views"
+                    x:Class="Keylo.Desktop.Views.PushDialog"
+                    Title="Push" Width="560">
+    <StackPanel Margin="28,24">
+        <!-- Heading -->
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+            <Border Width="40" Height="40" CornerRadius="10" Background="{StaticResource BrandBrush}">
+                <ic:SymbolIcon Symbol="CloudArrowUp" FontSize="20" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                <TextBlock Name="Heading" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock Text="Check where it's going before anything is sent." Classes="small secondary" />
+            </StackPanel>
+        </StackPanel>
+
+        <!-- From → To -->
+        <Grid ColumnDefinitions="*,44,*" Margin="0,0,0,16">
+            <Border Classes="surface" Padding="14,12">
+                <StackPanel>
+                    <TextBlock Text="FROM KEYLO" Classes="section" Margin="0,0,0,8" />
+                    <DockPanel>
+                        <views:IconTile Name="SecretTile" Width="36" Height="36" CornerRadius="10" GlyphSize="18" DockPanel.Dock="Left" />
+                        <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Name="SecretName" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Name="SecretDetail" Classes="small secondary" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+
+            <ic:SymbolIcon Grid.Column="1" Symbol="ArrowRight" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}" />
+
+            <Border Grid.Column="2" Classes="surface" Padding="14,12">
+                <StackPanel>
+                    <TextBlock Name="ToLabel" Classes="section" Margin="0,0,0,8" />
+                    <DockPanel>
+                        <Border DockPanel.Dock="Left" Width="36" Height="36" CornerRadius="10" Background="#0572EC">
+                            <ic:SymbolIcon Symbol="Vault" FontSize="18" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Name="VaultName" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Name="VaultDetail" Classes="small secondary" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- New item vs update -->
+        <Border Name="StatusChip" CornerRadius="8" Padding="12,8" Margin="0,0,0,12">
+            <DockPanel>
+                <ic:SymbolIcon Name="StatusIcon" FontSize="16" VerticalAlignment="Center" />
+                <TextBlock Name="StatusText" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
+            </DockPanel>
+        </Border>
+
+        <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextTertiary}"
+                   Text="It's a copy: later changes in Keylo don't follow unless you push again. The value goes to 1Password over stdin, never on a command line." />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0" Spacing="8">
+            <Button Classes="big" Content="Cancel" IsCancel="True" Click="OnCancel" />
+            <Button Name="PushButton" Classes="accent big" IsDefault="True" Click="OnPush">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <ic:SymbolIcon Symbol="CloudArrowUp" FontSize="16" />
+                    <TextBlock Name="PushText" />
+                </StackPanel>
+            </Button>
+        </StackPanel>
+    </StackPanel>
+</views:DialogWindow>

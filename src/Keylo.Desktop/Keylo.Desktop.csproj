@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Keylo's desktop app on Avalonia: the macOS app (Keylo.app). It also builds for Windows, for
+         development; Windows users get the WPF app (Keylo.App). -->
+    <OutputType>WinExe</OutputType>
+    <TargetFrameworks>net10.0;net10.0-windows10.0.19041.0</TargetFrameworks>
+    <AssemblyName>KeyloApp</AssemblyName>
+    <RootNamespace>Keylo.Desktop</RootNamespace>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
+    <ApplicationIcon>..\Keylo.App\Assets\keylo.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <SupportedOSPlatformVersion></SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+    <PackageReference Include="FluentIcons.Avalonia" Version="2.0.321" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Keylo.Core\Keylo.Core.csproj" />
+    <ProjectReference Include="..\Keylo.UI\Keylo.UI.csproj" />
+    <!-- The keylo command on macOS is KeyloApp with a cli argument: one executable, so one keychain identity. -->
+    <ProjectReference Include="..\Keylo.Cli\Keylo.Cli.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <ProjectReference Include="..\Keylo.Platform.MacOS\Keylo.Platform.MacOS.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$(TargetFramework.Contains('-windows'))">
+    <ProjectReference Include="..\Keylo.Platform.Windows\Keylo.Platform.Windows.csproj" />
+  </ItemGroup>
+
+</Project>

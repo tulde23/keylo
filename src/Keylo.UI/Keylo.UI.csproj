@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- View models and services shared by the Windows app (WPF) and the macOS app (Avalonia). The
+         toolkit-specific bits (icons, brushes, timers, file pickers) come from an IUiHost. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <SupportedOSPlatformVersion></SupportedOSPlatformVersion>
+    <RootNamespace>Keylo.App</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Keylo.Core\Keylo.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -9,8 +9,10 @@ public static class ClaudeCode
 
     public static string? FindCli()
     {
-        var extensions = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.CMD").Split(';', StringSplitOptions.RemoveEmptyEntries);
-        var directories = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        var extensions = OperatingSystem.IsWindows()
+            ? (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.CMD").Split(';', StringSplitOptions.RemoveEmptyEntries)
+            : [""];
+        var directories = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Append(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin"));
 
         return directories
