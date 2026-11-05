@@ -16,6 +16,7 @@ public partial class App : Application
         base.OnStartup(e);
         Keylo.Platform.Windows.WindowsPlatform.Install();
         Ui.Install(new WpfUiHost());
+        WpfTheme.ApplySaved();
 
         // "keylow --approve REQUEST" (from keylo mcp): just the approval window, answered by exit code.
         // Not single-instance, so it works while the main window is open.

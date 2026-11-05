@@ -13,11 +13,11 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly IUiTimer _sessionTimer;
     private bool _suppressSelection;
 
-    [ObservableProperty] private bool _isLocked = true;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(ShowSettingsDialog))] private bool _isLocked = true;
     [ObservableProperty] private bool _isUnlocking;
     [ObservableProperty] private string _lockMessage = "";
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsOverlayOpen))] private bool _isSettingsOpen;
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsOverlayOpen))] private bool _isCategoryManagerOpen;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(ShowSettingsDialog))] private bool _isSettingsOpen;
+    [ObservableProperty] private bool _isCategoryManagerOpen;
     [ObservableProperty] private string _searchText = "";
     [ObservableProperty] private CategoryItem? _selectedCategory;
     [ObservableProperty] private SecretItemViewModel? _selectedSecret;
@@ -91,7 +91,8 @@ public sealed partial class MainViewModel : ObservableObject
     public bool HasDetail => Detail is not null;
     public bool IsMultiSelect => SelectedSecrets.Count > 1;
     public bool ShowEmptyState => !HasDetail && !IsMultiSelect;
-    public bool IsOverlayOpen => IsSettingsOpen || IsCategoryManagerOpen;
+    /// <summary>Settings shows as a dialog over the window, never over the lock screen.</summary>
+    public bool ShowSettingsDialog => IsSettingsOpen && !IsLocked;
     public string SelectionText => $"{SelectedSecrets.Count} secrets selected";
 
     /// <summary>Called once the window exists (Windows Hello needs its handle).</summary>

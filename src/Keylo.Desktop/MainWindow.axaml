@@ -15,7 +15,7 @@
         Background="{DynamicResource BaseFill}"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaChromeHints="PreferSystemChrome"
-        ExtendClientAreaTitleBarHeightHint="70"
+        ExtendClientAreaTitleBarHeightHint="48"
         DragDrop.AllowDrop="True">
 
     <Panel>
@@ -25,16 +25,16 @@
             <!-- Top bar: brand over the sidebar, search over the list, action tiles over the detail area.
                  Its columns follow the sidebar and list widths (code-behind), so search stays above the list.
                  The window's own buttons sit in it: top-left on macOS, top-right on Windows. -->
-            <Border Name="TopBar" DockPanel.Dock="Top" Margin="0,0,0,12" Padding="0,12" Height="70"
+            <Border Name="TopBar" DockPanel.Dock="Top" Margin="0,0,0,10" Padding="0,6" Height="48"
                     Background="{DynamicResource TopBarFill}" BorderBrush="{DynamicResource CardStroke}" BorderThickness="0,0,0,1"
                     PointerPressed="OnDragArea">
                 <Grid Name="TopGrid" ColumnDefinitions="232,6,340,6,*">
                     <!-- Brand, over the sidebar -->
                     <StackPanel Name="Brand" Orientation="Horizontal" VerticalAlignment="Center" Margin="18,0,0,0" IsHitTestVisible="False">
-                        <Image Source="/Assets/keylo.png" Width="32" Height="32" />
-                        <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="Keylo" FontSize="17" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}" />
-                            <TextBlock Text="{StaticResource Tagline}" FontSize="11" Foreground="{DynamicResource TextTertiary}" />
+                        <Image Source="/Assets/keylo.png" Width="26" Height="26" />
+                        <StackPanel Margin="9,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="Keylo" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}" />
+                            <TextBlock Text="{StaticResource Tagline}" FontSize="10" Foreground="{DynamicResource TextTertiary}" />
                         </StackPanel>
                     </StackPanel>
 
@@ -49,22 +49,22 @@
                     <!-- Action tiles, over the detail area -->
                     <DockPanel Name="ActionTiles" Grid.Column="4" Margin="14,0" VerticalAlignment="Center" LastChildFill="False">
                         <Button DockPanel.Dock="Right" Classes="tile quiet" Command="{Binding LockCommand}" Name="LockTile">
-                            <ic:SymbolIcon Symbol="LockClosed" FontSize="20" />
+                            <ic:SymbolIcon Symbol="LockClosed" FontSize="17" />
                         </Button>
                         <Button DockPanel.Dock="Right" Classes="tile quiet" Command="{Binding OpenSettingsCommand}" ToolTip.Tip="Settings">
-                            <ic:SymbolIcon Symbol="Settings" FontSize="20" />
+                            <ic:SymbolIcon Symbol="Settings" FontSize="17" />
                         </Button>
                         <Button Classes="tile primary" Command="{Binding NewSecretCommand}" Name="NewTile">
-                            <ic:SymbolIcon Symbol="Add" FontSize="20" Foreground="{DynamicResource OnAccent}" />
+                            <ic:SymbolIcon Symbol="Add" FontSize="17" Foreground="{DynamicResource OnAccent}" />
                         </Button>
                         <Button Classes="tile" Command="{Binding ImportFilesCommand}" ToolTip.Tip="Import files as secrets">
-                            <ic:SymbolIcon Symbol="DocumentAdd" FontSize="20" />
+                            <ic:SymbolIcon Symbol="DocumentAdd" FontSize="17" />
                         </Button>
                         <Button Classes="tile" Command="{Binding ImportFolderCommand}" ToolTip.Tip="Import a folder; subfolders become categories">
-                            <ic:SymbolIcon Symbol="FolderOpen" FontSize="20" />
+                            <ic:SymbolIcon Symbol="FolderOpen" FontSize="17" />
                         </Button>
                         <Button Classes="tile" Command="{Binding LinkFromVaultCommand}" ToolTip.Tip="Link to a 1Password item (read live, never copied)">
-                            <ic:SymbolIcon Symbol="Link" FontSize="20" />
+                            <ic:SymbolIcon Symbol="Link" FontSize="17" />
                         </Button>
                     </DockPanel>
                 </Grid>
@@ -210,14 +210,10 @@
                     </Panel>
                 </Border>
 
-                <!-- Settings and the category manager take over the list + detail area -->
+                <!-- The category manager takes over the list + detail area -->
                 <Border Grid.Column="2" Grid.ColumnSpan="3" BorderThickness="1,1,0,0" CornerRadius="8,0,0,0"
-                        Background="{DynamicResource BaseFill}" BorderBrush="{DynamicResource CardStroke}" IsVisible="{Binding IsOverlayOpen}">
-                    <Panel>
-                        <views:SettingsView DataContext="{Binding Settings}" IsVisible="{Binding $parent[Window].((vm:MainViewModel)DataContext).IsSettingsOpen}" />
-                        <views:CategoryManagerView DataContext="{Binding CategoryManager}"
-                                                   IsVisible="{Binding $parent[Window].((vm:MainViewModel)DataContext).IsCategoryManagerOpen}" />
-                    </Panel>
+                        Background="{DynamicResource BaseFill}" BorderBrush="{DynamicResource CardStroke}" IsVisible="{Binding IsCategoryManagerOpen}">
+                    <views:CategoryManagerView DataContext="{Binding CategoryManager}" />
                 </Border>
             </Grid>
         </DockPanel>
@@ -252,6 +248,18 @@
                            Foreground="{DynamicResource TextTertiary}" />
             </StackPanel>
         </Grid>
+
+        <!-- ============================================================ settings -->
+        <!-- A dialog over the dimmed window, tabs along its top (Postman-style). -->
+        <Panel IsVisible="{Binding ShowSettingsDialog}" Background="#99000000">
+            <Panel Margin="48,36" MaxWidth="980" MaxHeight="840">
+                <!-- The shadow is its own layer, so the dialog's content isn't drawn through it. -->
+                <Border CornerRadius="10" Background="{DynamicResource BaseFill}" BoxShadow="0 18 48 0 #66000000" />
+                <Border CornerRadius="10" Background="{DynamicResource BaseFill}" BorderBrush="{DynamicResource CardStroke}" BorderThickness="1">
+                    <views:SettingsView DataContext="{Binding Settings}" />
+                </Border>
+            </Panel>
+        </Panel>
 
         <!-- Toasts -->
         <StackPanel Name="Toasts" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="24" Spacing="8" />

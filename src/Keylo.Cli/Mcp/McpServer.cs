@@ -3,6 +3,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Keylo.Core;
+using Keylo.Core.Platform;
+using Keylo.Core.Security;
 
 namespace Keylo.Cli.Mcp;
 
@@ -15,8 +17,8 @@ internal static class McpServer
 {
     private static readonly string[] ProtocolVersions = ["2025-06-18", "2025-03-26", "2024-11-05"];
 
-    private const string Instructions = """
-        Keylo holds the user's secrets (API keys, passwords, tokens) on this Windows PC.
+    private static string Instructions => $"""
+        Keylo holds the user's secrets (API keys, passwords, tokens) on this {(OperatingSystem.IsMacOS() ? "Mac" : "Windows PC")}.
         - Find secrets with search_secrets. Each result says what your access key allows: "run", "run, get", or "needs approval".
         - Secrets have types (login, api_key, database, ssh_key, note, custom) with named fields; search results include each
           secret's field schema. Address one field as "name:field" (e.g. "prod-db:connection_string"); a bare name means its main value.
@@ -24,7 +26,7 @@ internal static class McpServer
           live from that vault, which may ask the user to unlock it.
         - Prefer run_with_secrets: values reach the command as environment variables and are redacted from its output, so they never enter this conversation.
         - Use get_secret only when the value itself is needed (e.g. to fill in a login). It returns the value into the conversation.
-        - Using a secret outside your key's scope asks the user to approve it in a Keylo window (with Windows Hello); an approval
+        - Using a secret outside your key's scope asks the user to approve it in a Keylo window (with {KeyloPlatform.Current.VerifierName}); an approval
           lasts for their Keylo session (15 minutes by default). If they deny it, don't retry; ask them.
         - request_access asks the user to add secrets to your key permanently.
         Never write secret values into files, commits or messages unless the user asks.
@@ -32,6 +34,49 @@ internal static class McpServer
 
     private static readonly SemaphoreSlim WriteLock = new(1, 1);
     private static Stream _out = Stream.Null;
+
+    /// <summary>
+    /// "keylo mcp" typed in a terminal: the server would sit waiting for an agent, so say what it's
+    /// for and how to connect one instead (--stdio runs it anyway).
+    /// </summary>
+    public static int Explain(KeyloConfig config, string keyloExe)
+    {
+        var registration = ClaudeCode.Inspect(config, keyloExe);
+        var claude = registration switch
+        {
+            { Registered: false } => "not set up",
+            { Key: { } key, PointsAt: true } => $"connected, with the access key '{key.Name}'",
+            { Key: { } key } => $"set up with the access key '{key.Name}', but it runs another keylo: {registration.Command}",
+            _ => "set up, but its access key was revoked, expired or replaced: create a new one (below)",
+        };
+        var tools = KeyloTools.Definitions().OfType<JsonObject>()
+            .Select(t => $"  {t["name"]?.GetValue<string>(),-18}{t["title"]?.GetValue<string>()}");
+
+        Console.WriteLine($"""
+            keylo mcp is Keylo's MCP server. You don't run it yourself: an AI agent such as Claude Code
+            starts it and talks to it over stdin/stdout, so on its own it would just wait.
+
+            It lets agents use your secrets without seeing them: they ask for a secret by name, Keylo passes
+            it to their command as an environment variable and redacts it from the output, so the value never
+            enters the conversation. Each agent has an access key that sets what it may use without asking;
+            anything else needs your approval with {KeyloPlatform.Current.VerifierName}, and every use is logged.
+
+            Claude Code: {claude}.
+
+            Set it up:
+              keylo keys create "Claude Code" --category dev --add-to-claude     (or --all for every secret)
+              then restart Claude Code, or run /mcp in it.
+
+            Other MCP clients: run "{keyloExe}" mcp
+            with {AccessKeys.EnvironmentVariable} set to a key from: keylo keys create NAME
+
+            Tools it gives agents:
+            {string.Join(Environment.NewLine, tools)}
+
+            Testing? keylo mcp --stdio runs the server in this terminal anyway (JSON-RPC, one message per line).
+            """);
+        return 0;
+    }
 
     public static async Task<int> RunAsync()
     {

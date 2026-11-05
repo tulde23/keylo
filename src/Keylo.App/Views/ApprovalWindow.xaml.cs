@@ -3,7 +3,6 @@ using System.Windows.Interop;
 using System.Windows.Threading;
 using Keylo.Core;
 using Keylo.Core.Security;
-using Wpf.Ui.Appearance;
 using Wpf.Ui.Controls;
 
 namespace Keylo.App.Views;
@@ -25,9 +24,6 @@ public partial class ApprovalWindow : FluentWindow
     {
         InitializeComponent();
         _request = request;
-
-        ApplicationThemeManager.ApplySystemTheme(updateAccent: false);
-        ApplicationAccentColorManager.Apply(System.Windows.Media.Color.FromRgb(0x6D, 0x6A, 0xF6), ApplicationThemeManager.GetAppTheme());
 
         var agent = string.IsNullOrWhiteSpace(request.KeyName) ? "An agent" : request.KeyName;
         var many = request.Secrets.Count > 1;

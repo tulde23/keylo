@@ -15,6 +15,8 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            var state = UiState.Load();
+            Ui.Host.ApplyTheme(Themes.ParseName(state.Theme), Themes.ParseMode(state.Mode));
             _keylo = new KeyloService();
             desktop.MainWindow = new MainWindow(_keylo, desktop.Args ?? []);
             desktop.ShutdownRequested += (_, _) => _keylo.Dispose();

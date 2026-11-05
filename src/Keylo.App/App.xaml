@@ -20,12 +20,17 @@
 
             <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas</FontFamily>
 
-            <!-- Brand accent used for the logo tile and avatars on the lock screen. -->
-            <sys:String x:Key="Tagline">Your secrets, kept close.</sys:String>
+            <sys:String x:Key="Tagline">Your secrets, not ours.</sys:String>
+            <!-- The logo's gradient: the logo tile and avatars on the lock screen and dialogs. -->
             <LinearGradientBrush x:Key="BrandBrush" StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Color="#7C6CF6" Offset="0" />
-                <GradientStop Color="#4F8CF7" Offset="1" />
+                <GradientStop Color="#A855F7" Offset="0" />
+                <GradientStop Color="#5B21B6" Offset="1" />
             </LinearGradientBrush>
+
+            <!-- Keylo's own colour roles; WpfTheme replaces these (and WPF UI's brushes) with the chosen theme's. -->
+            <SolidColorBrush x:Key="SelectedFillBrush" Color="#2D2147" />
+            <SolidColorBrush x:Key="SectionTextBrush" Color="#A99BD0" />
+            <SolidColorBrush x:Key="InfoFillBrush" Color="#2D2147" />
 
             <!-- Windows 11 navigation-style rows: subtle hover/selected fill and an accent pill on the left. -->
             <Style x:Key="NavItem" TargetType="ListBoxItem">
@@ -48,7 +53,7 @@
                                     <Setter TargetName="Bg" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
                                 </Trigger>
                                 <Trigger Property="IsSelected" Value="True">
-                                    <Setter TargetName="Bg" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                    <Setter TargetName="Bg" Property="Background" Value="{DynamicResource SelectedFillBrush}" />
                                     <Setter TargetName="Pill" Property="Visibility" Value="Visible" />
                                 </Trigger>
                             </ControlTemplate.Triggers>
@@ -57,10 +62,24 @@
                 </Setter>
             </Style>
 
+            <!-- Read-only text people can select and copy (TextBlock text can't be selected). No BasedOn: WPF UI's
+                 TextBox look (fill, underline, min height) would make it a field; this keeps it looking like text. -->
+            <Style x:Key="SelectableText" TargetType="TextBox">
+                <Setter Property="IsReadOnly" Value="True" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="Margin" Value="-2,0,0,0" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                <Setter Property="SelectionBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            </Style>
+
             <Style x:Key="SectionLabel" TargetType="TextBlock">
                 <Setter Property="FontSize" Value="12" />
                 <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource SectionTextBrush}" />
                 <Setter Property="Margin" Value="0,0,0,6" />
             </Style>
 

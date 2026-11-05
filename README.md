@@ -1,6 +1,6 @@
 # Keylo
 
-*Your secrets, kept close.*
+*Your secrets, not ours.*
 
 Local secrets for one machine, with a command line (`keylo`) and a desktop app. On Windows they
 live in Credential Manager (app: `keylow`); on macOS in your login keychain (app: Keylo.app).

@@ -6,11 +6,9 @@ using Keylo.Core;
 
 namespace Keylo.App.ViewModels;
 
-/// <summary>Settings → About: version, folders, and whether Claude Code is set up to use Keylo.</summary>
+/// <summary>Settings → About (version, folders) and the Claude Code status in Settings → AI agents.</summary>
 public sealed partial class AboutViewModel(KeyloService keylo) : ObservableObject
 {
-    public const string RepositoryUrl = "https://github.com/tulde23/keylo";
-
     public string Version { get; } = KeyloVersion.Of(System.Reflection.Assembly.GetEntryAssembly() ?? typeof(AboutViewModel).Assembly).ToString();
     public string InstallFolder { get; } = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
     public string DataFolder => KeyloPaths.DefaultDataDirectory;
@@ -29,7 +27,7 @@ public sealed partial class AboutViewModel(KeyloService keylo) : ObservableObjec
         (ClaudeOk, ClaudeStatus, ClaudeDetail) = r switch
         {
             { Registered: false } => (false, "Not set up",
-                "Claude Code has no Keylo server. Create an access key (New key above) and choose Add to Claude Code."),
+                "Claude Code has no Keylo server. Create an access key (New key below) and choose Add to Claude Code."),
             { Key: { } key } => (r.PointsAt, r.PointsAt ? "Connected" : "Registered elsewhere",
                 $"Claude Code's Keylo server uses the access key '{key.Name}' ({Describe(key)}).{elsewhere}"),
             { HasToken: true } => (false, "Key not valid",
@@ -46,8 +44,6 @@ public sealed partial class AboutViewModel(KeyloService keylo) : ObservableObjec
 
     [RelayCommand] private void OpenInstallFolder() => Open(InstallFolder);
     [RelayCommand] private void OpenDataFolder() => Open(DataFolder);
-    [RelayCommand] private void OpenRepository() => Open(RepositoryUrl);
-    [RelayCommand] private void OpenReadme() => Open(RepositoryUrl + "#readme");
 
     private static void Open(string target) => Ui.Host.Open(target);
 }

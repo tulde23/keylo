@@ -30,6 +30,51 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+        <!-- Tabs along the top, Postman-style: plain labels, the selected one underlined in the accent. -->
+        <Style x:Key="SettingsTab" TargetType="TabItem">
+            <!-- The tab's content inherits this (its logical parent is the TabItem); the label sets its own. -->
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Grid Background="Transparent" Margin="0,0,22,0">
+                            <TextBlock x:Name="Label" Text="{TemplateBinding Header}" FontSize="13" Margin="0,10,0,11"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            <Border x:Name="Pipe" Height="2" CornerRadius="1" VerticalAlignment="Bottom"
+                                    Background="{DynamicResource AccentFillColorDefaultBrush}" Visibility="Collapsed" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Label" Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Label" Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <Setter TargetName="Label" Property="FontWeight" Value="SemiBold" />
+                                <Setter TargetName="Pipe" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="SettingsTabs" TargetType="TabControl">
+            <Setter Property="ItemContainerStyle" Value="{StaticResource SettingsTab}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <DockPanel>
+                            <Border DockPanel.Dock="Top" Padding="24,0" Background="{DynamicResource SolidBackgroundFillColorTertiaryBrush}"
+                                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+                                <TabPanel IsItemsHost="True" />
+                            </Border>
+                            <ContentPresenter ContentSource="SelectedContent" />
+                        </DockPanel>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <DockPanel>
@@ -61,380 +106,489 @@
             </DockPanel>
         </Border>
 
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="28,24,28,24" FocusVisualStyle="{x:Null}">
-            <StackPanel MaxWidth="820" HorizontalAlignment="Stretch">
-                <DockPanel Margin="0,0,0,24">
-                    <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon Dismiss24}" ToolTip="Close settings"
-                               Command="{Binding DataContext.CloseSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
-                    <TextBlock Text="Settings" FontSize="26" FontWeight="SemiBold" />
-                </DockPanel>
+        <!-- Header -->
+        <Border DockPanel.Dock="Top" Padding="24,8,12,8" CornerRadius="10,10,0,0" Background="{DynamicResource SolidBackgroundFillColorTertiaryBrush}">
+            <DockPanel>
+                <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon Dismiss24}" ToolTip="Close settings"
+                           Command="{Binding DataContext.CloseSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+                <TextBlock Text="SETTINGS" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+            </DockPanel>
+        </Border>
 
-                <!-- ==================================================== security -->
-                <TextBlock Text="SECURITY" Style="{StaticResource SectionLabel}" />
-                <Border Style="{StaticResource Surface}" Margin="0,0,0,28">
-                    <StackPanel>
-                        <DockPanel Margin="0,0,0,16">
-                            <ComboBox DockPanel.Dock="Right" Width="290" ItemsSource="{Binding HelloModes}" SelectedItem="{Binding Hello}">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding Converter={StaticResource HelloModeText}}" />
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
+        <TabControl Style="{StaticResource SettingsTabs}">
+            <TabItem Header="General">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="28,20" FocusVisualStyle="{x:Null}">
+                    <StackPanel MaxWidth="820" HorizontalAlignment="Stretch">
+                        <!-- ============================================ security -->
+                        <TextBlock Text="SECURITY" Style="{StaticResource SectionLabel}" />
+                        <Border Style="{StaticResource Surface}" Margin="0,0,0,28">
                             <StackPanel>
-                                <TextBlock Text="Ask for Windows Hello" FontWeight="SemiBold" />
-                                <TextBlock Text="Shared by the app and the keylo command." FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                            </StackPanel>
-                        </DockPanel>
-                        <DockPanel Margin="0,0,0,16">
-                            <ui:NumberBox DockPanel.Dock="Right" Width="140" Minimum="1" Maximum="1440" SmallChange="5" Value="{Binding SessionMinutes}" />
-                            <StackPanel>
-                                <TextBlock Text="Session length (minutes)" FontWeight="SemiBold" />
-                                <TextBlock Text="Keylo locks after this long without activity in the app ('once per session' mode)." FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                            </StackPanel>
-                        </DockPanel>
-                        <DockPanel Margin="0,0,0,16">
-                            <ui:NumberBox DockPanel.Dock="Right" Width="140" Minimum="5" Maximum="600" SmallChange="5" Value="{Binding ClipboardSeconds}" />
-                            <StackPanel>
-                                <TextBlock Text="Clear clipboard after (seconds)" FontWeight="SemiBold" />
-                                <TextBlock Text="Copied values are also kept out of clipboard history and cloud sync." FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                            </StackPanel>
-                        </DockPanel>
-                        <DockPanel>
-                            <ComboBox DockPanel.Dock="Right" Width="140" ItemsSource="{Binding Source={x:Static vm:SettingsViewModel.RetentionOptions}}"
-                                      SelectedItem="{Binding AuditRetention}" DisplayMemberPath="Label" />
-                            <StackPanel>
-                                <TextBlock Text="Keep audit log" FontWeight="SemiBold" />
-                                <TextBlock Text="Older entries are removed as new ones are added. The log records every use that skipped Windows Hello." FontSize="12"
-                                           TextWrapping="Wrap" Margin="0,0,12,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                            </StackPanel>
-                        </DockPanel>
-                    </StackPanel>
-                </Border>
-
-                <!-- ==================================================== backup -->
-                <TextBlock Text="BACKUP &amp; RESTORE" Style="{StaticResource SectionLabel}" />
-                <Border Style="{StaticResource Surface}" Margin="0,0,0,28">
-                    <StackPanel>
-                        <DockPanel>
-                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                                <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon ArrowExportUp24}" Content="Create backup…"
-                                           Command="{Binding BackupCommand}" IsEnabled="{Binding IsBusy, Converter={StaticResource Not}}" Margin="0,0,8,0" />
-                                <ui:Button Appearance="Secondary" Icon="{ui:SymbolIcon ArrowImport24}" Content="Restore…"
-                                           Command="{Binding RestoreCommand}" IsEnabled="{Binding IsBusy, Converter={StaticResource Not}}" />
-                            </StackPanel>
-                            <StackPanel Margin="0,0,16,0">
-                                <TextBlock Text="Password-protected backup" FontWeight="SemiBold" />
-                                <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                           Text="One .keylo file with every secret, category and icon, encrypted with AES-256-GCM under your password. It works on any PC or Windows account, unlike Keylo's normal storage." />
-                            </StackPanel>
-                        </DockPanel>
-                        <TextBlock Text="{Binding BackupStatus}" FontSize="12" Margin="0,10,0,0" TextTrimming="CharacterEllipsis"
-                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                                   Visibility="{Binding BackupStatus, Converter={StaticResource VisibleWhen}}" />
-                    </StackPanel>
-                </Border>
-
-                <!-- ==================================================== secret types -->
-                <DockPanel Margin="0,0,0,6" DataContext="{Binding SecretTypes}">
-                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                        <ui:Button Appearance="Secondary" Icon="{ui:SymbolIcon Add24}" Content="New type" Command="{Binding AddTypeCommand}" Margin="0,0,8,0" />
-                        <ui:Button Style="{StaticResource DirtySaveButton}" Icon="{ui:SymbolIcon Save24}" Content="Save types" Command="{Binding SaveCommand}" />
-                    </StackPanel>
-                    <StackPanel>
-                        <TextBlock Text="SECRET TYPES" Style="{StaticResource SectionLabel}" Margin="0" />
-                        <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,4,12,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                   Text="Kinds of secret with their own fields, like 1Password's categories. Secret fields (Password, Secret text) are encrypted and redacted from agent output; the others are searchable and shown to agents whose key covers the secret. Built-in types can change their icon and colour." />
-                    </StackPanel>
-                </DockPanel>
-
-                <ItemsControl ItemsSource="{Binding SecretTypes.Types}" Margin="0,8,0,28">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type vm:SecretTypeViewModel}">
-                            <Expander Margin="0,0,0,8">
-                                <Expander.Header>
-                                    <StackPanel Orientation="Horizontal">
-                                        <views:IconTile Width="30" Height="30" CornerRadius="8" GlyphSize="16" Symbol="{Binding Symbol}" />
-                                        <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                                            <TextBlock Text="{Binding Summary}" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                                        </StackPanel>
+                                <DockPanel Margin="0,0,0,16">
+                                    <ComboBox DockPanel.Dock="Right" Width="290" ItemsSource="{Binding HelloModes}" SelectedItem="{Binding Hello}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Converter={StaticResource HelloModeText}}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <StackPanel>
+                                        <TextBlock Text="Ask for Windows Hello" FontWeight="SemiBold" />
+                                        <TextBlock Text="Shared by the app and the keylo command." FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                     </StackPanel>
-                                </Expander.Header>
-                                <StackPanel Margin="4,4,4,8">
-                                    <DockPanel Margin="0,0,0,12" Visibility="{Binding IsCustom, Converter={StaticResource VisibleWhen}}">
-                                        <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon Delete24}" ToolTip="Delete type (on save)"
-                                                   Command="{Binding DataContext.SecretTypes.RemoveTypeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                   CommandParameter="{Binding}" Margin="8,0,0,0" />
-                                        <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Type name" />
-                                    </DockPanel>
+                                </DockPanel>
+                                <DockPanel Margin="0,0,0,16">
+                                    <ui:NumberBox DockPanel.Dock="Right" Width="140" Minimum="1" Maximum="1440" SmallChange="5" Value="{Binding SessionMinutes}" />
+                                    <StackPanel>
+                                        <TextBlock Text="Session length (minutes)" FontWeight="SemiBold" />
+                                        <TextBlock Text="Keylo locks after this long without activity in the app ('once per session' mode)." FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                </DockPanel>
+                                <DockPanel Margin="0,0,0,16">
+                                    <ui:NumberBox DockPanel.Dock="Right" Width="140" Minimum="5" Maximum="600" SmallChange="5" Value="{Binding ClipboardSeconds}" />
+                                    <StackPanel>
+                                        <TextBlock Text="Clear clipboard after (seconds)" FontWeight="SemiBold" />
+                                        <TextBlock Text="Copied values are also kept out of clipboard history and cloud sync." FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                </DockPanel>
+                                <DockPanel>
+                                    <ComboBox DockPanel.Dock="Right" Width="140" ItemsSource="{Binding Source={x:Static vm:SettingsViewModel.RetentionOptions}}"
+                                              SelectedItem="{Binding AuditRetention}" DisplayMemberPath="Label" />
+                                    <StackPanel>
+                                        <TextBlock Text="Keep audit log" FontWeight="SemiBold" />
+                                        <TextBlock Text="Older entries are removed as new ones are added. The log records every use that skipped Windows Hello." FontSize="12"
+                                                   TextWrapping="Wrap" Margin="0,0,12,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </StackPanel>
+                        </Border>
 
-                                    <TextBlock Text="Icon and colour" Style="{StaticResource FieldLabel}" />
-                                    <views:IconPicker Icon="{Binding Icon}" Color="{Binding Color}" Margin="0,4,0,14" />
+                        <!-- ============================================ backup -->
+                        <TextBlock Text="BACKUP &amp; RESTORE" Style="{StaticResource SectionLabel}" />
+                        <Border Style="{StaticResource Surface}" Margin="0,0,0,28">
+                            <StackPanel>
+                                <DockPanel>
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon ArrowExportUp24}" Content="Create backup…"
+                                                   Command="{Binding BackupCommand}" IsEnabled="{Binding IsBusy, Converter={StaticResource Not}}" Margin="0,0,8,0" />
+                                        <ui:Button Appearance="Secondary" Icon="{ui:SymbolIcon ArrowImport24}" Content="Restore…"
+                                                   Command="{Binding RestoreCommand}" IsEnabled="{Binding IsBusy, Converter={StaticResource Not}}" />
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,16,0">
+                                        <TextBlock Text="Password-protected backup" FontWeight="SemiBold" />
+                                        <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   Text="One .keylo file with every secret, category and icon, encrypted with AES-256-GCM under your password. It works on any PC or Windows account, unlike Keylo's normal storage." />
+                                    </StackPanel>
+                                </DockPanel>
+                                <TextBlock Text="{Binding BackupStatus}" FontSize="12" Margin="0,10,0,0" TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                           Visibility="{Binding BackupStatus, Converter={StaticResource VisibleWhen}}" />
+                            </StackPanel>
+                        </Border>
 
-                                    <TextBlock Text="Fields" Style="{StaticResource FieldLabel}" />
-                                    <ItemsControl ItemsSource="{Binding Fields}" IsEnabled="{Binding IsCustom}">
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Themes">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="28,20" FocusVisualStyle="{x:Null}">
+                    <StackPanel MaxWidth="820" HorizontalAlignment="Stretch">
+                        <!-- ============================================ appearance -->
+                        <TextBlock Text="APPEARANCE" Style="{StaticResource SectionLabel}" />
+                        <Border Style="{StaticResource Surface}" Margin="0,0,0,28">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,16">
+                                    <ComboBox DockPanel.Dock="Right" Width="290" ItemsSource="{Binding Source={x:Static vm:SettingsViewModel.ThemeOptions}}" SelectedItem="{Binding Theme}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Label}" FontWeight="SemiBold" />
+                                                    <TextBlock Text="{Binding Description}" FontSize="12" TextWrapping="Wrap" MaxWidth="250"
+                                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Theme" FontWeight="SemiBold" />
+                                        <TextBlock Text="Changes right away; not part of Save settings." FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                </DockPanel>
+                                <DockPanel>
+                                    <ComboBox DockPanel.Dock="Right" Width="290" ItemsSource="{Binding Source={x:Static vm:SettingsViewModel.ThemeModeOptions}}"
+                                              SelectedItem="{Binding ThemeMode}" DisplayMemberPath="Label" />
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Light or dark" FontWeight="SemiBold" />
+                                        <TextBlock Text="Match system follows Windows as it switches." FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Agents">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="28,20" FocusVisualStyle="{x:Null}">
+                    <StackPanel MaxWidth="820" HorizontalAlignment="Stretch">
+                        <!-- ============================================ AI agents (MCP) -->
+                        <TextBlock Text="AI AGENTS (MCP)" Style="{StaticResource SectionLabel}" />
+                        <Border Style="{StaticResource Surface}" Margin="0,0,0,28" DataContext="{Binding About}">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,10">
+                                    <ui:SymbolIcon Symbol="Bot24" FontSize="24" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Top" Margin="0,0,12,0" />
+                                    <TextBlock Text="{x:Static vm:AgentHelp.Title}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                </DockPanel>
+                                <TextBox Style="{StaticResource SelectableText}" Text="{x:Static vm:AgentHelp.Why}" FontSize="12" Margin="0,0,0,10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <TextBox Style="{StaticResource SelectableText}" Text="{x:Static vm:AgentHelp.How}" FontSize="12" Margin="0,0,0,10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <TextBox Style="{StaticResource SelectableText}" Text="{x:Static vm:AgentHelp.Control}" FontSize="12" Margin="0,0,0,10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <Border CornerRadius="8" Padding="14,10" Margin="0,0,0,10" Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                    <TextBox Style="{StaticResource SelectableText}" Text="{x:Static vm:AgentHelp.SetUp}" FontSize="12" />
+                                </Border>
+
+                                <Expander Header="What agents can do (MCP tools)" Margin="0,0,0,12">
+                                    <ItemsControl ItemsSource="{x:Static vm:AgentHelp.Tools}">
                                         <ItemsControl.ItemTemplate>
-                                            <DataTemplate DataType="{x:Type vm:FieldDefinitionViewModel}">
-                                                <Grid Margin="0,0,0,6">
+                                            <DataTemplate DataType="{x:Type vm:AgentTool}">
+                                                <Grid Margin="0,3">
                                                     <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="2*" />
-                                                        <ColumnDefinition Width="8" />
-                                                        <ColumnDefinition Width="1.3*" />
-                                                        <ColumnDefinition Width="8" />
-                                                        <ColumnDefinition Width="2*" />
-                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="160" />
+                                                        <ColumnDefinition Width="*" />
                                                     </Grid.ColumnDefinitions>
-                                                    <ui:TextBox Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Label" />
-                                                    <ComboBox Grid.Column="2" ItemsSource="{Binding Kinds, Mode=OneTime}" SelectedItem="{Binding Kind}" />
-                                                    <ui:TextBox Grid.Column="4" Text="{Binding Options, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Suggestions (optional, comma-separated)" />
-                                                    <ui:Button Grid.Column="5" Appearance="Transparent" Icon="{ui:SymbolIcon Dismiss24}" ToolTip="Remove field" Margin="4,0,0,0"
-                                                               Command="{Binding DataContext.RemoveFieldCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                               CommandParameter="{Binding}" />
+                                                    <TextBox Style="{StaticResource SelectableText}" Text="{Binding Name, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" FontSize="12" TextWrapping="NoWrap" />
+                                                    <TextBox Style="{StaticResource SelectableText}" Grid.Column="1" Text="{Binding Does, Mode=OneWay}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                                 </Grid>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
-                                    <ui:Button Appearance="Secondary" Icon="{ui:SymbolIcon Add24}" Content="Add field" Command="{Binding AddFieldCommand}" Margin="0,4,0,0"
-                                               Visibility="{Binding IsCustom, Converter={StaticResource VisibleWhen}}" />
-                                    <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                                               Text="Kinds: Username (shown as the key) · Text, Url, Number (searchable, max 256 bytes) · Password, SecretText (encrypted; the first one is the main value)." />
-                                </StackPanel>
-                            </Expander>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                                </Expander>
 
-                <!-- ==================================================== access keys -->
-                <DockPanel Margin="0,0,0,6">
-                    <ui:Button DockPanel.Dock="Right" Appearance="Secondary" Icon="{ui:SymbolIcon Add24}" Content="New key" Command="{Binding AddAccessKeyCommand}" />
-                    <StackPanel>
-                        <TextBlock Text="ACCESS KEYS" Style="{StaticResource SectionLabel}" Margin="0" />
-                        <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,4,12,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                   Text="Let tools such as Claude Code (through Keylo's MCP server, or KEYLO_ACCESS_KEY for the CLI) use some secrets without Windows Hello. Secrets outside a key's scope ask you first. By default a key can only pass secrets to commands, so values don't end up in an AI conversation." />
-                    </StackPanel>
-                </DockPanel>
-
-                <ui:InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Margin="0,8,0,12" Title="Keys are shown once"
-                            Message="New key creates a key right away (after Windows Hello) and shows it once, with the command to add it to Claude Code. Then choose what it can use without asking and Save settings. Keylo keeps only a hash; delete a key to revoke it." />
-
-                <ItemsControl ItemsSource="{Binding AccessKeys}" Margin="0,0,0,28">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type vm:AccessKeyViewModel}">
-                            <Border Style="{StaticResource Surface}" Margin="0,0,0,10">
-                                <StackPanel>
-                                    <DockPanel Margin="0,0,0,4">
-                                        <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon Delete24}" ToolTip="Revoke (on save)"
-                                                   Command="{Binding DataContext.RemoveAccessKeyCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                   CommandParameter="{Binding}" />
-                                        <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Key24" FontSize="18" Margin="0,0,10,0"
-                                                       Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
-                                        <ui:SymbolIcon DockPanel.Dock="Right" Style="{StaticResource InfoIcon}" Margin="8,0,4,0">
-                                            <ui:SymbolIcon.ToolTip>
-                                                <TextBlock MaxWidth="340" TextWrapping="Wrap" Text="Your name for the key, e.g. the tool or machine that uses it. It's shown in approval windows and the audit log, so you can tell which agent asked." />
-                                            </ui:SymbolIcon.ToolTip>
-                                        </ui:SymbolIcon>
-                                        <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Key name, e.g. Claude Code" FontWeight="SemiBold" />
-                                    </DockPanel>
-                                    <TextBlock Text="{Binding Details}" FontSize="11" Margin="28,0,0,12" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="12" />
-                                            <ColumnDefinition Width="200" />
-                                        </Grid.ColumnDefinitions>
+                                <!-- Claude Code status -->
+                                <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" Padding="0,12,0,0">
+                                    <DockPanel>
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                                            <ui:Button Appearance="Transparent" Icon="{ui:SymbolIcon ArrowClockwise24}" ToolTip="Check again" Command="{Binding RefreshCommand}" />
+                                        </StackPanel>
                                         <StackPanel>
-                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                                <TextBlock Text="Can use without asking" Style="{StaticResource FieldLabel}" Margin="0" />
-                                                <ui:SymbolIcon Style="{StaticResource InfoIcon}">
-                                            <ui:SymbolIcon.ToolTip>
-                                                <TextBlock MaxWidth="340" TextWrapping="Wrap" Text="Which secrets this key can use without an approval window. Everything: no prompts at all. Only these categories: the ones you pick; anything else asks you. Nothing: every use asks you, and an approval then lasts for your Keylo session (15 minutes by default)." />
-                                            </ui:SymbolIcon.ToolTip>
-                                        </ui:SymbolIcon>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Claude Code" FontWeight="SemiBold" Margin="0,0,10,0" VerticalAlignment="Center" />
+                                                <Border CornerRadius="10" Padding="8,1" VerticalAlignment="Center">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBackgroundBrush}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ClaudeOk}" Value="True">
+                                                                    <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock Text="{Binding ClaudeStatus}" FontSize="12" FontWeight="SemiBold" />
+                                                </Border>
                                             </StackPanel>
-                                            <ComboBox ItemsSource="{Binding Source={x:Static vm:AccessKeyViewModel.ScopeOptions}}" SelectedItem="{Binding Scope}">
-                                                <ComboBox.ItemTemplate>
-                                                    <DataTemplate DataType="{x:Type vm:ScopeOption}">
-                                                        <StackPanel Margin="0,2">
-                                                            <TextBlock Text="{Binding Label}" />
-                                                            <TextBlock Text="{Binding Description}" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                                                        </StackPanel>
-                                                    </DataTemplate>
-                                                </ComboBox.ItemTemplate>
-                                            </ComboBox>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="2">
-                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                                <TextBlock Text="Expires" Style="{StaticResource FieldLabel}" Margin="0" />
-                                                <ui:SymbolIcon Style="{StaticResource InfoIcon}">
-                                            <ui:SymbolIcon.ToolTip>
-                                                <TextBlock MaxWidth="340" TextWrapping="Wrap" Text="Optional. After this date the key stops working and anything using it is treated as having no key. Leave blank for no expiry." />
-                                            </ui:SymbolIcon.ToolTip>
-                                        </ui:SymbolIcon>
-                                            </StackPanel>
-                                            <DatePicker SelectedDate="{Binding Expires}" />
-                                        </StackPanel>
-                                    </Grid>
-                                    <views:MultiPicker ItemsSource="{Binding Categories}" Placeholder="Choose categories" Margin="0,8,0,0"
-                                                       Visibility="{Binding ShowCategories, Converter={StaticResource VisibleWhen}}" />
-                                    <DockPanel Margin="0,8,0,0" Visibility="{Binding HasApproved, Converter={StaticResource VisibleWhen}}">
-                                        <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Content="Clear" Command="{Binding ClearApprovedCommand}"
-                                                   ToolTip="Forget these 'Always allow' approvals (on save)" />
-                                        <TextBlock Text="{Binding ApprovedText}" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                    </DockPanel>
-                                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                                        <ui:ToggleSwitch IsChecked="{Binding AllowGet}" Content="Also let it read values (not just pass them to commands)" />
-                                        <ui:SymbolIcon Style="{StaticResource InfoIcon}">
-                                                <ui:SymbolIcon.ToolTip>
-                                                    <TextBlock MaxWidth="340" TextWrapping="Wrap" Text="Off (recommended): covered secrets can only be passed to commands as environment variables, and values are redacted from command output, so they never enter the AI conversation. On: the tool may also read values directly (get_secret / keylo get), which puts them in the conversation." />
-                                                </ui:SymbolIcon.ToolTip>
-                                            </ui:SymbolIcon>
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-
-                <!-- ==================================================== providers -->
-                <TextBlock Text="VAULT PROVIDERS" Style="{StaticResource SectionLabel}" />
-                <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
-                    Push secrets to other vaults. Add your own by dropping a plugin DLL into
-                    <Run Text="{Binding PluginDirectory, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" />.
-                </TextBlock>
-                <ItemsControl ItemsSource="{Binding Providers}" Margin="0,0,0,28">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type vm:ProviderSettingsViewModel}">
-                            <Border Style="{StaticResource Surface}" Margin="0,0,0,10">
-                                <StackPanel>
-                                    <DockPanel Margin="0,0,0,12">
-                                        <ui:Button DockPanel.Dock="Right" Appearance="Secondary" Icon="{ui:SymbolIcon PlugConnected24}" Content="Test connection"
-                                                   Command="{Binding TestCommand}" />
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="15" />
-                                            <TextBlock Text="{Binding Status}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                            <TextBox Style="{StaticResource SelectableText}" Text="{Binding ClaudeDetail, Mode=OneWay}" FontSize="12" Margin="0,4,0,0"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                         </StackPanel>
                                     </DockPanel>
-                                    <ItemsControl ItemsSource="{Binding Settings}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate DataType="{x:Type vm:ProviderSettingViewModel}">
-                                                <StackPanel Margin="0,0,0,10">
-                                                    <TextBlock Text="{Binding Description}" Style="{StaticResource FieldLabel}" />
-                                                    <ui:TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="{Binding Key}" />
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </StackPanel>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                                </Border>
+                            </StackPanel>
+                        </Border>
 
-                <!-- ==================================================== audit -->
-                <DockPanel Margin="0,0,0,6">
-                    <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon ArrowClockwise24}" Content="Refresh" Command="{Binding LoadAuditCommand}" />
-                    <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon DocumentText24}" Content="Open log" Command="{Binding OpenAuditLogCommand}"
-                               ToolTip="Open the full log (this list shows the latest 100 entries)" Margin="0,0,4,0" />
-                    <TextBlock Text="AUDIT LOG — ACCESS WITHOUT WINDOWS HELLO" Style="{StaticResource SectionLabel}" VerticalAlignment="Center" Margin="0" />
-                </DockPanel>
-                <Border Style="{StaticResource Surface}" Padding="0" Margin="0,0,0,28">
-                    <Grid>
-                        <ItemsControl ItemsSource="{Binding Audit}" Margin="16,10">
+                        <!-- ============================================ access keys -->
+                        <DockPanel Margin="0,0,0,6">
+                            <ui:Button DockPanel.Dock="Right" Appearance="Secondary" Icon="{ui:SymbolIcon Add24}" Content="New key" Command="{Binding AddAccessKeyCommand}" />
+                            <StackPanel>
+                                <TextBlock Text="ACCESS KEYS" Style="{StaticResource SectionLabel}" Margin="0" />
+                                <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,4,12,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Text="One key per agent or tool (Keylo's MCP server, or KEYLO_ACCESS_KEY for the CLI): what it can use without Windows Hello. Secrets outside a key's scope ask you first. By default a key can only pass secrets to commands, so values don't end up in an AI conversation." />
+                            </StackPanel>
+                        </DockPanel>
+
+                        <ui:InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Margin="0,8,0,12" Title="Keys are shown once"
+                                    Message="New key creates a key right away (after Windows Hello) and shows it once, with the command to add it to Claude Code. Then choose what it can use without asking and Save settings. Keylo keeps only a hash; delete a key to revoke it." />
+
+                        <ItemsControl ItemsSource="{Binding AccessKeys}" Margin="0,0,0,28">
                             <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="{x:Type vm:AuditEntry}">
-                                    <Grid Margin="0,5">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="150" />
-                                            <ColumnDefinition Width="56" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding Time}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                        <TextBlock Grid.Column="1" Text="{Binding Operation}" FontSize="12" FontWeight="SemiBold" />
-                                        <TextBlock Grid.Column="2" Text="{Binding Secrets}" FontSize="12" TextTrimming="CharacterEllipsis" FontFamily="{StaticResource MonoFont}" />
-                                        <TextBlock Grid.Column="3" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="12,0,0,0">
-                                            <Run Text="{Binding Key, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Via, Mode=OneWay}" />
-                                        </TextBlock>
-                                    </Grid>
+                                <DataTemplate DataType="{x:Type vm:AccessKeyViewModel}">
+                                    <Border Style="{StaticResource Surface}" Margin="0,0,0,10">
+                                        <StackPanel>
+                                            <DockPanel Margin="0,0,0,4">
+                                                <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon Delete24}" ToolTip="Revoke (on save)"
+                                                           Command="{Binding DataContext.RemoveAccessKeyCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                           CommandParameter="{Binding}" />
+                                                <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Key24" FontSize="18" Margin="0,0,10,0"
+                                                               Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                                <ui:SymbolIcon DockPanel.Dock="Right" Style="{StaticResource InfoIcon}" Margin="8,0,4,0">
+                                                    <ui:SymbolIcon.ToolTip>
+                                                        <TextBlock MaxWidth="340" TextWrapping="Wrap" Text="Your name for the key, e.g. the tool or machine that uses it. It's shown in approval windows and the audit log, so you can tell which agent asked." />
+                                                    </ui:SymbolIcon.ToolTip>
+                                                </ui:SymbolIcon>
+                                                <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Key name, e.g. Claude Code" FontWeight="SemiBold" />
+                                            </DockPanel>
+                                            <TextBlock Text="{Binding Details}" FontSize="11" Margin="28,0,0,12" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="12" />
+                                                    <ColumnDefinition Width="200" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                        <TextBlock Text="Can use without asking" Style="{StaticResource FieldLabel}" Margin="0" />
+                                                        <ui:SymbolIcon Style="{StaticResource InfoIcon}">
+                                                    <ui:SymbolIcon.ToolTip>
+                                                        <TextBlock MaxWidth="340" TextWrapping="Wrap" Text="Which secrets this key can use without an approval window. Everything: no prompts at all. Only these categories: the ones you pick; anything else asks you. Nothing: every use asks you, and an approval then lasts for your Keylo session (15 minutes by default)." />
+                                                    </ui:SymbolIcon.ToolTip>
+                                                </ui:SymbolIcon>
+                                                    </StackPanel>
+                                                    <ComboBox ItemsSource="{Binding Source={x:Static vm:AccessKeyViewModel.ScopeOptions}}" SelectedItem="{Binding Scope}">
+                                                        <ComboBox.ItemTemplate>
+                                                            <DataTemplate DataType="{x:Type vm:ScopeOption}">
+                                                                <StackPanel Margin="0,2">
+                                                                    <TextBlock Text="{Binding Label}" />
+                                                                    <TextBlock Text="{Binding Description}" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                                                </StackPanel>
+                                                            </DataTemplate>
+                                                        </ComboBox.ItemTemplate>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                        <TextBlock Text="Expires" Style="{StaticResource FieldLabel}" Margin="0" />
+                                                        <ui:SymbolIcon Style="{StaticResource InfoIcon}">
+                                                    <ui:SymbolIcon.ToolTip>
+                                                        <TextBlock MaxWidth="340" TextWrapping="Wrap" Text="Optional. After this date the key stops working and anything using it is treated as having no key. Leave blank for no expiry." />
+                                                    </ui:SymbolIcon.ToolTip>
+                                                </ui:SymbolIcon>
+                                                    </StackPanel>
+                                                    <DatePicker SelectedDate="{Binding Expires}" />
+                                                </StackPanel>
+                                            </Grid>
+                                            <views:MultiPicker ItemsSource="{Binding Categories}" Placeholder="Choose categories" Margin="0,8,0,0"
+                                                               Visibility="{Binding ShowCategories, Converter={StaticResource VisibleWhen}}" />
+                                            <DockPanel Margin="0,8,0,0" Visibility="{Binding HasApproved, Converter={StaticResource VisibleWhen}}">
+                                                <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Content="Clear" Command="{Binding ClearApprovedCommand}"
+                                                           ToolTip="Forget these 'Always allow' approvals (on save)" />
+                                                <TextBlock Text="{Binding ApprovedText}" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            </DockPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                                <ui:ToggleSwitch IsChecked="{Binding AllowGet}" Content="Also let it read values (not just pass them to commands)" />
+                                                <ui:SymbolIcon Style="{StaticResource InfoIcon}">
+                                                        <ui:SymbolIcon.ToolTip>
+                                                            <TextBlock MaxWidth="340" TextWrapping="Wrap" Text="Off (recommended): covered secrets can only be passed to commands as environment variables, and values are redacted from command output, so they never enter the AI conversation. On: the tool may also read values directly (get_secret / keylo get), which puts them in the conversation." />
+                                                        </ui:SymbolIcon.ToolTip>
+                                                    </ui:SymbolIcon>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <TextBlock Text="No access without Windows Hello yet." Margin="16" FontSize="12"
-                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                                   Visibility="{Binding Audit.Count, Converter={StaticResource HiddenWhen}}" />
-                    </Grid>
-                </Border>
 
-                <!-- ==================================================== about -->
-                <TextBlock Text="ABOUT" Style="{StaticResource SectionLabel}" />
-                <Border Style="{StaticResource Surface}" Margin="0,0,0,12" DataContext="{Binding About}">
-                    <StackPanel>
-                        <DockPanel Margin="0,0,0,16">
-                            <Image Source="{StaticResource LogoImage}" Width="64" Height="64" DockPanel.Dock="Left" Margin="0,0,16,0" />
-                            <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="Keylo" FontSize="20" FontWeight="SemiBold" />
-                                <TextBlock Text="{StaticResource Tagline}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                <TextBlock Text="{Binding Version}" FontFamily="{StaticResource MonoFont}" FontSize="12" Margin="0,4,0,0"
-                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                            </StackPanel>
-                        </DockPanel>
-
-                        <!-- Claude Code -->
-                        <DockPanel Margin="0,0,0,14">
-                            <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon ArrowClockwise24}" ToolTip="Check again"
-                                       Command="{Binding RefreshCommand}" VerticalAlignment="Top" />
-                            <StackPanel>
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="CLAUDE CODE" Style="{StaticResource SectionLabel}" Margin="0,0,10,0" VerticalAlignment="Center" />
-                                    <Border CornerRadius="10" Padding="8,1" VerticalAlignment="Center">
-                                        <Border.Style>
-                                            <Style TargetType="Border">
-                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBackgroundBrush}" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding ClaudeOk}" Value="True">
-                                                        <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Border.Style>
-                                        <TextBlock Text="{Binding ClaudeStatus}" FontSize="12" FontWeight="SemiBold" />
-                                    </Border>
-                                </StackPanel>
-                                <TextBlock Text="{Binding ClaudeDetail}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
-                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                            </StackPanel>
-                        </DockPanel>
-
-                        <!-- Folders -->
-                        <Grid Margin="0,0,0,14">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition />
-                                <RowDefinition />
-                            </Grid.RowDefinitions>
-                            <TextBlock Text="Program" FontSize="12" VerticalAlignment="Center" Margin="0,0,16,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                            <TextBlock Grid.Column="1" Text="{Binding InstallFolder}" FontFamily="{StaticResource MonoFont}" FontSize="12"
-                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                            <ui:Button Grid.Column="2" Appearance="Transparent" Icon="{ui:SymbolIcon FolderOpen24}" Content="Open" Command="{Binding OpenInstallFolderCommand}" />
-                            <TextBlock Grid.Row="1" Text="Data" FontSize="12" VerticalAlignment="Center" Margin="0,0,16,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DataFolder}" FontFamily="{StaticResource MonoFont}" FontSize="12"
-                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                            <ui:Button Grid.Row="1" Grid.Column="2" Appearance="Transparent" Icon="{ui:SymbolIcon FolderOpen24}" Content="Open" Command="{Binding OpenDataFolderCommand}" />
-                        </Grid>
-
-                        <StackPanel Orientation="Horizontal">
-                            <ui:Button Appearance="Secondary" Icon="{ui:SymbolIcon Code24}" Content="GitHub" Command="{Binding OpenRepositoryCommand}" Margin="0,0,8,0" />
-                            <ui:Button Appearance="Secondary" Icon="{ui:SymbolIcon BookOpen24}" Content="Documentation" Command="{Binding OpenReadmeCommand}" />
-                        </StackPanel>
                     </StackPanel>
-                </Border>
-            </StackPanel>
-        </ScrollViewer>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Secret types">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="28,20" FocusVisualStyle="{x:Null}">
+                    <StackPanel MaxWidth="820" HorizontalAlignment="Stretch">
+                        <!-- ============================================ secret types -->
+                        <DockPanel Margin="0,0,0,6" DataContext="{Binding SecretTypes}">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <ui:Button Appearance="Secondary" Icon="{ui:SymbolIcon Add24}" Content="New type" Command="{Binding AddTypeCommand}" Margin="0,0,8,0" />
+                                <ui:Button Style="{StaticResource DirtySaveButton}" Icon="{ui:SymbolIcon Save24}" Content="Save types" Command="{Binding SaveCommand}" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="SECRET TYPES" Style="{StaticResource SectionLabel}" Margin="0" />
+                                <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,4,12,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Text="Kinds of secret with their own fields, like 1Password's categories. Secret fields (Password, Secret text) are encrypted and redacted from agent output; the others are searchable and shown to agents whose key covers the secret. Built-in types can change their icon and colour." />
+                            </StackPanel>
+                        </DockPanel>
+
+                        <ItemsControl ItemsSource="{Binding SecretTypes.Types}" Margin="0,8,0,28">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:SecretTypeViewModel}">
+                                    <Expander Margin="0,0,0,8">
+                                        <Expander.Header>
+                                            <StackPanel Orientation="Horizontal">
+                                                <views:IconTile Width="30" Height="30" CornerRadius="8" GlyphSize="16" Symbol="{Binding Symbol}" />
+                                                <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                    <TextBlock Text="{Binding Summary}" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Expander.Header>
+                                        <StackPanel Margin="4,4,4,8">
+                                            <DockPanel Margin="0,0,0,12" Visibility="{Binding IsCustom, Converter={StaticResource VisibleWhen}}">
+                                                <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon Delete24}" ToolTip="Delete type (on save)"
+                                                           Command="{Binding DataContext.SecretTypes.RemoveTypeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                           CommandParameter="{Binding}" Margin="8,0,0,0" />
+                                                <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Type name" />
+                                            </DockPanel>
+
+                                            <TextBlock Text="Icon and colour" Style="{StaticResource FieldLabel}" />
+                                            <views:IconPicker Icon="{Binding Icon}" Color="{Binding Color}" Margin="0,4,0,14" />
+
+                                            <TextBlock Text="Fields" Style="{StaticResource FieldLabel}" />
+                                            <ItemsControl ItemsSource="{Binding Fields}" IsEnabled="{Binding IsCustom}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate DataType="{x:Type vm:FieldDefinitionViewModel}">
+                                                        <Grid Margin="0,0,0,6">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="2*" />
+                                                                <ColumnDefinition Width="8" />
+                                                                <ColumnDefinition Width="1.3*" />
+                                                                <ColumnDefinition Width="8" />
+                                                                <ColumnDefinition Width="2*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <ui:TextBox Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Label" />
+                                                            <ComboBox Grid.Column="2" ItemsSource="{Binding Kinds, Mode=OneTime}" SelectedItem="{Binding Kind}" />
+                                                            <ui:TextBox Grid.Column="4" Text="{Binding Options, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Suggestions (optional, comma-separated)" />
+                                                            <ui:Button Grid.Column="5" Appearance="Transparent" Icon="{ui:SymbolIcon Dismiss24}" ToolTip="Remove field" Margin="4,0,0,0"
+                                                                       Command="{Binding DataContext.RemoveFieldCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                       CommandParameter="{Binding}" />
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <ui:Button Appearance="Secondary" Icon="{ui:SymbolIcon Add24}" Content="Add field" Command="{Binding AddFieldCommand}" Margin="0,4,0,0"
+                                                       Visibility="{Binding IsCustom, Converter={StaticResource VisibleWhen}}" />
+                                            <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                                       Text="Kinds: Username (shown as the key) · Text, Url, Number (searchable, max 256 bytes) · Password, SecretText (encrypted; the first one is the main value)." />
+                                        </StackPanel>
+                                    </Expander>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Vault providers">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="28,20" FocusVisualStyle="{x:Null}">
+                    <StackPanel MaxWidth="820" HorizontalAlignment="Stretch">
+                        <!-- ============================================ providers -->
+                        <TextBlock Text="VAULT PROVIDERS" Style="{StaticResource SectionLabel}" />
+                        <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                            Push secrets to other vaults. Add your own by dropping a plugin DLL into
+                            <Run Text="{Binding PluginDirectory, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" />.
+                        </TextBlock>
+                        <ItemsControl ItemsSource="{Binding Providers}" Margin="0,0,0,28">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:ProviderSettingsViewModel}">
+                                    <Border Style="{StaticResource Surface}" Margin="0,0,0,10">
+                                        <StackPanel>
+                                            <DockPanel Margin="0,0,0,12">
+                                                <ui:Button DockPanel.Dock="Right" Appearance="Secondary" Icon="{ui:SymbolIcon PlugConnected24}" Content="Test connection"
+                                                           Command="{Binding TestCommand}" />
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="15" />
+                                                    <TextBlock Text="{Binding Status}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </DockPanel>
+                                            <ItemsControl ItemsSource="{Binding Settings}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate DataType="{x:Type vm:ProviderSettingViewModel}">
+                                                        <StackPanel Margin="0,0,0,10">
+                                                            <TextBlock Text="{Binding Description}" Style="{StaticResource FieldLabel}" />
+                                                            <ui:TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="{Binding Key}" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Audit log">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="28,20" FocusVisualStyle="{x:Null}">
+                    <StackPanel MaxWidth="820" HorizontalAlignment="Stretch">
+                        <!-- ============================================ audit -->
+                        <DockPanel Margin="0,0,0,6">
+                            <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon ArrowClockwise24}" Content="Refresh" Command="{Binding LoadAuditCommand}" />
+                            <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon DocumentText24}" Content="Open log" Command="{Binding OpenAuditLogCommand}"
+                                       ToolTip="Open the full log (this list shows the latest 100 entries)" Margin="0,0,4,0" />
+                            <TextBlock Text="AUDIT LOG — ACCESS WITHOUT WINDOWS HELLO" Style="{StaticResource SectionLabel}" VerticalAlignment="Center" Margin="0" />
+                        </DockPanel>
+                        <Border Style="{StaticResource Surface}" Padding="0" Margin="0,0,0,28">
+                            <Grid>
+                                <ItemsControl ItemsSource="{Binding Audit}" Margin="16,10">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:AuditEntry}">
+                                            <Grid Margin="0,5">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="150" />
+                                                    <ColumnDefinition Width="56" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding Time}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Operation}" FontSize="12" FontWeight="SemiBold" />
+                                                <TextBlock Grid.Column="2" Text="{Binding Secrets}" FontSize="12" TextTrimming="CharacterEllipsis" FontFamily="{StaticResource MonoFont}" />
+                                                <TextBlock Grid.Column="3" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="12,0,0,0">
+                                                    <Run Text="{Binding Key, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Via, Mode=OneWay}" />
+                                                </TextBlock>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Text="No access without Windows Hello yet." Margin="16" FontSize="12"
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                           Visibility="{Binding Audit.Count, Converter={StaticResource HiddenWhen}}" />
+                            </Grid>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="About">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="28,20" FocusVisualStyle="{x:Null}">
+                    <StackPanel MaxWidth="820" HorizontalAlignment="Stretch">
+                        <!-- ============================================ about -->
+                        <TextBlock Text="ABOUT" Style="{StaticResource SectionLabel}" />
+                        <Border Style="{StaticResource Surface}" Margin="0,0,0,12" DataContext="{Binding About}">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,16">
+                                    <Image Source="{StaticResource LogoImage}" Width="64" Height="64" DockPanel.Dock="Left" Margin="0,0,16,0" />
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Keylo" FontSize="20" FontWeight="SemiBold" />
+                                        <TextBlock Text="{StaticResource Tagline}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        <TextBox Style="{StaticResource SelectableText}" Text="{Binding Version, Mode=OneWay}" TextWrapping="NoWrap" FontFamily="{StaticResource MonoFont}" FontSize="12" Margin="0,4,0,0"
+                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                    </StackPanel>
+                                </DockPanel>
+
+                                <TextBox Style="{StaticResource SelectableText}" Text="{x:Static vm:AgentHelp.Purpose}" Margin="-2,0,0,16" />
+
+                                <!-- Folders -->
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition />
+                                        <RowDefinition />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="Program" FontSize="12" VerticalAlignment="Center" Margin="0,0,16,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBox Style="{StaticResource SelectableText}" Grid.Column="1" Text="{Binding InstallFolder, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                             VerticalAlignment="Center" TextWrapping="NoWrap" />
+                                    <ui:Button Grid.Column="2" Appearance="Transparent" Icon="{ui:SymbolIcon FolderOpen24}" Content="Open" Command="{Binding OpenInstallFolderCommand}" />
+                                    <TextBlock Grid.Row="1" Text="Data" FontSize="12" VerticalAlignment="Center" Margin="0,0,16,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBox Style="{StaticResource SelectableText}" Grid.Row="1" Grid.Column="1" Text="{Binding DataFolder, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                             VerticalAlignment="Center" TextWrapping="NoWrap" />
+                                    <ui:Button Grid.Row="1" Grid.Column="2" Appearance="Transparent" Icon="{ui:SymbolIcon FolderOpen24}" Content="Open" Command="{Binding OpenDataFolderCommand}" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
     </DockPanel>
 </UserControl>

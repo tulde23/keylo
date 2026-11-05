@@ -2,12 +2,13 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media.Imaging;
+using Avalonia.VisualTree;
 using Keylo.App.ViewModels;
 
 namespace Keylo.Desktop;
 
 /// <summary>
-/// Debug builds only: KEYLO_SNAPSHOTS="home=a.png;select:NAME=b.png;settings=c.png" drives the window
+/// Debug builds only: KEYLO_SNAPSHOTS="home=a.png;select:NAME=b.png;settings=c.png;scroll:1200=d.png" drives the window
 /// through those states, renders each to a PNG, then quits. For checking the UI where no screen
 /// capture is available (e.g. over SSH on a Mac). Use it with a throwaway KEYLO_HOME / KEYLO_PREFIX.
 /// </summary>
@@ -20,14 +21,14 @@ internal static class Snapshots
             var at = part.LastIndexOf('=');
             if (at <= 0) continue;
             var (action, file) = (part[..at], part[(at + 1)..]);
-            await ApplyAsync(vm, action);
+            await ApplyAsync(window, vm, action);
             await Task.Delay(500);
             Render(window, file);
         }
         window.Close();
     }
 
-    private static async Task ApplyAsync(MainViewModel vm, string action)
+    private static async Task ApplyAsync(Window window, MainViewModel vm, string action)
     {
         var (verb, arg) = action.IndexOf(':') is var i and > 0 ? (action[..i], action[(i + 1)..]) : (action, "");
         switch (verb)
@@ -56,11 +57,19 @@ internal static class Snapshots
             case "settings":
                 vm.OpenSettingsCommand.Execute(null);
                 break;
+            case "scroll": // scroll:PIXELS, the open settings page
+                if (window.GetVisualDescendants().OfType<Views.SettingsView>().SelectMany(v => v.GetVisualDescendants().OfType<ScrollViewer>()).FirstOrDefault() is { } viewer)
+                    viewer.Offset = new Vector(0, double.Parse(arg, System.Globalization.CultureInfo.InvariantCulture));
+                break;
             case "categories":
                 vm.OpenCategoryManagerCommand.Execute(null);
                 break;
             case "lock":
                 vm.LockCommand.Execute(null);
+                break;
+            case "theme": // theme:twilight | quietviolet | aurora, keeping the current light/dark
+                Keylo.App.Services.Ui.Host.ApplyTheme(Keylo.App.Services.Themes.ParseName(arg),
+                    Application.Current!.ActualThemeVariant == Avalonia.Styling.ThemeVariant.Light ? Keylo.App.Services.ThemeMode.Light : Keylo.App.Services.ThemeMode.Dark);
                 break;
             case "light" or "dark":
                 Application.Current!.RequestedThemeVariant = verb == "light" ? Avalonia.Styling.ThemeVariant.Light : Avalonia.Styling.ThemeVariant.Dark;

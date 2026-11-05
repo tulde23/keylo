@@ -51,6 +51,9 @@ public interface IUiHost
 
     /// <summary>Opens a folder or URL with the system's handler.</summary>
     void Open(string target);
+
+    /// <summary>Recolours the app (immediately, every open window).</summary>
+    void ApplyTheme(ThemeName name, ThemeMode mode);
 }
 
 /// <summary>The app's <see cref="IUiHost"/>, set once at startup before any view model is made.</summary>

@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Keylo.App.Services;
+using ThemeMode = Keylo.App.Services.ThemeMode;
 using Microsoft.Win32;
 
 namespace Keylo.App;
@@ -65,6 +66,8 @@ public sealed class WpfUiHost : IUiHost
 
     public void OpenTextFile(string path) =>
         Process.Start(new ProcessStartInfo("notepad.exe", $"\"{path}\"") { UseShellExecute = false })?.Dispose();
+
+    public void ApplyTheme(ThemeName name, ThemeMode mode) => WpfTheme.Apply(name, mode);
 
     public void Open(string target)
     {

@@ -12,7 +12,7 @@ public static class Labels
     public static string AuditEmpty => $"No access without {Ui.Verifier} yet.";
     public static string AuditRetention => $"Older entries are removed as new ones are added. The log records every use that skipped {Ui.Verifier}.";
     public static string AccessKeysIntro =>
-        $"Let tools such as Claude Code (through Keylo's MCP server, or KEYLO_ACCESS_KEY for the CLI) use some secrets without {Ui.Verifier}. " +
+        $"One key per agent or tool (Keylo's MCP server, or KEYLO_ACCESS_KEY for the CLI): what it can use without {Ui.Verifier}. " +
         "Secrets outside a key's scope ask you first. By default a key can only pass secrets to commands, so values don't end up in an AI conversation.";
     public static string KeysShownOnce =>
         $"New key creates a key right away (after {Ui.Verifier}) and shows it once, with the command to add it to Claude Code. " +

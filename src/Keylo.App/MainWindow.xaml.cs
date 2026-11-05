@@ -4,7 +4,6 @@ using System.Windows.Interop;
 using Keylo.App.Services;
 using Keylo.App.ViewModels;
 using Wpf.Ui;
-using Wpf.Ui.Appearance;
 using Wpf.Ui.Controls;
 
 namespace Keylo.App;
@@ -20,12 +19,6 @@ public partial class MainWindow : FluentWindow, IUserNotifier
     {
         _keylo = keylo;
         InitializeComponent();
-
-        // Follow Windows light/dark, but keep Keylo's own accent rather than the system one.
-        ApplicationThemeManager.ApplySystemTheme(updateAccent: false);
-        ApplyBrandAccent(ApplicationThemeManager.GetAppTheme());
-        ApplicationThemeManager.Changed += (theme, _) => ApplyBrandAccent(theme);
-        SystemThemeWatcher.Watch(this, WindowBackdropType.Mica, updateAccents: false);
 
         _snackbar.SetSnackbarPresenter(Snackbar);
         _viewModel = new MainViewModel(keylo, this);
@@ -66,9 +59,6 @@ public partial class MainWindow : FluentWindow, IUserNotifier
         DragOver += OnDragOver;
         Drop += OnDrop;
     }
-
-    private static void ApplyBrandAccent(ApplicationTheme theme) =>
-        ApplicationAccentColorManager.Apply(System.Windows.Media.Color.FromRgb(0x6D, 0x6A, 0xF6), theme);
 
     // ---------------------------------------------------------------- chromeless window
 

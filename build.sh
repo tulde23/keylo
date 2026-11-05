@@ -11,8 +11,9 @@ dotnet_cmd=${DOTNET:-$(command -v dotnet || echo "$HOME/.dotnet/dotnet")}
 rid=osx-$( [[ $(uname -m) == arm64 ]] && echo arm64 || echo x64 )
 config=Release
 [[ " $* " == *" --debug "* ]] && config=Debug
-commit=$(git rev-parse --short=7 HEAD 2>/dev/null || echo nogit)
-[[ -n $(git status --porcelain 2>/dev/null) ]] && commit+=-dirty
+# KEYLO_COMMIT stamps a build made from a copy without .git (e.g. a release built on another machine).
+commit=${KEYLO_COMMIT:-$(git rev-parse --short=7 HEAD 2>/dev/null || echo nogit)}
+[[ -z ${KEYLO_COMMIT:-} && -n $(git status --porcelain 2>/dev/null) ]] && commit+=-dirty
 version=1.0.0
 
 app=dist/Keylo.app
@@ -60,7 +61,7 @@ cat > "$app/Contents/Info.plist" <<EOF
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSHumanReadableCopyright</key><string>Your secrets, kept close.</string>
+  <key>NSHumanReadableCopyright</key><string>Your secrets, not ours.</string>
 </dict>
 </plist>
 EOF

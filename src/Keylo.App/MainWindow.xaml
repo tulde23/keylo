@@ -13,7 +13,8 @@
                  Width="1180" Height="760" MinWidth="1080" MinHeight="560"
                  WindowStartupLocation="CenterScreen"
                  ExtendsContentIntoTitleBar="True"
-                 WindowBackdropType="Mica"
+                 WindowBackdropType="None"
+                 Background="{DynamicResource ApplicationBackgroundBrush}"
                  WindowCornerPreference="Round"
                  AllowDrop="True">
 
@@ -30,13 +31,13 @@
 
         <!-- Chromeless: no title bar. The top bar (or the lock screen) drags the window; our own buttons sit top-right. -->
         <!-- Window controls: smaller, grouped and set off by a divider, so they don't read as app actions.
-             Centred on the bar's tile row (bar padding 12 + tile 46 → centre 37). -->
+             Centred on the bar's tile row (bar padding 6 + tile 34 → centre 23). -->
         <StackPanel Grid.Row="0" Grid.RowSpan="2" Panel.ZIndex="10" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top"
-                    Margin="0,20,12,0">
+                    Margin="0,6,12,0">
             <StackPanel.Resources>
                 <Style x:Key="CaptionTile" TargetType="Button">
-                    <Setter Property="Width" Value="34" />
-                    <Setter Property="Height" Value="30" />
+                    <Setter Property="Width" Value="32" />
+                    <Setter Property="Height" Value="28" />
                     <Setter Property="Margin" Value="0" />
                     <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
                     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -103,7 +104,7 @@
 
         <!-- Top bar: brand over the sidebar, search over the list, action tiles over the detail area.
              Its columns follow the sidebar and list widths, so the search box stays above the list. -->
-        <Border DockPanel.Dock="Top" Panel.ZIndex="1" Margin="0,0,0,12" Padding="0,12,0,12" MouseLeftButtonDown="OnDragArea"
+        <Border DockPanel.Dock="Top" Panel.ZIndex="1" Margin="0,0,0,10" Padding="0,6" MouseLeftButtonDown="OnDragArea"
                 Background="{DynamicResource SolidBackgroundFillColorTertiaryBrush}"
                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
         <Grid>
@@ -117,8 +118,8 @@
             <Grid.Resources>
                 <!-- An icon tile; its name is in the tooltip. -->
                 <Style x:Key="Tile" TargetType="Button">
-                    <Setter Property="Width" Value="46" />
-                    <Setter Property="Height" Value="46" />
+                    <Setter Property="Width" Value="34" />
+                    <Setter Property="Height" Value="34" />
                     <Setter Property="Margin" Value="0,0,6,0" />
                     <Setter Property="Cursor" Value="Hand" />
                     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -164,10 +165,10 @@
 
             <!-- Brand, over the sidebar -->
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="18,0,0,0">
-                <Image Source="{StaticResource LogoImage}" Width="32" Height="32" />
-                <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="Keylo" FontSize="17" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-                    <TextBlock Text="{StaticResource Tagline}" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                <Image Source="{StaticResource LogoImage}" Width="26" Height="26" />
+                <StackPanel Margin="9,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="Keylo" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                    <TextBlock Text="{StaticResource Tagline}" FontSize="10" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
                 </StackPanel>
             </StackPanel>
 
@@ -182,27 +183,27 @@
             <DockPanel x:Name="ActionTiles" Grid.Column="4" Margin="14,0,148,0" VerticalAlignment="Center" LastChildFill="False">
                 <Button DockPanel.Dock="Right" Style="{StaticResource QuietTile}" Tag="Lock" Command="{Binding LockCommand}"
                         ToolTip="Lock (Ctrl+L)" AutomationProperties.Name="Lock">
-                    <ui:SymbolIcon Symbol="LockClosed24" FontSize="20" />
+                    <ui:SymbolIcon Symbol="LockClosed24" FontSize="17" />
                 </Button>
                 <Button DockPanel.Dock="Right" Style="{StaticResource QuietTile}" Tag="Settings" Command="{Binding OpenSettingsCommand}"
                         ToolTip="Settings" AutomationProperties.Name="Settings">
-                    <ui:SymbolIcon Symbol="Settings24" FontSize="20" />
+                    <ui:SymbolIcon Symbol="Settings24" FontSize="17" />
                 </Button>
                 <Button Style="{StaticResource AccentTile}" Tag="New secret" Command="{Binding NewSecretCommand}"
                         ToolTip="New secret (Ctrl+N)" AutomationProperties.Name="New secret">
-                    <ui:SymbolIcon Symbol="Add24" FontSize="20" Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                    <ui:SymbolIcon Symbol="Add24" FontSize="17" Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
                 </Button>
                 <Button Style="{StaticResource Tile}" Tag="Import files" Command="{Binding ImportFilesCommand}"
                         ToolTip="Import files as secrets" AutomationProperties.Name="Import files">
-                    <ui:SymbolIcon Symbol="DocumentAdd24" FontSize="20" />
+                    <ui:SymbolIcon Symbol="DocumentAdd24" FontSize="17" />
                 </Button>
                 <Button Style="{StaticResource Tile}" Tag="Import folder" Command="{Binding ImportFolderCommand}"
                         ToolTip="Import a folder; subfolders become categories" AutomationProperties.Name="Import folder">
-                    <ui:SymbolIcon Symbol="FolderOpen24" FontSize="20" />
+                    <ui:SymbolIcon Symbol="FolderOpen24" FontSize="17" />
                 </Button>
                 <Button Style="{StaticResource Tile}" Tag="Link 1Password" Command="{Binding LinkFromVaultCommand}"
                         ToolTip="Link to a 1Password item (read live, never copied)" AutomationProperties.Name="Link from 1Password">
-                    <ui:SymbolIcon Symbol="Link24" FontSize="20" />
+                    <ui:SymbolIcon Symbol="Link24" FontSize="17" />
                 </Button>
             </DockPanel>
         </Grid>
@@ -402,16 +403,11 @@
                 </Grid>
             </Border>
 
-            <!-- Settings and the category manager take over the list + detail area -->
+            <!-- The category manager takes over the list + detail area -->
             <Border Grid.Column="2" Grid.ColumnSpan="3" BorderThickness="1,1,0,0" CornerRadius="8,0,0,0"
                     Background="{DynamicResource SolidBackgroundFillColorBaseBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                    Visibility="{Binding IsOverlayOpen, Converter={StaticResource VisibleWhen}}">
-                <Grid>
-                    <views:SettingsView DataContext="{Binding Settings}"
-                                        Visibility="{Binding DataContext.IsSettingsOpen, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhen}}" />
-                    <views:CategoryManagerView DataContext="{Binding CategoryManager}"
-                                               Visibility="{Binding DataContext.IsCategoryManagerOpen, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhen}}" />
-                </Grid>
+                    Visibility="{Binding IsCategoryManagerOpen, Converter={StaticResource VisibleWhen}}">
+                <views:CategoryManagerView DataContext="{Binding CategoryManager}" />
             </Border>
         </Grid>
         </DockPanel>
@@ -445,6 +441,24 @@
                 <TextBlock Text="{Binding LockMessage}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,16,0,0"
                            Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
             </StackPanel>
+        </Grid>
+
+        <!-- ============================================================ settings -->
+        <!-- A dialog over the dimmed window, tabs along its top (Postman-style). Below the window buttons (ZIndex 10). -->
+        <Grid Grid.Row="0" Grid.RowSpan="2" Panel.ZIndex="5" Background="#99000000"
+              Visibility="{Binding ShowSettingsDialog, Converter={StaticResource VisibleWhen}}">
+            <Grid Margin="48,52,48,36" MaxWidth="980" MaxHeight="840">
+                <!-- The shadow is its own layer: an effect on the dialog would render its text through it, softly. -->
+                <Border CornerRadius="10" Background="{DynamicResource ApplicationBackgroundBrush}">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="48" ShadowDepth="12" Direction="270" Opacity="0.4" Color="Black" />
+                    </Border.Effect>
+                </Border>
+                <Border CornerRadius="10" Background="{DynamicResource ApplicationBackgroundBrush}"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <views:SettingsView DataContext="{Binding Settings}" />
+                </Border>
+            </Grid>
         </Grid>
 
         <ui:SnackbarPresenter x:Name="Snackbar" Grid.Row="1" VerticalAlignment="Bottom" Margin="24" />

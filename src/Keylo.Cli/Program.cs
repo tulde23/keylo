@@ -9,8 +9,8 @@ namespace Keylo.Cli;
 
 internal static class Program
 {
-    private const string Usage = """
-        keylo - local secrets in Windows Credential Manager
+    private static string Usage => $"""
+        keylo - local secrets in {Platform.StoreName}
 
         keylo                                   Open the Keylo app
         keylo list [search...] [--category C]   List secrets (search matches name, category, username, notes,
@@ -44,16 +44,19 @@ internal static class Program
                                                 Encrypted, password-protected backup of everything
         keylo restore FILE [--overwrite] [--dry-run] [--password-stdin]
                                                 Restore a backup (existing secrets are skipped unless --overwrite)
-        keylo keys                              List access keys (let tools use secrets without Windows Hello)
+        keylo keys                              List access keys (let tools use secrets without {Platform.VerifierName})
         keylo keys create NAME [--all | --category C... --secret S...] [--allow-get] [--expires-days N] [--add-to-claude]
                                                 Create a key (shown once; --add-to-claude registers the MCP server instead)
         keylo keys revoke NAME                  Revoke a key
-        keylo mcp                               Run the MCP server for AI agents (needs KEYLO_ACCESS_KEY)
+        keylo mcp                               The MCP server for AI agents (started by the agent; run it
+                                                yourself to see how to set it up)
         keylo unlock | lock | status | version
         keylo config [hello session|always|never | session-minutes N | clipboard-seconds N | audit-days N|forever]
         """;
 
-    private static readonly string[] Flags = ["clip", "yes", "overwrite", "delete-originals", "flat", "plain", "all", "json", "force", "dry-run", "password-stdin", "both", "allow-get", "add-to-claude", "help"];
+    private static readonly string[] Flags = ["clip", "yes", "overwrite", "delete-originals", "flat", "plain", "all", "json", "force", "dry-run", "password-stdin", "both", "allow-get", "add-to-claude", "help", "stdio"];
+
+    private static Keylo.Core.Platform.IKeyloPlatform Platform => Keylo.Core.Platform.KeyloPlatform.Current;
 
     /// <summary>
     /// This keylo: keylo.exe on Windows; on macOS the keylo launcher inside Keylo.app, which runs the
@@ -99,7 +102,7 @@ internal static class Program
                 "link" => await LinkAsync(context, args),
                 "provider" or "providers" => await ProviderAsync(context, args),
                 "keys" or "key" => await KeysAsync(context, args),
-                "mcp" => await Mcp.McpServer.RunAsync(),
+                "mcp" => args.Flag("stdio") || Console.IsInputRedirected ? await Mcp.McpServer.RunAsync() : Mcp.McpServer.Explain(context.Config, SelfPath),
                 "backup" or "export" => await BackupAsync(context, args),
                 "restore" => await RestoreAsync(context, args),
                 "unlock" => await UnlockAsync(context, args),
@@ -155,7 +158,7 @@ internal static class Program
             return Store.List();
         }
 
-        /// <summary>Allows a value operation via the access key (audited) or Windows Hello.</summary>
+        /// <summary>Allows a value operation via the access key (audited) or Windows Hello / Touch ID.</summary>
         public async Task AuthorizeAsync(SecretOperation operation, IReadOnlyCollection<SecretInfo> secrets, string what)
         {
             if (Key is { } key && key.Allows(operation, secrets))
@@ -165,11 +168,11 @@ internal static class Program
             }
 
             if (Key is null && AccessKeys.IsPresentInEnvironment)
-                Terminal.Info($"keylo: {AccessKeys.EnvironmentVariable} isn't a valid, unexpired access key; asking Windows Hello instead.");
+                Terminal.Info($"keylo: {AccessKeys.EnvironmentVariable} isn't a valid, unexpired access key; asking {Platform.VerifierName} instead.");
             await Gate.EnsureAsync(IntPtr.Zero, $"Keylo: {what}", valueAccess: true);
         }
 
-        /// <summary>Settings and pushes always need Windows Hello (or hello = never).</summary>
+        /// <summary>Settings and pushes always need Windows Hello / Touch ID (or hello = never).</summary>
         public Task ValueAsync(string what) => Gate.EnsureAsync(IntPtr.Zero, $"Keylo: {what}", valueAccess: true);
     }
 
@@ -926,7 +929,7 @@ internal static class Program
                 await c.Gate.ConfirmAsync(IntPtr.Zero, $"Keylo: revoke access key '{key.Name}'");
                 c.Config.AccessKeys.Remove(key);
                 c.Config.Save();
-                Terminal.Info($"Revoked '{key.Name}'. Anything still using it now gets Windows Hello prompts or approval requests.");
+                Terminal.Info($"Revoked '{key.Name}'. Anything still using it now gets {Platform.VerifierName} prompts or approval requests.");
                 return 0;
             }
 
@@ -940,7 +943,7 @@ internal static class Program
         args.ThrowOnUnknown();
         if (c.Gate.Mode == HelloMode.Never)
         {
-            Terminal.Info("Windows Hello is off (hello = never); nothing to unlock.");
+            Terminal.Info($"{Platform.VerifierName} is off (hello = never); nothing to unlock.");
             return 0;
         }
 
@@ -965,8 +968,8 @@ internal static class Program
         args.ThrowOnUnknown();
         var state = c.Gate.Mode switch
         {
-            HelloMode.Never => "no Windows Hello prompt (hello = never)",
-            HelloMode.Always => "Windows Hello on every value access (hello = always)",
+            HelloMode.Never => $"no {Platform.VerifierName} prompt (hello = never)",
+            HelloMode.Always => $"{Platform.VerifierName} on every value access (hello = always)",
             _ => c.Gate.SessionExpiresAt is { } until ? $"unlocked until {until.LocalDateTime:HH:mm}" : "locked",
         };
         Console.WriteLine($"Keylo {typeof(Program).Assembly.GetName().Version?.ToString(3)}: {state}");

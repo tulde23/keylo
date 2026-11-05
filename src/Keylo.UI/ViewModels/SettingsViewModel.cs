@@ -192,6 +192,44 @@ public sealed partial class SettingsViewModel : ObservableObject
         Revert();
     }
 
+    // ---------------------------------------------------------------- appearance
+    // Applied and saved (ui.json) as soon as it's picked: it's cosmetic, so it isn't part of Save
+    // settings and doesn't ask for verification.
+
+    public static IReadOnlyList<ThemeOption> ThemeOptions => Themes.Options;
+    public static IReadOnlyList<ThemeModeOption> ThemeModeOptions => Themes.ModeOptions;
+
+    public ThemeOption Theme
+    {
+        get => ThemeOptions.First(o => o.Value == Themes.ParseName(UiState.Load().Theme));
+        set
+        {
+            if (value is null || value == Theme) return;
+            UiState.Load().Theme = value.Value.ToString();
+            ApplyAppearance();
+        }
+    }
+
+    public ThemeModeOption ThemeMode
+    {
+        get => ThemeModeOptions.First(o => o.Value == Themes.ParseMode(UiState.Load().Mode));
+        set
+        {
+            if (value is null || value == ThemeMode) return;
+            UiState.Load().Mode = value.Value.ToString();
+            ApplyAppearance();
+        }
+    }
+
+    private void ApplyAppearance()
+    {
+        var state = UiState.Load();
+        state.Save();
+        Ui.Host.ApplyTheme(Themes.ParseName(state.Theme), Themes.ParseMode(state.Mode));
+        OnPropertyChanged(nameof(Theme));
+        OnPropertyChanged(nameof(ThemeMode));
+    }
+
     [ObservableProperty] private string _backupStatus = "";
 
     [RelayCommand]

@@ -2,6 +2,7 @@
 # Debug builds only (./build.sh --debug): renders the Mac app's main screens to PNGs against a
 # throwaway keychain and data folder, for checking the UI without a screen (e.g. over SSH).
 #   tests/macos-ui-snapshots.sh [OUT_DIR]
+#   KEYLO_SHOTS="settings scroll:1200" tests/macos-ui-snapshots.sh   (just these states)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -26,7 +27,7 @@ printf 'pw-123' | "$app/keylo" set prod-db --type database --field engine=postgr
 printf 'abc' | "$app/keylo" set stripe-key --category billing >/dev/null
 echo '["prod-db"]' > "$KEYLO_HOME/pins.json"
 
-shots=(home select:prod-db edit:prod-db new settings categories light lock)
+shots=(${=KEYLO_SHOTS:-home select:prod-db edit:prod-db new settings categories light lock})
 spec=""
 for i in {1..${#shots}}; do spec+="${shots[$i]}=$out/$(printf %02d $i)-${shots[$i]//:/-}.png;"; done
 KEYLO_SNAPSHOTS=$spec "$app/KeyloApp" &

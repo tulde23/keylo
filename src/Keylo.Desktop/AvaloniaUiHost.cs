@@ -6,6 +6,7 @@ using Avalonia.Media;
 using Avalonia.Media.Immutable;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Keylo.App.Services;
 using Keylo.Core;
@@ -129,6 +130,69 @@ public sealed class AvaloniaUiHost : IUiHost
 
     private static FilePickerFileType Type(FileFilter filter) =>
         new(filter.Name) { Patterns = filter.Extensions.Select(e => "*" + e).ToList() };
+
+    /// <summary>
+    /// Fills App.axaml's Light and Dark resource dictionaries with the theme's colours (so a system
+    /// light/dark switch needs nothing more), sets Fluent's accent, then picks the variant.
+    /// </summary>
+    public void ApplyTheme(ThemeName name, ThemeMode mode)
+    {
+        if (Application.Current is not { } app) return;
+
+        foreach (var (variant, dark) in new[] { (ThemeVariant.Light, false), (ThemeVariant.Dark, true) })
+        {
+            var c = Themes.Get(name, dark);
+            if (app.Resources.ThemeDictionaries.TryGetValue(variant, out var provider) && provider is IResourceDictionary d)
+            {
+                IBrush accent = c.Accent == c.AccentEnd
+                    ? Brush(c.Accent)
+                    : new LinearGradientBrush
+                    {
+                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                        EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                        GradientStops = { new GradientStop(Color.Parse(c.Accent), 0), new GradientStop(Color.Parse(c.AccentEnd), 1) },
+                    };
+                var set = new Dictionary<string, object>
+                {
+                    ["TextPrimary"] = Brush(c.Text), ["TextSecondary"] = Brush(c.Text2), ["TextTertiary"] = Brush(c.Text3),
+                    ["SectionText"] = Brush(c.Section),
+                    ["BaseFill"] = Brush(c.Base), ["TopBarFill"] = Brush(c.TopBar), ["LayerFill"] = Brush(c.Layer),
+                    ["CardFill"] = Brush(c.Card), ["CardStroke"] = Brush(c.Stroke),
+                    ["ControlFill"] = Brush(c.ControlFill), ["ControlFill2"] = Brush(c.ControlFill2), ["ControlStroke"] = Brush(c.ControlStroke),
+                    ["SubtleHover"] = Brush(c.Hover), ["SubtlePressed"] = Brush(c.Pressed), ["SelectedFill"] = Brush(c.Selected),
+                    ["Divider"] = Brush(c.Divider), ["PopupFill"] = Brush(c.Popup),
+                    ["AccentFill"] = accent, ["AccentText"] = Brush(c.AccentText), ["OnAccent"] = Brush(c.OnAccent), ["InfoBg"] = Brush(c.Info),
+                    // Fluent's accent buttons, with the theme's fill (the gradient, in Twilight) and text.
+                    ["AccentButtonBackground"] = accent, ["AccentButtonBackgroundPointerOver"] = accent, ["AccentButtonBackgroundPressed"] = accent,
+                    ["AccentButtonForeground"] = Brush(c.OnAccent), ["AccentButtonForegroundPointerOver"] = Brush(c.OnAccent),
+                    ["AccentButtonForegroundPressed"] = Brush(c.OnAccent),
+                    // Fluent's expander, recoloured to match the cards.
+                    ["ExpanderHeaderBackground"] = Brush(c.Card), ["ExpanderHeaderBackgroundPointerOver"] = Brush(c.ControlFill2),
+                    ["ExpanderHeaderBackgroundPressed"] = Brush(c.Card), ["ExpanderHeaderBackgroundDisabled"] = Brush(c.Card),
+                    ["ExpanderHeaderBorderBrush"] = Brush(c.Stroke), ["ExpanderHeaderBorderBrushPointerOver"] = Brush(c.Stroke),
+                    ["ExpanderHeaderBorderBrushPressed"] = Brush(c.Stroke),
+                    ["ExpanderContentBackground"] = Brush(c.Card), ["ExpanderContentBorderBrush"] = Brush(c.Stroke),
+                };
+                foreach (var (key, value) in set) d[key] = value;
+            }
+
+            if (app.Styles.OfType<Avalonia.Themes.Fluent.FluentTheme>().FirstOrDefault() is { } fluent
+                && fluent.Palettes.TryGetValue(variant, out var palette))
+            {
+                palette.Accent = Color.Parse(c.Accent);
+                palette.RegionColor = Color.Parse(c.Base);
+            }
+        }
+
+        app.RequestedThemeVariant = mode switch
+        {
+            ThemeMode.Light => ThemeVariant.Light,
+            ThemeMode.Dark => ThemeVariant.Dark,
+            _ => ThemeVariant.Default,
+        };
+    }
+
+    private static ImmutableSolidColorBrush Brush(string hex) => new(Color.Parse(hex));
 
     public void OpenTextFile(string path)
     {
