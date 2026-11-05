@@ -18,7 +18,9 @@ trap cleanup EXIT
 security create-keychain -p ui "$KEYLO_KEYCHAIN"
 security unlock-keychain -p ui "$KEYLO_KEYCHAIN"
 security set-keychain-settings "$KEYLO_KEYCHAIN"
-echo '{"hello":"never"}' > "$KEYLO_HOME/config.json"
+# KEYLO_SNAPSHOT_CONFIG: a config.json to start from (e.g. with provider environments).
+config='{"hello":"never"}'
+print -r -- "${KEYLO_SNAPSHOT_CONFIG:-$config}" > "$KEYLO_HOME/config.json"
 mkdir -p "$out" && rm -f "$out"/*.png(N)
 
 printf 'hunter2' | "$app/keylo" set github-token --category dev --username octocat --notes "Personal token for CI" >/dev/null

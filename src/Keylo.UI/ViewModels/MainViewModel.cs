@@ -446,7 +446,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (_keylo.Providers.Linked.Count == 0)
         {
-            _notify.Error("No vault to link to. 1Password is built in; others come as plugins.");
+            _notify.Error("No vault to link to. 1Password and AWS Secrets Manager are built in; others come as plugins.");
             return;
         }
         if (await _notify.LinkSecretAsync() is { } result)

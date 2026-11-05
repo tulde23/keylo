@@ -7,7 +7,7 @@ using Keylo.Core.Providers;
 
 namespace Keylo.Desktop.Views;
 
-/// <summary>Searches a linked vault (1Password or a plugin's) and creates a Keylo secret that points at an item.</summary>
+/// <summary>Searches a linked vault (1Password, AWS Secrets Manager or a plugin's) and creates a Keylo secret that points at an item.</summary>
 public partial class LinkDialog : DialogWindow
 {
     public sealed record ResultRow(LinkedItemSummary Item)
@@ -57,12 +57,59 @@ public partial class LinkDialog : DialogWindow
 
     private ILinkedVaultProvider? Provider => ProviderBox.SelectedItem as ILinkedVaultProvider;
 
-    private IReadOnlyDictionary<string, string> Settings =>
+    private IReadOnlyDictionary<string, string> ConfiguredSettings =>
         Provider is { } p ? _keylo.Config.Providers.GetValueOrDefault(p.Id) ?? new Dictionary<string, string>() : new Dictionary<string, string>();
+
+    /// <summary>The provider's settings, with the profile and region picked here for AWS.</summary>
+    private IReadOnlyDictionary<string, string> Settings => IsAws
+        ? AwsLinkScope.Apply(ConfiguredSettings, ProfileBox.SelectedItem as AwsProfileChoice, RegionBox.SelectedItem as string)
+        : ConfiguredSettings;
+
+    private bool IsAws => Provider?.Id == AwsLinkScope.ProviderId;
+
+    /// <summary>The AWS environment picked, if any: links made then are per environment (used as name@env).</summary>
+    private string? Environment => IsAws ? (ProfileBox.SelectedItem as AwsProfileChoice)?.Environment : null;
+    private bool _awsReady, _settingAws;
 
     private async void OnProviderChanged(object? sender, SelectionChangedEventArgs e)
     {
+        ShowAwsScope();
         if (_opened) await SearchAsync();
+    }
+
+    /// <summary>For AWS: profile and region pickers, starting from the configured ones.</summary>
+    private void ShowAwsScope()
+    {
+        AwsPanel.IsVisible = IsAws;
+        if (!IsAws || _awsReady) return;
+        _awsReady = _settingAws = true;
+        var profiles = AwsLinkScope.Profiles(ConfiguredSettings);
+        var profile = AwsLinkScope.Initial(profiles, ConfiguredSettings);
+        ProfileBox.ItemsSource = profiles;
+        ProfileBox.SelectedItem = profile;
+        RegionBox.ItemsSource = AwsLinkScope.Regions();
+        RegionBox.SelectedItem = AwsLinkScope.InitialRegion(profile, ConfiguredSettings);
+        RegionBox.IsEnabled = profile.Environment is null;
+        _settingAws = false;
+    }
+
+    private async void OnProfileChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_settingAws) return;
+        // A profile brings its own region; an environment fixes it.
+        RegionBox.IsEnabled = Environment is null;
+        if (ProfileBox.SelectedItem is AwsProfileChoice { Region: { } region })
+        {
+            _settingAws = true;
+            RegionBox.SelectedItem = region;
+            _settingAws = false;
+        }
+        if (_opened) await SearchAsync();
+    }
+
+    private async void OnRegionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!_settingAws && _opened) await SearchAsync();
     }
 
     private async void OnSearch(object? sender, RoutedEventArgs e) => await SearchAsync();
@@ -135,7 +182,7 @@ public partial class LinkDialog : DialogWindow
             _fields = await provider.DescribeAsync(Target(item), Settings);
             NameBox.Text = SuggestName(item.Title, new HashSet<string>());
 
-            // Suggest "1Password · Vault", unless the user typed their own category.
+            // Suggest "1Password · Vault" (or the provider's equivalent), unless the user typed their own category.
             if (string.IsNullOrWhiteSpace(CategoryBox.Text) || CategoryBox.Text == _suggestedCategory)
             {
                 _suggestedCategory = LinkedSecrets.DefaultCategory(provider.DisplayName, item, SeveralLocations);
@@ -225,13 +272,16 @@ public partial class LinkDialog : DialogWindow
 
     private LinkedSecrets.Link MakeLink(LinkedItemSummary item, IReadOnlyList<LinkedField> fields, string? only)
     {
-        var where = string.Join(" · ", new[] { item.VaultName, item.Location }.Where(x => !string.IsNullOrEmpty(x)));
+        var where = Environment is not null ? "per environment"
+            : string.Join(" · ", new[] { item.VaultName, item.Location }.Where(x => !string.IsNullOrEmpty(x)));
         return new LinkedSecrets.Link(Target(item), item.Title, where, fields, only);
     }
 
     private void OnCancel(object? sender, RoutedEventArgs e) => Close();
 
-    private LinkTarget Target(LinkedItemSummary item) => new(Provider!.Id, item.ItemId, item.VaultId, item.Location);
+    private LinkTarget Target(LinkedItemSummary item) => Environment is not null
+        ? new(Provider!.Id, item.Title, null, LinkedSecrets.PerEnvironment)
+        : new(Provider!.Id, item.ItemId, item.VaultId, item.Location);
 
     /// <summary>"GitHub (work)" → "github-work" style slug, unique among existing secrets and <paramref name="taken"/>.</summary>
     private string SuggestName(string title, IReadOnlySet<string> taken)
@@ -247,6 +297,7 @@ public partial class LinkDialog : DialogWindow
 
     private void SetBusy(bool busy)
     {
+        if (busy) BusyText.Text = $"Waiting for {Provider?.DisplayName ?? "the vault"}… approve it if it asks.";
         Busy.IsVisible = busy;
         Results.Opacity = busy ? 0.3 : 1;
         Results.IsEnabled = !busy;

@@ -63,7 +63,7 @@
                         <Button Classes="tile" Command="{Binding ImportFolderCommand}" ToolTip.Tip="Import a folder; subfolders become categories">
                             <ic:SymbolIcon Symbol="FolderOpen" FontSize="17" />
                         </Button>
-                        <Button Classes="tile" Command="{Binding LinkFromVaultCommand}" ToolTip.Tip="Link to a 1Password item (read live, never copied)">
+                        <Button Classes="tile" Command="{Binding LinkFromVaultCommand}" ToolTip.Tip="Link to an item in 1Password or AWS Secrets Manager (read live, never copied)">
                             <ic:SymbolIcon Symbol="Link" FontSize="17" />
                         </Button>
                     </DockPanel>

@@ -29,9 +29,20 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <ComboBox x:Name="ProviderBox" DisplayMemberPath="DisplayName" MinWidth="140" Margin="0,0,8,0" SelectionChanged="OnProviderChanged" />
-                <ui:TextBox x:Name="SearchBox" Grid.Column="1" PlaceholderText="Search titles, vaults, categories…" Icon="{ui:SymbolIcon Search24}"
+                <ui:TextBox x:Name="SearchBox" Grid.Column="1" PlaceholderText="Search names, vaults, tags…" Icon="{ui:SymbolIcon Search24}"
                             KeyDown="OnSearchKeyDown" />
                 <ui:Button x:Name="SearchButton" Grid.Column="2" Appearance="Secondary" Content="Search" Margin="8,0,0,0" Click="OnSearch" />
+            </Grid>
+
+            <!-- AWS Secrets Manager: which profile and region to search -->
+            <Grid x:Name="AwsPanel" Margin="0,0,0,8" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="8" />
+                    <ColumnDefinition Width="180" />
+                </Grid.ColumnDefinitions>
+                <ComboBox x:Name="ProfileBox" ToolTip="AWS profile" SelectionChanged="OnProfileChanged" />
+                <ComboBox x:Name="RegionBox" Grid.Column="2" ToolTip="Region" SelectionChanged="OnRegionChanged" />
             </Grid>
 
             <Border Style="{StaticResource Surface}" Padding="4" Margin="0,0,0,8">
@@ -48,7 +59,7 @@
                     </ListBox>
                     <StackPanel x:Name="Busy" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
                         <ui:ProgressRing IsIndeterminate="True" Width="28" Height="28" />
-                        <TextBlock Text="Waiting for 1Password… approve it if it asks." FontSize="12" Margin="0,8,0,0"
+                        <TextBlock x:Name="BusyText" FontSize="12" Margin="0,8,0,0"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                     </StackPanel>
                 </Grid>
@@ -70,7 +81,7 @@
                     <StackPanel Grid.Column="2">
                         <TextBlock Text="Category" Style="{StaticResource FieldLabel}" />
                         <ComboBox x:Name="CategoryBox" IsEditable="True" />
-                        <TextBlock x:Name="CategoryHint" Text="Leave blank to use each item's vault (1Password · Vault)." FontSize="11" Margin="0,4,0,0"
+                        <TextBlock x:Name="CategoryHint" Text="Leave blank to use each item's vault, e.g. 1Password · Private." FontSize="11" Margin="0,4,0,0"
                                    Visibility="Collapsed" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
                     </StackPanel>
                 </Grid>

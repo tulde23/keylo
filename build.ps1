@@ -17,7 +17,7 @@ if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
 $commit = (git -C $root rev-parse --short=7 HEAD 2>$null)
 if (-not $commit) { $commit = 'nogit' }
 if (git -C $root status --porcelain 2>$null) { $commit += '-dirty' }
-$stamp = "-p:InformationalVersion=1.0.0+$(Get-Date -Format yyyyMMdd).$commit"
+$stamp = "-p:InformationalVersion=1.1.0+$(Get-Date -Format yyyyMMdd).$commit"
 
 # Framework-dependent (uses the installed .NET 10 runtime); both executables share one folder of DLLs.
 # keylo targets Windows and macOS; this script builds the Windows one (build.sh builds macOS).
@@ -27,7 +27,7 @@ foreach ($project in 'src\Keylo.Cli', 'src\Keylo.App') {
 }
 
 Get-ChildItem $dist -Filter *.pdb | Remove-Item
-Write-Host "Published Keylo 1.0.0 ($commit) to $dist" -ForegroundColor Green
+Write-Host "Published Keylo 1.1.0 ($commit) to $dist" -ForegroundColor Green
 Get-ChildItem $dist -Filter *.exe | ForEach-Object { "  {0,-12} {1,8:N0} KB" -f $_.Name, ($_.Length / 1KB) }
 
 if ($Install) { & (Join-Path $root 'install.ps1') -Source $dist }

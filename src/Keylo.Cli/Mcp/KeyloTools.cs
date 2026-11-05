@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Keylo.Core;
+using Keylo.Core.Providers;
 using Keylo.Core.Security;
 
 namespace Keylo.Cli.Mcp;
@@ -33,7 +34,7 @@ internal sealed class KeyloTools
     private readonly OutputRedactor _redactor = new();
     private readonly Lock _redactorLock = new();
 
-    private static readonly string[] Names = ["search_secrets", "list_categories", "list_types", "run_with_secrets", "get_secret", "request_access"];
+    private static readonly string[] Names = ["search_secrets", "list_categories", "list_types", "run_with_secrets", "get_secret", "request_access", "list_aws_profiles", "list_aws_secrets"];
 
     public static bool Exists(string name) => Names.Contains(name);
 
@@ -45,6 +46,8 @@ internal sealed class KeyloTools
         "run_with_secrets" => RunAsync(args),
         "get_secret" => GetAsync(args),
         "request_access" => RequestAccessAsync(args),
+        "list_aws_profiles" => Task.FromResult(ListAwsProfiles()),
+        "list_aws_secrets" => ListAwsSecretsAsync(args),
         _ => throw new ArgumentException($"Unknown tool: {name}"),
     };
 
@@ -85,11 +88,26 @@ internal sealed class KeyloTools
                 details = covered ? Details(type, s) : null,
                 notes = covered ? s.Notes : null,
                 access = Access(key, s),
+                environments = Environments(s),
             };
         });
 
         var header = matches.Count > limit ? $"{matches.Count} matches; showing {limit}.\n" : $"{matches.Count} match(es).\n";
         return header + JsonSerializer.Serialize(results, Json);
+    }
+
+    /// <summary>For a per-environment link: its environments ("name@env" picks one), the default, and which always ask.</summary>
+    private static object? Environments(SecretInfo secret)
+    {
+        if (LinkedSecrets.Read(secret) is not { IsPerEnvironment: true } link) return null;
+        var settings = KeyloConfig.Load().Providers.GetValueOrDefault(link.Target.Provider) ?? new Dictionary<string, string>();
+        return new
+        {
+            names = VaultEnvironments.Read(settings).Select(e => e.Name),
+            @default = VaultEnvironments.Default(settings),
+            alwaysAsk = VaultEnvironments.Read(settings).Where(e => e.AlwaysAsk).Select(e => e.Name),
+            usage = $"Use \"{secret.Name}@ENV\" or \"{secret.Name}@ENV:field\"; without @ENV the default environment is used.",
+        };
     }
 
     private static object[] Schema(SecretTypeDefinition? type, SecretInfo secret) => type is null
@@ -125,6 +143,78 @@ internal sealed class KeyloTools
         return JsonSerializer.Serialize(types, Json);
     }
 
+    /// <summary>AWS profiles (names, regions, how they sign in; never keys), the regions, and what Keylo's AWS provider uses.</summary>
+    private static string ListAwsProfiles()
+    {
+        var (config, _) = LoadKey();
+        var settings = config.Providers.GetValueOrDefault("aws") ?? new Dictionary<string, string>();
+        var cli = Keylo.Core.Providers.AwsSetup.CliPath();
+        var result = new
+        {
+            awsCli = cli is not null ? "installed" : "not found on PATH (needed only to sign in with SSO: aws sso login)",
+            keylo = new
+            {
+                profile = settings.GetValueOrDefault("profile") is { Length: > 0 } p ? p : null,
+                region = settings.GetValueOrDefault("region") is { Length: > 0 } r ? r : null,
+                note = "Linked AWS secrets each keep the profile and region they were linked with.",
+            },
+            environmentRegion = Keylo.Core.Providers.AwsSetup.EnvironmentRegion,
+            environments = VaultEnvironments.Read(settings).Select(e => new { name = e.Name, profile = e.Profile, region = e.Region, alwaysAsk = e.AlwaysAsk }),
+            defaultEnvironment = VaultEnvironments.Default(settings),
+            profiles = Keylo.Core.Providers.AwsSetup.Profiles().Select(p => new { name = p.Name, region = p.Region, signIn = p.SignIn }),
+            regions = Keylo.Core.Providers.AwsSetup.Regions(),
+        };
+        return JsonSerializer.Serialize(result, Json);
+    }
+
+    /// <summary>
+    /// The secrets in AWS Secrets Manager for a profile and region: names, ARNs, descriptions and tags,
+    /// never values, grouped by their first path segment ("project/db" → "project"), and which are
+    /// already linked in Keylo (by secret name there).
+    /// </summary>
+    private async Task<string> ListAwsSecretsAsync(JsonObject args)
+    {
+        var (config, _) = LoadKey();
+        if (_registry.FindLinked("aws") is not Keylo.Core.Providers.AwsSecretsManagerProvider aws)
+            throw new KeyloException("The AWS Secrets Manager provider isn't available.");
+        var settings = config.Providers.GetValueOrDefault("aws") ?? new Dictionary<string, string>();
+        var profile = OptionalString(args, "profile") ?? (settings.GetValueOrDefault("profile") is { Length: > 0 } p ? p : null);
+        var region = OptionalString(args, "region") ?? (settings.GetValueOrDefault("region") is { Length: > 0 } r ? r : null);
+        var environmentName = OptionalString(args, "environment");
+        if (environmentName is not null)
+        {
+            var env = VaultEnvironments.Find(settings, environmentName)
+                      ?? throw new KeyloException($"There's no AWS environment '{environmentName}'. Environments: {string.Join(", ", VaultEnvironments.Read(settings).Select(e => e.Name))}.");
+            (profile, region) = (env.Profile, env.Region);
+        }
+
+        var (usedRegion, secrets) = await aws.ListSecretsAsync(profile, region, OptionalString(args, "query"));
+        var linked = _store.List()
+            .Select(s => (Name: s.Name, Link: LinkedSecrets.Read(s)))
+            .Where(s => s.Link?.Target.Provider == aws.Id)
+            .GroupBy(s => s.Link!.Target.ItemId)  // an ARN, or a secret name for per-environment links
+            .ToDictionary(g => g.Key, g => g.Select(s => s.Name).ToList());
+
+        var result = new
+        {
+            environment = environmentName,
+            profile = profile ?? "(default credentials)",
+            region = usedRegion,
+            count = secrets.Count,
+            projects = secrets.GroupBy(s => s.Name.Contains('/') ? s.Name[..s.Name.IndexOf('/')] : "(no prefix)")
+                .Select(g => new { project = g.Key, secrets = g.Count() }),
+            secrets = secrets.Select(s => new
+            {
+                name = s.Name,
+                arn = s.Arn,
+                description = s.Description,
+                tags = s.Tags.Count > 0 ? s.Tags : null,
+                linkedInKeyloAs = linked.GetValueOrDefault(s.Arn) ?? linked.GetValueOrDefault(s.Name),
+            }),
+        };
+        return JsonSerializer.Serialize(result, Json);
+    }
+
     private string ListCategories()
     {
         var (_, key) = LoadKey();
@@ -152,16 +242,16 @@ internal sealed class KeyloTools
         var mappings = env.Select(pair =>
         {
             if (pair.Value?.GetValueKind() != JsonValueKind.String) throw new ArgumentException($"env.{pair.Key} must be a secret name.");
-            var (info, field) = ResolveSource(pair.Value.GetValue<string>());
-            return (Variable: pair.Key, Info: info, Field: field);
+            var use = ResolveSource(pair.Value.GetValue<string>());
+            return (Variable: pair.Key, Use: use);
         }).ToList();
 
-        var secrets = mappings.Select(m => m.Info).DistinctBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
-        await AuthorizeAsync(key, SecretOperation.Run, secrets, reason, $"[{shell}] {command}");
+        var uses = mappings.Select(m => m.Use).DistinctBy(u => u.Label, StringComparer.OrdinalIgnoreCase).ToList();
+        await AuthorizeAsync(key, SecretOperation.Run, uses, reason, $"[{shell}] {command}");
 
         var environment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (variable, info, field) in mappings)
-            environment[variable] = Pick(info, ReadAll(info), field);
+        foreach (var (variable, use) in mappings)
+            environment[variable] = Pick(use.Info, ReadAll(use), use.Field);
 
         var result = await ShellCommand.RunAsync(shell, command, workingDirectory, environment, timeout);
 
@@ -180,18 +270,20 @@ internal sealed class KeyloTools
         var (_, key) = LoadKey();
         var name = RequiredString(args, "name");
         var reason = OptionalString(args, "reason");
-        var info = _store.Find(name) ?? throw new SecretNotFoundException(name);
+        var use = ResolveSource(name);
+        var info = use.Info;
 
-        await AuthorizeAsync(key, SecretOperation.Get, [info], reason, command: null);
+        await AuthorizeAsync(key, SecretOperation.Get, [use], reason, command: null);
 
-        var all = ReadAll(info);
-        var field = OptionalString(args, "field");
+        var all = ReadAll(use);
+        var field = OptionalString(args, "field") ?? use.Field;
         if (field is not null) return Pick(info, all, field);
 
         var text = new StringBuilder();
         text.Append($"type: {info.Type ?? "plain"}");
         foreach (var (id, value) in all) text.Append($"\n{id}: {value}");
-        if (LinkedSecrets.Read(info) is { } linkInfo) text.Insert(0, $"linked to: {linkInfo.Title} ({linkInfo.Target.Provider})\n");
+        if (LinkedSecrets.Read(info) is { } linkInfo)
+            text.Insert(0, $"linked to: {linkInfo.Title} ({linkInfo.Target.Provider}{(use.Environment is { } e ? $", environment {e.Name}" : "")})\n");
         return text.ToString();
     }
 
@@ -202,7 +294,7 @@ internal sealed class KeyloTools
         if (args["names"] is not JsonArray names || names.Count == 0) throw new ArgumentException("names must list at least one secret.");
 
         var secrets = names.Select(n => n?.GetValue<string>() ?? throw new ArgumentException("names must be strings."))
-            .Select(n => _store.Find(n) ?? throw new SecretNotFoundException(n))
+            .Select(n => ResolveSource(n).Info)
             .DistinctBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -231,24 +323,32 @@ internal sealed class KeyloTools
                 (operation == SecretOperation.Run && _approved.TryGetValue((SecretOperation.Get, n.ToLowerInvariant()), out var getUntil) && getUntil > now));
     }
 
-    /// <summary>The key's own scope, a recent approval, or else a Keylo approval window (with Windows Hello).</summary>
-    private async Task AuthorizeAsync(AccessKey key, SecretOperation operation, IReadOnlyList<SecretInfo> secrets, string? reason, string? command)
+    /// <summary>
+    /// The key's own scope, a recent approval, or else a Keylo approval window (with Windows Hello).
+    /// A use in an "always ask" environment (prod) skips the key's scope and can't be allowed for good.
+    /// </summary>
+    private async Task AuthorizeAsync(AccessKey key, SecretOperation operation, IReadOnlyList<SecretUse> uses, string? reason, string? command)
     {
-        var names = secrets.Select(s => s.Name).ToList();
+        var secrets = uses.Select(u => u.Info).ToList();
+        var alwaysAsk = uses.Any(u => u.Environment?.AlwaysAsk == true);
+        // Approvals and grants are per secret, except in "always ask" environments ("orders-db@prod");
+        // the audit log always records the environment.
+        var names = uses.Select(u => u.Environment?.AlwaysAsk == true ? u.Label : u.Info.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var logged = uses.Select(u => u.Label).ToList();
         var verb = operation.ToString().ToLowerInvariant();
-        if (key.Allows(operation, secrets))
+        if (!alwaysAsk && key.Allows(operation, secrets))
         {
-            AuditLog.Write(verb, names, key, "access key");
+            AuditLog.Write(verb, logged, key, "access key");
             return;
         }
         if (ApprovedRecently(operation, names))
         {
-            AuditLog.Write(verb, names, key, "approved earlier this session");
+            AuditLog.Write(verb, logged, key, "approved earlier this session");
             return;
         }
 
         // "Always" adds secrets to the key's scope; for a get that only helps if the key may print values.
-        var canAlways = operation == SecretOperation.Run || key.AllowGet;
+        var canAlways = !alwaysAsk && (operation == SecretOperation.Run || key.AllowGet);
         var result = await Approvals.RequestAsync(new ApprovalRequest(operation, names, key.Id, key.Name, reason, command, canAlways));
         if (result == ApprovalResult.Denied)
             throw new AccessDeniedException($"The user denied access to {string.Join(", ", names)}. Don't retry; ask them if it's needed.");
@@ -256,31 +356,37 @@ internal sealed class KeyloTools
         var until = DateTimeOffset.Now.AddMinutes(KeyloConfig.Load().SessionMinutes);
         lock (_approvedLock)
             foreach (var name in names) _approved[(operation, name.ToLowerInvariant())] = until;
-        AuditLog.Write(verb, names, key, result == ApprovalResult.AllowedAlways ? "approved (added to key)" : "approved for the session");
+        AuditLog.Write(verb, logged, key, result == ApprovalResult.AllowedAlways ? "approved (added to key)" : "approved for the session");
     }
 
     // ------------------------------------------------------------------ helpers
 
-    /// <summary>"name" or "name:field"; an exact secret name wins (names may contain ':').</summary>
-    private (SecretInfo Info, string? Field) ResolveSource(string source)
+    /// <summary>One use of a secret: which field, and for a per-environment link which environment.</summary>
+    private sealed record SecretUse(SecretInfo Info, string? Field, VaultEnvironment? Environment)
     {
-        if (_store.Find(source) is { } exact) return (exact, null);
-        var colon = source.LastIndexOf(':');
-        if (colon > 0 && colon < source.Length - 1 && _store.Find(source[..colon]) is { } info)
-            return (info, source[(colon + 1)..]);
-        throw new SecretNotFoundException(source);
+        /// <summary>"orders-db", or "orders-db@prod" for a per-environment link.</summary>
+        public string Label => Environment is null ? Info.Name : $"{Info.Name}@{Environment.Name}";
+    }
+
+    /// <summary>"name", "name:field", "name@env" or "name@env:field"; an exact secret name wins (names may contain ':' and '@').</summary>
+    private SecretUse ResolveSource(string source)
+    {
+        var reference = SecretReference.Parse(source, n => _store.Find(n) is not null) ?? throw new SecretNotFoundException(source);
+        var info = _store.Find(reference.Name)!;
+        return new SecretUse(info, reference.Field, LinkedSecrets.EnvironmentFor(info, KeyloConfig.Load(), reference.Environment));
     }
 
     /// <summary>
     /// Every field of a secret, in schema order: plain secrets as username/value, typed ones by
     /// field id. Each secret field value is registered for redaction.
     /// </summary>
-    private Dictionary<string, string> ReadAll(SecretInfo info)
+    private Dictionary<string, string> ReadAll(SecretUse use)
     {
+        var info = use.Info;
         if (LinkedSecrets.Read(info) is { } link)
         {
-            // Read live from the linked vault; everything except known non-secret fields is redacted.
-            var values = LinkedSecrets.ResolveAsync(info, _registry, KeyloConfig.Load()).GetAwaiter().GetResult();
+            // Read live from the linked vault (and environment); everything except known non-secret fields is redacted.
+            var values = LinkedSecrets.ResolveAsync(info, _registry, KeyloConfig.Load(), use.Environment?.Name).GetAwaiter().GetResult();
             var plain = link.Fields.Where(f => !f.Secret).Select(f => f.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var (id, value) in values)
                 if (!plain.Contains(id) || !LinkedSecrets.LooksPublic(id)) lock (_redactorLock) _redactor.Add($"{info.Name}:{id}", value);
@@ -400,6 +506,28 @@ internal sealed class KeyloTools
             "description": "The secret types (login, api_key, database, ssh_key, note and the user's custom ones) with their fields: which are secret and which is the main value.",
             "inputSchema": { "type": "object", "properties": {} },
             "annotations": { "readOnlyHint": true, "openWorldHint": false }
+          },
+          {
+            "name": "list_aws_profiles",
+            "title": "List AWS profiles and regions",
+            "description": "Keylo's AWS environments (dev, uat, prod…: each a profile and region; secrets linked per environment are used as name@env), the AWS profiles set up on this computer (~/.aws/config and ~/.aws/credentials: name, region, and how each signs in, e.g. sso or access keys; never any keys), every AWS region, whether the aws CLI is installed, and the profile and region Keylo's AWS Secrets Manager provider uses. Useful before running aws commands with run_with_secrets, or to tell the user which profile to link secrets from.",
+            "inputSchema": { "type": "object", "properties": {} },
+            "annotations": { "readOnlyHint": true, "openWorldHint": false }
+          },
+          {
+            "name": "list_aws_secrets",
+            "title": "List secrets in AWS Secrets Manager",
+            "description": "The secrets in AWS Secrets Manager for one profile and region (from list_aws_profiles; Keylo's configured ones by default): names, ARNs, descriptions and tags, never values. Also groups them by the first part of their name (\"project/db\" → \"project\") and says which are already linked in Keylo, under what name. To use one in a command it must first be linked in Keylo (ask the user: Link in the Keylo app, or keylo link --provider aws).",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "environment": { "type": "string", "description": "An environment from list_aws_profiles (dev, uat, prod…); overrides profile and region." },
+                "profile": { "type": "string", "description": "AWS profile name (see list_aws_profiles)." },
+                "region": { "type": "string", "description": "AWS region, e.g. us-east-1." },
+                "query": { "type": "string", "description": "Only secrets whose name, description or tags contain every word." }
+              }
+            },
+            "annotations": { "readOnlyHint": true, "openWorldHint": true }
           },
           {
             "name": "run_with_secrets",

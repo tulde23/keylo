@@ -58,7 +58,7 @@
         </Border>
 
         <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextTertiary}"
-                   Text="It's a copy: later changes in Keylo don't follow unless you push again. The value goes to 1Password over stdin, never on a command line." />
+                   Text="It's a copy: later changes in Keylo don't follow unless you push again. The value travels over the vault's own connection, never on a command line." />
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0" Spacing="8">
             <Button Classes="big" Content="Cancel" IsCancel="True" Click="OnCancel" />

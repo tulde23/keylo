@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <RootNamespace>Keylo.Core</RootNamespace>
@@ -6,6 +6,15 @@
     <TargetFramework>net10.0</TargetFramework>
     <SupportedOSPlatformVersion></SupportedOSPlatformVersion>
   </PropertyGroup>
+
+  <!-- AWS Secrets Manager (AwsSecretsManagerProvider). SSO, SSOOIDC and SecurityToken let the SDK use
+       SSO and assume-role profiles from ~/.aws; it loads them by name. -->
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.SecretsManager" Version="4.0.100.23" />
+    <PackageReference Include="AWSSDK.SSO" Version="4.0.100.24" />
+    <PackageReference Include="AWSSDK.SSOOIDC" Version="4.0.100.23" />
+    <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.101.8" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="Keylo.Core.Tests" />

@@ -506,11 +506,51 @@
                                                     <DataTemplate x:DataType="vm:ProviderSettingViewModel">
                                                         <StackPanel Margin="0,0,0,10">
                                                             <TextBlock Text="{Binding Description}" Classes="field" />
-                                                            <TextBox Text="{Binding Value}" Watermark="{Binding Key}" />
+                                                            <TextBox Text="{Binding Value}" Watermark="{Binding Key}" IsVisible="{Binding !HasOptions}" />
+                                                            <!-- Suggestions to pick from, or type any value. -->
+                                                            <ComboBox IsEditable="True" HorizontalAlignment="Stretch" ItemsSource="{Binding Options}"
+                                                                      Text="{Binding Value}" PlaceholderText="{Binding Key}" IsVisible="{Binding HasOptions}" />
                                                         </StackPanel>
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
+                                            <!-- Environments (AWS): name@dev, name@prod… -->
+                                            <StackPanel IsVisible="{Binding HasEnvironments}" Margin="0,8,0,0">
+                                                <DockPanel Margin="0,0,0,8">
+                                                    <Button DockPanel.Dock="Right" Classes="subtle" VerticalAlignment="Top" Command="{Binding AddEnvironmentCommand}">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <ic:SymbolIcon Symbol="Add" FontSize="16" />
+                                                            <TextBlock Text="Add environment" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <StackPanel>
+                                                        <TextBlock Text="Environments" FontWeight="SemiBold" />
+                                                        <TextBlock Classes="small secondary" TextWrapping="Wrap" Margin="0,2,12,0" Text="Link a secret per environment and use it as name@dev, name@prod… Each environment is an AWS profile and region on this computer. Always ask: every use needs your approval, whatever an access key covers." />
+                                                    </StackPanel>
+                                                </DockPanel>
+                                                <ItemsControl ItemsSource="{Binding Environments}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:EnvironmentViewModel">
+                                                            <Grid ColumnDefinitions="110,8,*,8,150,8,Auto,4,Auto" Margin="0,0,0,6">
+                                                                <TextBox Text="{Binding Name}" Watermark="name" />
+                                                                <ComboBox Grid.Column="2" IsEditable="True" HorizontalAlignment="Stretch" PlaceholderText="profile"
+                                                                          ItemsSource="{Binding $parent[ItemsControl].((vm:ProviderSettingsViewModel)DataContext).ProfileOptions}" Text="{Binding Profile}" />
+                                                                <ComboBox Grid.Column="4" IsEditable="True" HorizontalAlignment="Stretch" PlaceholderText="region"
+                                                                          ItemsSource="{Binding $parent[ItemsControl].((vm:ProviderSettingsViewModel)DataContext).RegionOptions}" Text="{Binding Region}" />
+                                                                <CheckBox Grid.Column="6" Content="Always ask" IsChecked="{Binding AlwaysAsk}" VerticalAlignment="Center" />
+                                                                <Button Grid.Column="8" Classes="subtle" ToolTip.Tip="Remove (on save)" VerticalAlignment="Center"
+                                                                        Command="{Binding $parent[ItemsControl].((vm:ProviderSettingsViewModel)DataContext).RemoveEnvironmentCommand}" CommandParameter="{Binding}">
+                                                                    <ic:SymbolIcon Symbol="Delete" FontSize="16" />
+                                                                </Button>
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,4,0,0" IsVisible="{Binding Environments.Count}">
+                                                    <TextBlock Text="Default (when no @env is given)" Classes="small secondary" VerticalAlignment="Center" />
+                                                    <ComboBox IsEditable="True" MinWidth="140" ItemsSource="{Binding Environments}" Text="{Binding DefaultEnvironment}" />
+                                                </StackPanel>
+                                            </StackPanel>
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>

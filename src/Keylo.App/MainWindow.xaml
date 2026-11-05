@@ -201,8 +201,8 @@
                         ToolTip="Import a folder; subfolders become categories" AutomationProperties.Name="Import folder">
                     <ui:SymbolIcon Symbol="FolderOpen24" FontSize="17" />
                 </Button>
-                <Button Style="{StaticResource Tile}" Tag="Link 1Password" Command="{Binding LinkFromVaultCommand}"
-                        ToolTip="Link to a 1Password item (read live, never copied)" AutomationProperties.Name="Link from 1Password">
+                <Button Style="{StaticResource Tile}" Tag="Link from a vault" Command="{Binding LinkFromVaultCommand}"
+                        ToolTip="Link to an item in 1Password or AWS Secrets Manager (read live, never copied)" AutomationProperties.Name="Link from a vault">
                     <ui:SymbolIcon Symbol="Link24" FontSize="17" />
                 </Button>
             </DockPanel>

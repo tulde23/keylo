@@ -34,6 +34,15 @@ public interface IVaultProvider
     IReadOnlyDictionary<string, string> SettingDescriptions { get; }
 
     /// <summary>
+    /// Whether the provider has named environments (dev, uat, prod…) in its settings, edited on the
+    /// settings page; see <see cref="VaultEnvironments"/>.
+    /// </summary>
+    bool HasEnvironments => false;
+
+    /// <summary>Suggested values for a setting (shown as a list that still accepts any text), or null for free text.</summary>
+    IReadOnlyList<string>? SettingOptions(string key) => null;
+
+    /// <summary>
     /// Whether the required settings are filled in (cheap, no I/O). Push is offered only when true;
     /// <see cref="GetStatusAsync"/> then checks the provider is actually reachable.
     /// </summary>

@@ -171,6 +171,8 @@ or from a terminal: `keylo keys create "Claude Code" --all --add-to-claude` (or 
 | `run_with_secrets` | Runs a command with secrets (or single fields, `name:field`) as environment variables; values in its output become `[keylo:name]`. |
 | `get_secret` | Returns every field, or one — into the AI conversation, so only when needed. |
 | `request_access` | Asks you to add secrets to the key permanently. |
+| `list_aws_secrets` | Secrets in AWS Secrets Manager for a profile and region (names, ARNs, descriptions, tags; never values), grouped by the first part of the name, with which are already linked in Keylo. |
+| `list_aws_profiles` | AWS profiles from `~/.aws` (name, region, how each signs in; never keys), every region, and whether the `aws` CLI is installed. |
 
 - **What a key can use without asking**: *Everything*, *Only these categories*, or *Nothing — ask
   me each time*. It only passes values to commands unless "Also let it read values" is on.
@@ -187,27 +189,101 @@ or from a terminal: `keylo keys create "Claude Code" --all --add-to-claude` (or 
 - Redaction catches accidental leaks, not deliberate ones (a command could encode a value first).
   Neither keys nor Hello stop malware already running as you.
 
-## Linked secrets (1Password and other vaults)
+## Linked secrets (1Password, AWS Secrets Manager and other vaults)
 
 A linked secret points at an item in another vault. Keylo stores only the reference (vault, item,
 account); the value is read from the vault each time it's used and never copied, so changes there
 apply at once. To Claude it's an ordinary secret: same search, `name:field` access, approvals,
 redaction and audit log.
 
-- **App:** Link from 1Password… in the sidebar: search, pick an item, keep all its fields or just one.
-- **CLI:** `keylo link --search github`, then `keylo link gh --item "GitHub" [--field password] [--category dev]`.
+- **App:** the Link tile in the top bar: choose the vault, search, pick an item, keep all its fields or just one.
+- **CLI:** `keylo link --search github`, then `keylo link gh --item "GitHub" [--field password] [--category dev]`
+  (`--provider aws` for AWS Secrets Manager).
 - 1Password is read through its CLI (`op`), signed in via the 1Password app (Settings → Developer →
   Integrate with 1Password CLI). Every signed-in account is searched; 1Password may ask you to unlock it.
+
+### AWS Secrets Manager
+
+Keylo uses the AWS SDK with your usual credentials: a profile from `~/.aws` (SSO and assumed roles
+included), environment variables, or the default profile. It keeps no AWS credentials itself.
+
+- **Link:** `keylo link --provider aws --search prod [--profile work] [--region eu-west-2]`, then
+  `keylo link prod-db --provider aws --item prod/db`. A JSON secret becomes one field per key, so an
+  RDS-managed secret gives `prod-db:password`, `prod-db:host` and so on; any other secret is one
+  `value` field. Each link remembers the profile and region it was made with. Values are read on
+  every use, so rotated secrets are always current, and CloudTrail logs each read.
+- **Push:** `keylo provider set aws region eu-west-2` (and optionally `profile`, `prefix`,
+  `kms_key_id`), then `keylo push aws NAME`. Secrets are stored as `keylo/NAME` (the prefix is
+  configurable): typed secrets as JSON of their fields, a secret with a username as
+  `{"username","password"}`, anything else as text. They're tagged `keylo:managed`, and pushing again
+  updates them. A secret Keylo didn't create is never overwritten.
+- **SSO session expired?** Run `aws sso login --profile NAME`; Keylo's error says so.
+
+#### Environments (dev / uat / prod)
+
+When the same secret lives in several accounts, define environments once per computer, each an AWS
+profile and region (Settings → Vault providers → Environments, or the CLI):
+
+```bash
+keylo provider env aws set dev  acme-dev  eu-west-2
+keylo provider env aws set uat  acme-uat  eu-west-2
+keylo provider env aws set prod acme-prod-readonly eu-west-2    # "prod" starts as always ask
+keylo provider env aws default dev
+```
+
+Then link the secret once, by name, per environment, and pick the environment when you use it:
+
+```bash
+keylo link orders-db --provider aws --item orders/db --environment dev [--env-name prod=orders/db-prod]
+keylo run --env DB=orders-db@uat:password -- ./migrate     # orders-db alone uses the default (dev)
+```
+
+- The link stores only the secret's name, so each computer maps `prod` to its own profile; a profile
+  rename doesn't break links. `--env-name` covers an environment where the secret has another name.
+- **Always ask** (on by default for prod): every use from that environment opens an approval window
+  (Windows Hello / Touch ID) whatever the access key covers, and can't be allowed permanently.
+  Changing environments asks for Windows Hello / Touch ID too.
+- In the app, the Link dialog lists environments first: pick one to link per environment.
+- Agents see each link's environments in `search_secrets` and use `name@env` the same way; the audit
+  log records the environment of every use.
+
+Least-privilege IAM policy (drop the second statement if you only link):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "KeyloLink",
+      "Effect": "Allow",
+      "Action": ["secretsmanager:ListSecrets", "secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "KeyloPush",
+      "Effect": "Allow",
+      "Action": ["secretsmanager:CreateSecret", "secretsmanager:PutSecretValue", "secretsmanager:TagResource"],
+      "Resource": "arn:aws:secretsmanager:*:*:secret:keylo/*"
+    }
+  ]
+}
+```
+
+Secrets encrypted with a customer-managed KMS key also need `kms:Decrypt` (to link) and
+`kms:GenerateDataKey` (to push) on that key.
+
+Secrets Manager charges per secret per month and per 10,000 API calls; a linked secret makes one
+call each time it's used.
 
 ## Vault providers
 
 Two plugin interfaces in `Keylo.Core.Providers`:
 
 - **`ILinkedVaultProvider`**: search a vault, describe an item's fields, and read their values —
-  for linked secrets. Bitwarden, KeePass, Azure Key Vault or AWS Secrets Manager would implement this.
+  for linked secrets. Bitwarden, KeePass or Azure Key Vault could implement this.
 - **`IVaultProvider`**: push Keylo secrets into another vault.
 
-1Password implements both:
+1Password and AWS Secrets Manager (above) implement both. For 1Password:
 
 - **Push**: `keylo provider set 1password vault Private`, then `keylo push 1password --category cloud`.
   Items are tagged `keylo`; pushing again updates them. Values go over stdin, never the command line.

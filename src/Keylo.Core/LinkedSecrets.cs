@@ -13,13 +13,29 @@ public static class LinkedSecrets
 {
     public const string TypeId = "link";
 
+    /// <summary>
+    /// <see cref="LinkTarget.Location"/> of a link made per environment: its item id is the secret's
+    /// name, and the environment it's used in (name@env, else the default) picks the account.
+    /// </summary>
+    public const string PerEnvironment = "@env";
+
+    /// <summary>Set in the settings handed to a provider for a per-environment link: the environment to read.</summary>
+    public const string EnvironmentSetting = "environment";
+
+    /// <summary>Set alongside <see cref="EnvironmentSetting"/> when the secret has another name in that environment.</summary>
+    public const string SecretIdSetting = "secret_id";
+
     private const string ProviderKey = "link_provider", ItemKey = "link_item", VaultKey = "link_vault", LocationKey = "link_location",
-        TitleKey = "link_title", WhereKey = "link_where", FieldsKey = "link_fields", OnlyFieldKey = "link_field";
+        TitleKey = "link_title", WhereKey = "link_where", FieldsKey = "link_fields", OnlyFieldKey = "link_field", EnvNamesKey = "link_env_names";
 
     /// <param name="Where">Where the item lives, for display ("Private · my.1password.com").</param>
     /// <param name="OnlyField">When set, the link exposes just this field of the item.</param>
-    public sealed record Link(LinkTarget Target, string Title, string? Where, IReadOnlyList<LinkedField> Fields, string? OnlyField = null)
+    /// <param name="EnvironmentNames">For a per-environment link, the secret's name in environments where it differs.</param>
+    public sealed record Link(LinkTarget Target, string Title, string? Where, IReadOnlyList<LinkedField> Fields, string? OnlyField = null,
+        IReadOnlyDictionary<string, string>? EnvironmentNames = null)
     {
+        public bool IsPerEnvironment => Target.Location == PerEnvironment;
+
         public IReadOnlyList<LinkedField> VisibleFields => OnlyField is null ? Fields : Fields.Where(f => f.Id == OnlyField).ToList();
 
         /// <summary>The field used when no field is named: the chosen one, else the first secret field.</summary>
@@ -56,7 +72,8 @@ public static class LinkedSecrets
             f.GetValueOrDefault(TitleKey) ?? info.Name,
             f.GetValueOrDefault(WhereKey),
             DecodeFields(f.GetValueOrDefault(FieldsKey)),
-            f.GetValueOrDefault(OnlyFieldKey));
+            f.GetValueOrDefault(OnlyFieldKey),
+            DecodeEnvironmentNames(f.GetValueOrDefault(EnvNamesKey)));
     }
 
     /// <summary>A draft that stores <paramref name="link"/> (no value: the stored value is an empty object).</summary>
@@ -73,6 +90,7 @@ public static class LinkedSecrets
         if (link.Target.Location is { Length: > 0 } location) fields[LocationKey] = location;
         if (link.Where is { Length: > 0 } where) fields[WhereKey] = Fit(where);
         if (link.OnlyField is { Length: > 0 } only) fields[OnlyFieldKey] = only;
+        if (link.EnvironmentNames is { Count: > 0 } names) fields[EnvNamesKey] = Fit(string.Join(";", names.Select(n => $"{n.Key}={n.Value}")));
 
         return new SecretDraft(name, "{}"u8.ToArray(), category, null, notes, icon, color, TypeId, fields);
     }
@@ -81,7 +99,7 @@ public static class LinkedSecrets
     public static SecretTypeDefinition AsType(Link link, string providerName) => new()
     {
         Id = TypeId,
-        Name = $"Linked · {providerName}",
+        Name = link.IsPerEnvironment ? $"Linked · {providerName} · per environment" : $"Linked · {providerName}",
         Icon = "Link24",
         IsBuiltIn = true,
         Fields = link.VisibleFields.Select(f => new FieldDefinition
@@ -92,13 +110,44 @@ public static class LinkedSecrets
         }).ToList(),
     };
 
-    /// <summary>The linked item's current values (only the chosen field, for a single-field link), read from its vault.</summary>
-    public static async Task<Dictionary<string, string>> ResolveAsync(SecretInfo info, ProviderRegistry registry, KeyloConfig config, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// The environment a use of <paramref name="info"/> reads from: <paramref name="requested"/>, else
+    /// the provider's default. Null for an ordinary link (naming an environment for one is an error).
+    /// </summary>
+    public static VaultEnvironment? EnvironmentFor(SecretInfo info, KeyloConfig config, string? requested)
+    {
+        if (Read(info) is not { IsPerEnvironment: true } link)
+            return requested is null ? null : throw new KeyloException($"'{info.Name}' isn't linked per environment, so '@{requested}' doesn't apply.");
+
+        var settings = config.Providers.GetValueOrDefault(link.Target.Provider) ?? new Dictionary<string, string>();
+        var all = VaultEnvironments.Read(settings);
+        var name = requested ?? VaultEnvironments.Default(settings)
+                   ?? throw new KeyloException($"'{info.Name}' is linked per environment and no default is set. Use {info.Name}@ENV with one of: {Names(all)}.");
+        return VaultEnvironments.Find(settings, name)
+               ?? throw new KeyloException($"There's no environment '{name}'. Environments: {Names(all)} (Settings → Vault providers).");
+    }
+
+    private static string Names(IReadOnlyList<VaultEnvironment> all) => all.Count == 0 ? "none yet" : string.Join(", ", all.Select(e => e.Name));
+
+    /// <summary>
+    /// The linked item's current values (only the chosen field, for a single-field link), read from its
+    /// vault; for a per-environment link, from <paramref name="environment"/> (else the default one).
+    /// </summary>
+    public static async Task<Dictionary<string, string>> ResolveAsync(SecretInfo info, ProviderRegistry registry, KeyloConfig config,
+        string? environment = null, CancellationToken cancellationToken = default)
     {
         var link = Read(info) ?? throw new KeyloException($"'{info.Name}' isn't a valid link.");
         var provider = registry.FindLinked(link.Target.Provider)
                        ?? throw new KeyloException($"'{info.Name}' is linked to '{link.Target.Provider}', which isn't installed.");
-        var settings = config.Providers.GetValueOrDefault(provider.Id) ?? new Dictionary<string, string>();
+        var settings = new Dictionary<string, string>(config.Providers.GetValueOrDefault(provider.Id) ?? new Dictionary<string, string>(),
+            StringComparer.OrdinalIgnoreCase);
+
+        // Per environment: tell the provider which environment, and the secret's name there if it differs.
+        if (EnvironmentFor(info, config, environment) is { } env)
+        {
+            settings[EnvironmentSetting] = env.Name;
+            if (link.EnvironmentNames?.GetValueOrDefault(env.Name) is { Length: > 0 } other) settings[SecretIdSetting] = other;
+        }
 
         var values = await provider.ResolveAsync(link.Target, settings, cancellationToken);
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -110,6 +159,15 @@ public static class LinkedSecrets
             foreach (var (id, value) in values)
                 if (!result.ContainsKey(id) && value.Length > 0) result[id] = value;
         return result;
+    }
+
+    private static Dictionary<string, string>? DecodeEnvironmentNames(string? text)
+    {
+        var names = (text ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => p.Split('=', 2))
+            .Where(p => p.Length == 2 && p[0].Length > 0 && p[1].Length > 0)
+            .ToDictionary(p => p[0], p => p[1], StringComparer.OrdinalIgnoreCase);
+        return names.Count > 0 ? names : null;
     }
 
     // Fields are stored as "id|label|1;id|label|0" (1 = secret), trimmed to fit a 256-byte attribute.

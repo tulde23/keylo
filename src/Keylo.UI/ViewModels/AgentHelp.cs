@@ -43,5 +43,7 @@ public static class AgentHelp
         new("run_with_secrets", "Run a command with secrets as environment variables; values are redacted from its output."),
         new("get_secret", "Return a value into the conversation. Only for keys allowed to read values."),
         new("request_access", "Ask you to add secrets to the agent's key."),
+        new("list_aws_profiles", "List AWS profiles (never their keys) and regions, and whether the aws CLI is installed."),
+        new("list_aws_secrets", "List the secrets in AWS Secrets Manager for a profile and region, by project; never values."),
     ];
 }

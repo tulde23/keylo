@@ -490,11 +490,63 @@
                                                     <DataTemplate DataType="{x:Type vm:ProviderSettingViewModel}">
                                                         <StackPanel Margin="0,0,0,10">
                                                             <TextBlock Text="{Binding Description}" Style="{StaticResource FieldLabel}" />
-                                                            <ui:TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="{Binding Key}" />
+                                                            <ui:TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="{Binding Key}"
+                                                                        Visibility="{Binding HasOptions, Converter={StaticResource HiddenWhen}}" />
+                                                            <!-- Suggestions to pick from, or type any value. -->
+                                                            <ComboBox IsEditable="True" ItemsSource="{Binding Options}"
+                                                                      Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Visibility="{Binding HasOptions, Converter={StaticResource VisibleWhen}}" />
                                                         </StackPanel>
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
+                                            <!-- Environments (AWS): name@dev, name@prod… -->
+                                            <StackPanel Visibility="{Binding HasEnvironments, Converter={StaticResource VisibleWhen}}" Margin="0,8,0,0">
+                                                <DockPanel Margin="0,0,0,8">
+                                                    <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Icon="{ui:SymbolIcon Add24}" Content="Add environment"
+                                                               VerticalAlignment="Top" Command="{Binding AddEnvironmentCommand}" />
+                                                    <StackPanel>
+                                                        <TextBlock Text="Environments" FontWeight="SemiBold" />
+                                                        <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,2,12,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="Link a secret per environment and use it as name@dev, name@prod… Each environment is an AWS profile and region on this computer. Always ask: every use needs your approval, whatever an access key covers." />
+                                                    </StackPanel>
+                                                </DockPanel>
+                                                <ItemsControl ItemsSource="{Binding Environments}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate DataType="{x:Type vm:EnvironmentViewModel}">
+                                                            <Grid Margin="0,0,0,6">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="110" />
+                                                                    <ColumnDefinition Width="8" />
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="8" />
+                                                                    <ColumnDefinition Width="150" />
+                                                                    <ColumnDefinition Width="8" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                    <ColumnDefinition Width="4" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="name" />
+                                                                <ComboBox Grid.Column="2" IsEditable="True" ToolTip="AWS profile"
+                                                                          ItemsSource="{Binding DataContext.ProfileOptions, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                          Text="{Binding Profile, UpdateSourceTrigger=PropertyChanged}" />
+                                                                <ComboBox Grid.Column="4" IsEditable="True" ToolTip="Region"
+                                                                          ItemsSource="{Binding DataContext.RegionOptions, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                          Text="{Binding Region, UpdateSourceTrigger=PropertyChanged}" />
+                                                                <CheckBox Grid.Column="6" Content="Always ask" IsChecked="{Binding AlwaysAsk}" VerticalAlignment="Center" />
+                                                                <ui:Button Grid.Column="8" Appearance="Transparent" Icon="{ui:SymbolIcon Delete24}" ToolTip="Remove (on save)" VerticalAlignment="Center"
+                                                                           Command="{Binding DataContext.RemoveEnvironmentCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                           CommandParameter="{Binding}" />
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                    <TextBlock Text="Default (when no @env is given)" FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0"
+                                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                    <ComboBox IsEditable="True" MinWidth="140" ItemsSource="{Binding Environments}" DisplayMemberPath="Name"
+                                                              Text="{Binding DefaultEnvironment, UpdateSourceTrigger=PropertyChanged}" />
+                                                </StackPanel>
+                                            </StackPanel>
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>

@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Keylo.Core;
@@ -33,10 +33,17 @@ internal static class Program
                                                 Types are guessed (SSH key, database URL, token…); --plain keeps them plain
         keylo run --env VAR=NAME [...] -- CMD [ARGS]
                                                 Run CMD with secrets as environment variables
-                                                (NAME:FIELD maps one field, e.g. prod-db:password or x:username)
-        keylo link NAME --item ITEM [--vault V] [--account A] [--field F] [--category C] [--provider 1password]
+                                                (NAME:FIELD maps one field, e.g. prod-db:password or x:username;
+                                                NAME@ENV picks an environment of a per-environment link, e.g. orders-db@uat)
+        keylo link NAME --item ITEM [--provider 1password|aws] [--vault V] [--account A] [--field F] [--category C]
                                                 Link to an item in another vault (read live, never copied)
-        keylo link --search QUERY [--account A]   Find items to link
+        keylo link --search QUERY [--provider P] [--account A]   Find items to link
+                                                (aws: --profile P --region R, else the provider settings)
+        keylo link NAME --provider aws --item SECRET --environment ENV [--env-name ENV=OTHER-NAME]...
+                                                Link per environment: NAME@dev, NAME@prod… read SECRET from
+                                                each environment's account (see keylo provider env)
+        keylo provider env aws [list | set ENV PROFILE REGION [--ask] | remove ENV | default ENV]
+                                                Environments (dev, uat, prod…) for per-environment links
         keylo push PROVIDER [NAME...] [--category C] [--all] [--yes]
                                                 Push secrets to another vault (e.g. 1password)
         keylo provider list | status ID | set ID KEY VALUE
@@ -54,7 +61,7 @@ internal static class Program
         keylo config [hello session|always|never | session-minutes N | clipboard-seconds N | audit-days N|forever]
         """;
 
-    private static readonly string[] Flags = ["clip", "yes", "overwrite", "delete-originals", "flat", "plain", "all", "json", "force", "dry-run", "password-stdin", "both", "allow-get", "add-to-claude", "help", "stdio"];
+    private static readonly string[] Flags = ["clip", "yes", "overwrite", "delete-originals", "flat", "plain", "all", "json", "force", "dry-run", "password-stdin", "both", "allow-get", "add-to-claude", "help", "stdio", "ask", "no-ask"];
 
     private static Keylo.Core.Platform.IKeyloPlatform Platform => Keylo.Core.Platform.KeyloPlatform.Current;
 
@@ -158,12 +165,16 @@ internal static class Program
             return Store.List();
         }
 
-        /// <summary>Allows a value operation via the access key (audited) or Windows Hello / Touch ID.</summary>
-        public async Task AuthorizeAsync(SecretOperation operation, IReadOnlyCollection<SecretInfo> secrets, string what)
+        /// <summary>
+        /// Allows a value operation via the access key (audited) or Windows Hello / Touch ID. With
+        /// <paramref name="alwaysAsk"/> (a use in an "always ask" environment such as prod) the key doesn't count.
+        /// </summary>
+        public async Task AuthorizeAsync(SecretOperation operation, IReadOnlyCollection<SecretInfo> secrets, string what,
+            bool alwaysAsk = false, IEnumerable<string>? logged = null)
         {
-            if (Key is { } key && key.Allows(operation, secrets))
+            if (!alwaysAsk && Key is { } key && key.Allows(operation, secrets))
             {
-                AuditLog.Write(operation.ToString().ToLowerInvariant(), secrets.Select(s => s.Name), key, "access key");
+                AuditLog.Write(operation.ToString().ToLowerInvariant(), logged ?? secrets.Select(s => s.Name), key, "access key");
                 return;
             }
 
@@ -279,15 +290,19 @@ internal static class Program
         if (both && (clip || outFile is not null || field is not null))
             throw new UsageException("--both prints to the terminal; it can't be combined with --clip, --out or --field.");
 
-        var info = c.Store.Find(name) ?? throw new SecretNotFoundException(name);
+        var reference = SecretReference.Parse(name, n => c.Store.Exists(n)) ?? throw new SecretNotFoundException(name);
+        var info = c.Store.Find(reference.Name)!;
+        field ??= reference.Field?.ToLowerInvariant();
+        var env = LinkedSecrets.EnvironmentFor(info, c.Config, reference.Environment);
         if (LinkedSecrets.IsLinked(info))
         {
-            await c.AuthorizeAsync(SecretOperation.Get, [info], $"read '{name}'");
+            var label = env is null ? info.Name : $"{info.Name}@{env.Name}";
+            await c.AuthorizeAsync(SecretOperation.Get, [info], $"read '{label}'", env?.AlwaysAsk == true, [label]);
             var link = LinkedSecrets.Read(info)!;
-            var values = await LinkedSecrets.ResolveAsync(info, c.Registry, c.Config);
+            var values = await LinkedSecrets.ResolveAsync(info, c.Registry, c.Config, env?.Name);
             if (both)
             {
-                Console.WriteLine($"type: link ({link.Target.Provider}: {link.Title})");
+                Console.WriteLine($"type: link ({link.Target.Provider}: {link.Title}{(env is null ? "" : $", environment {env.Name}")})");
                 foreach (var (id, text) in values) Console.WriteLine($"{id}: {text}");
                 return 0;
             }
@@ -317,7 +332,7 @@ internal static class Program
             throw new UsageException($"'{name}' is a plain secret; --field must be value or username.");
 
         await c.AuthorizeAsync(SecretOperation.Get, [info], $"read '{name}'");
-        var secret = c.Store.Get(name);
+        var secret = c.Store.Get(info.Name);
 
         if (both)
         {
@@ -556,38 +571,38 @@ internal static class Program
         {
             var eq = m.IndexOf('=');
             if (eq <= 0 || eq == m.Length - 1) throw new UsageException($"--env expects VAR=NAME, got '{m}'.");
-            var (info, field) = ResolveEnvSource(c, m[(eq + 1)..]);
-            return (Variable: m[..eq], Info: info, Field: field);
+            var (info, field, env) = ResolveEnvSource(c, m[(eq + 1)..]);
+            return (Variable: m[..eq], Info: info, Field: field, Env: env);
         }).ToList();
 
         var infos = pairs.Select(p => p.Info).DistinctBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
-        await c.AuthorizeAsync(SecretOperation.Run, infos, $"run with {string.Join(", ", infos.Select(s => s.Name))}");
+        var labels = pairs.Select(p => p.Env is null ? p.Info.Name : $"{p.Info.Name}@{p.Env.Name}").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        await c.AuthorizeAsync(SecretOperation.Run, infos, $"run with {string.Join(", ", labels)}", pairs.Any(p => p.Env?.AlwaysAsk == true), labels);
 
         var environment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (variable, info, field) in pairs)
-            environment[variable] = FieldValue(c, info, field);
+        foreach (var (variable, info, field, env) in pairs)
+            environment[variable] = FieldValue(c, info, field, env?.Name);
 
         return CommandRunner.Run(args.Rest, environment);
     }
 
     /// <summary>
     /// "NAME" maps the main value; "NAME:FIELD" one field ("username" works for any secret, other
-    /// field ids for typed ones). Names may contain ':', so an exact secret name wins.
+    /// field ids for typed ones); "NAME@ENV[:FIELD]" an environment of a per-environment link. Names
+    /// may contain ':' and '@', so an exact secret name wins.
     /// </summary>
-    private static (SecretInfo Info, string? Field) ResolveEnvSource(Context c, string source)
+    private static (SecretInfo Info, string? Field, VaultEnvironment? Env) ResolveEnvSource(Context c, string source)
     {
-        if (c.Store.Find(source) is { } exact) return (exact, null);
-        var colon = source.LastIndexOf(':');
-        if (colon > 0 && colon < source.Length - 1 && c.Store.Find(source[..colon]) is { } info)
-            return (info, source[(colon + 1)..]);
-        throw new SecretNotFoundException(source);
+        var reference = SecretReference.Parse(source, n => c.Store.Exists(n)) ?? throw new SecretNotFoundException(source);
+        var info = c.Store.Find(reference.Name)!;
+        return (info, reference.Field, LinkedSecrets.EnvironmentFor(info, c.Config, reference.Environment));
     }
 
-    /// <summary>A secret's main value, or one field, as text.</summary>
-    private static string FieldValue(Context c, SecretInfo info, string? field)
+    /// <summary>A secret's main value, or one field, as text (a per-environment link's from <paramref name="environment"/>).</summary>
+    private static string FieldValue(Context c, SecretInfo info, string? field, string? environment = null)
     {
         if (LinkedSecrets.Read(info) is { } link)
-            return PickLinkedField(info, link, LinkedSecrets.ResolveAsync(info, c.Registry, c.Config).GetAwaiter().GetResult(), field);
+            return PickLinkedField(info, link, LinkedSecrets.ResolveAsync(info, c.Registry, c.Config, environment).GetAwaiter().GetResult(), field);
 
         if (field?.ToLowerInvariant() is "username" or "key")
             return info.Username ?? throw new KeyloException($"'{info.Name}' has no username.");
@@ -623,7 +638,7 @@ internal static class Program
 
     /// <summary>
     /// keylo link NAME --item ITEM: a secret that points at an item in another vault (1Password by
-    /// default); values are read from there on every use. keylo link --search QUERY finds items.
+    /// default, or --provider aws); values are read from there on every use. keylo link --search QUERY finds items.
     /// </summary>
     private static async Task<int> LinkAsync(Context c, Args args)
     {
@@ -631,6 +646,10 @@ internal static class Program
         var search = args.Option("search");
         var item = args.Option("item");
         var account = args.Option("account");
+        var profile = args.Option("profile");
+        var region = args.Option("region");
+        var environmentName = args.Option("environment");
+        var environmentNames = args.Options("env-name");
         var vaultFilter = args.Option("vault");
         var only = args.Option("field");
         var category = args.Option("category");
@@ -641,6 +660,15 @@ internal static class Program
                        ?? throw new UsageException($"No linked vault '{providerId}'. Available: {string.Join(", ", c.Registry.Linked.Select(p => p.Id))}.");
         var settings = new Dictionary<string, string>(c.Config.Providers.GetValueOrDefault(provider.Id) ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
         if (account is not null) settings["account"] = account;
+        if (profile is not null) settings["profile"] = profile;
+        if (region is not null) settings["region"] = region;
+        if (environmentName is not null)
+        {
+            // Search that environment's account; the link itself will name only the secret.
+            if (VaultEnvironments.Find(settings, environmentName) is null)
+                throw new UsageException($"No environment '{environmentName}'. Add one: keylo provider env {provider.Id} set {environmentName} PROFILE REGION");
+            settings[LinkedSecrets.EnvironmentSetting] = environmentName;
+        }
 
         if (search is not null)
         {
@@ -650,7 +678,7 @@ internal static class Program
                 Terminal.Info("Nothing matches.");
                 return 1;
             }
-            PrintTable(["TITLE", "VAULT", "ACCOUNT", "CATEGORY", "ID"], found.Select(i => new[] { i.Title, i.VaultName ?? "", i.Location ?? "", i.Category ?? "", i.ItemId }));
+            PrintTable(["TITLE", "VAULT", "WHERE", "CATEGORY", "ID"], found.Select(i => new[] { i.Title, i.VaultName ?? "", i.Location ?? "", i.Category ?? "", i.ItemId }));
             return 0;
         }
 
@@ -671,17 +699,31 @@ internal static class Program
             _ => throw new KeyloException($"'{item}' matches {candidates.Count} items ({string.Join("; ", candidates.Select(i => $"{i.VaultName} · {i.Location} · {i.ItemId}"))}). Use --vault, --account or the id."),
         };
 
-        var target = new LinkTarget(provider.Id, chosen.ItemId, chosen.VaultId, chosen.Location);
+        var target = environmentName is null
+            ? new LinkTarget(provider.Id, chosen.ItemId, chosen.VaultId, chosen.Location)
+            : new LinkTarget(provider.Id, chosen.Title, null, LinkedSecrets.PerEnvironment);
         var fields = await provider.DescribeAsync(target, settings);
         if (only is not null && fields.All(f => !f.Id.Equals(only, StringComparison.OrdinalIgnoreCase)))
             throw new UsageException($"{chosen.Title} has no field '{only}'. Fields: {string.Join(", ", fields.Select(f => f.Id))}.");
 
-        var where = string.Join(" · ", new[] { chosen.VaultName, chosen.Location }.Where(x => !string.IsNullOrEmpty(x)));
-        var link = new LinkedSecrets.Link(target, chosen.Title, where, fields, only?.ToLowerInvariant());
-        category ??= LinkedSecrets.DefaultCategory(provider.DisplayName, chosen,
-            severalLocations: (await provider.SearchAsync(null, settings)).Select(i => i.Location).Distinct().Count() > 1);
+        var overrides = environmentNames.Select(n => n.Split('=', 2)).ToList();
+        if (overrides.Any(o => o.Length != 2 || o[0].Length == 0 || o[1].Length == 0))
+            throw new UsageException("--env-name expects ENV=SECRET-NAME, e.g. --env-name prod=orders/db-prod");
+        if (overrides.Count > 0 && environmentName is null) throw new UsageException("--env-name needs --environment (a per-environment link).");
+
+        var where = environmentName is null
+            ? string.Join(" · ", new[] { chosen.VaultName, chosen.Location }.Where(x => !string.IsNullOrEmpty(x)))
+            : "per environment";
+        var link = new LinkedSecrets.Link(target, chosen.Title, where, fields, only?.ToLowerInvariant(),
+            overrides.Count > 0 ? overrides.ToDictionary(o => o[0], o => o[1], StringComparer.OrdinalIgnoreCase) : null);
+        category ??= environmentName is not null
+            ? provider.DisplayName
+            : LinkedSecrets.DefaultCategory(provider.DisplayName, chosen,
+                severalLocations: (await provider.SearchAsync(null, settings)).Select(i => i.Location).Distinct().Count() > 1);
         c.Store.Save(LinkedSecrets.Draft(name, link, category == "" ? null : category, notes, icon: null, color: null));
         Terminal.Info($"Linked '{name}' to {chosen.Title} in {provider.DisplayName} ({where}), category '{category}'. Fields: {string.Join(", ", link.VisibleFields.Select(f => f.Id))}.");
+        if (environmentName is not null)
+            Terminal.Info($"Use it as {name}@ENV ({string.Join(", ", VaultEnvironments.Read(settings).Select(e => e.Name))}); plain '{name}' uses the default environment.");
         return 0;
     }
 
@@ -739,9 +781,83 @@ internal static class Program
         return failures > 0 ? 1 : 0;
     }
 
+    /// <summary>
+    /// keylo provider env aws [list | set ENV PROFILE REGION [--ask|--no-ask] | remove ENV | default ENV]:
+    /// the environments per-environment links read from. Changes ask for Windows Hello / Touch ID, since
+    /// "always ask" decides what agents can use without approval.
+    /// </summary>
+    private static async Task<int> EnvironmentsAsync(Context c, Args args, IVaultProvider provider, bool ask, bool noAsk)
+    {
+        if (!provider.HasEnvironments) throw new UsageException($"{provider.DisplayName} has no environments.");
+        if (!c.Config.Providers.TryGetValue(provider.Id, out var settings))
+            c.Config.Providers[provider.Id] = settings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var environments = VaultEnvironments.Read(settings).ToList();
+        var defaultName = VaultEnvironments.Default(settings);
+
+        switch (args.OptionalPositional(2)?.ToLowerInvariant() ?? "list")
+        {
+            case "list":
+                if (environments.Count == 0)
+                {
+                    Terminal.Info($"No environments yet. Add one: keylo provider env {provider.Id} set dev PROFILE REGION");
+                    return 0;
+                }
+                PrintTable(["ENVIRONMENT", "PROFILE", "REGION", "ALWAYS ASK", "DEFAULT"], environments.Select(e => new[]
+                {
+                    e.Name, e.Profile ?? "(default credentials)", e.Region ?? "(profile's)", e.AlwaysAsk ? "yes" : "",
+                    e.Name.Equals(defaultName, StringComparison.OrdinalIgnoreCase) ? "✓" : "",
+                }));
+                return 0;
+
+            case "set":
+            {
+                var name = args.Positional(3, "environment name");
+                var existing = environments.FirstOrDefault(e => e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                // Production-like names start as "always ask"; --ask / --no-ask decide explicitly.
+                var alwaysAsk = ask || (!noAsk && (existing?.AlwaysAsk ?? VaultEnvironments.LooksLikeProduction(name)));
+                var updated = new VaultEnvironment(name, args.OptionalPositional(4), args.OptionalPositional(5), alwaysAsk);
+                await c.ValueAsync($"change {provider.DisplayName} environments");
+                environments.RemoveAll(e => e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                environments.Add(updated);
+                VaultEnvironments.Write(settings, environments, settings.GetValueOrDefault(VaultEnvironments.DefaultKey));
+                c.Config.Save();
+                Terminal.Info($"{name}: profile {updated.Profile ?? "(default credentials)"}, region {updated.Region ?? "(profile's)"}{(alwaysAsk ? ", always asks" : "")}.");
+                return 0;
+            }
+
+            case "remove":
+            {
+                var name = args.Positional(3, "environment name");
+                if (environments.RemoveAll(e => e.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) == 0) throw new KeyloException($"No environment '{name}'.");
+                await c.ValueAsync($"change {provider.DisplayName} environments");
+                var keepDefault = settings.GetValueOrDefault(VaultEnvironments.DefaultKey) is { } d && !d.Equals(name, StringComparison.OrdinalIgnoreCase) ? d : null;
+                VaultEnvironments.Write(settings, environments, keepDefault);
+                c.Config.Save();
+                Terminal.Info($"Removed {name}.");
+                return 0;
+            }
+
+            case "default":
+            {
+                var name = args.Positional(3, "environment name");
+                if (environments.All(e => !e.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) throw new KeyloException($"No environment '{name}'.");
+                await c.ValueAsync($"change {provider.DisplayName} environments");
+                VaultEnvironments.Write(settings, environments, name);
+                c.Config.Save();
+                Terminal.Info($"Default environment: {name}.");
+                return 0;
+            }
+
+            default:
+                throw new UsageException($"Usage: keylo provider env {provider.Id} [list | set ENV PROFILE REGION [--ask|--no-ask] | remove ENV | default ENV]");
+        }
+    }
+
     private static async Task<int> ProviderAsync(Context c, Args args)
     {
         var action = args.OptionalPositional(0)?.ToLowerInvariant() ?? "list";
+        var ask = args.Flag("ask");
+        var noAsk = args.Flag("no-ask");
         args.ThrowOnUnknown();
         var registry = new ProviderRegistry();
 
@@ -781,8 +897,11 @@ internal static class Program
                 return 0;
             }
 
+            case "env":
+                return await EnvironmentsAsync(c, args, registry.Find(args.Positional(1, "provider id")) ?? throw new UsageException("Unknown provider."), ask, noAsk);
+
             default:
-                throw new UsageException("Usage: keylo provider list | status ID | set ID KEY VALUE");
+                throw new UsageException("Usage: keylo provider list | status ID | set ID KEY VALUE | env ID [list | set ENV PROFILE REGION [--ask] | remove ENV | default ENV]");
         }
     }
 

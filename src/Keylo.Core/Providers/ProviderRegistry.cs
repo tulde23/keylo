@@ -19,6 +19,7 @@ public sealed class ProviderRegistry
     public ProviderRegistry(string? dataDirectory = null)
     {
         Add(new OnePasswordProvider());
+        Add(new AwsSecretsManagerProvider());
 
         var errors = new List<ProviderLoadError>();
         var pluginDirectory = Path.Combine(dataDirectory ?? KeyloPaths.DefaultDataDirectory, "plugins");

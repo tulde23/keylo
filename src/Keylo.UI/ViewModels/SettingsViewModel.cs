@@ -112,11 +112,33 @@ public sealed partial class PickItem(string name) : ObservableObject
     private void Remove() => IsSelected = false;
 }
 
-public sealed partial class ProviderSettingViewModel(string key, string description, string value) : ObservableObject
+public sealed partial class ProviderSettingViewModel(string key, string description, string value, IReadOnlyList<string>? options = null) : ObservableObject
 {
     public string Key { get; } = key;
     public string Description { get; } = description;
+
+    /// <summary>Suggestions (e.g. AWS profiles), shown as an editable list; null for a plain text box.</summary>
+    public IReadOnlyList<string>? Options { get; } = options;
+    public bool HasOptions => Options is not null;
+
     [ObservableProperty] private string _value = value;
+}
+
+/// <summary>One environment of a provider (dev, uat, prod…): the profile and region it reads with here.</summary>
+public sealed partial class EnvironmentViewModel(string name, string profile, string region, bool alwaysAsk) : ObservableObject
+{
+    [ObservableProperty] private string _name = name;
+    [ObservableProperty] private string _profile = profile;
+    [ObservableProperty] private string _region = region;
+
+    /// <summary>Every use from this environment asks the user, whatever an access key covers.</summary>
+    [ObservableProperty] private bool _alwaysAsk = alwaysAsk;
+
+    public VaultEnvironment ToEnvironment() => new(Name.Trim(), Blank(Profile), Blank(Region), AlwaysAsk);
+
+    public override string ToString() => Name;
+
+    private static string? Blank(string text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
 }
 
 public sealed partial class ProviderSettingsViewModel : ObservableObject
@@ -126,20 +148,72 @@ public sealed partial class ProviderSettingsViewModel : ObservableObject
     [ObservableProperty] private string _status = "Not checked";
     [ObservableProperty] private bool _isReady;
 
+    /// <summary>The environment used when a per-environment link is used without "@env".</summary>
+    [ObservableProperty] private string? _defaultEnvironment;
+
     public ProviderSettingsViewModel(IVaultProvider provider, IReadOnlyDictionary<string, string> settings)
     {
         _provider = provider;
         Settings = new ObservableCollection<ProviderSettingViewModel>(provider.SettingDescriptions.Select(d =>
-            new ProviderSettingViewModel(d.Key, d.Value, settings.GetValueOrDefault(d.Key) ?? "")));
+            new ProviderSettingViewModel(d.Key, d.Value, settings.GetValueOrDefault(d.Key) ?? "", provider.SettingOptions(d.Key))));
+        if (provider.HasEnvironments)
+        {
+            foreach (var e in VaultEnvironments.Read(settings))
+                Environments.Add(new EnvironmentViewModel(e.Name, e.Profile ?? "", e.Region ?? "", e.AlwaysAsk));
+            DefaultEnvironment = settings.GetValueOrDefault(VaultEnvironments.DefaultKey);
+            ProfileOptions = provider.SettingOptions("profile") ?? [];
+            RegionOptions = provider.SettingOptions("region") ?? [];
+        }
     }
 
     public string Id => _provider.Id;
     public string DisplayName => _provider.DisplayName;
     public ObservableCollection<ProviderSettingViewModel> Settings { get; }
 
-    public Dictionary<string, string> ToSettings() =>
-        Settings.Where(s => !string.IsNullOrWhiteSpace(s.Value))
+    public bool HasEnvironments => _provider.HasEnvironments;
+    public ObservableCollection<EnvironmentViewModel> Environments { get; } = [];
+    public IReadOnlyList<string> ProfileOptions { get; } = [];
+    public IReadOnlyList<string> RegionOptions { get; } = [];
+
+    /// <summary>Adds dev, uat, prod in turn, then env-N; production-like names start as "always ask".</summary>
+    [RelayCommand]
+    private void AddEnvironment()
+    {
+        var name = new[] { "dev", "uat", "prod" }.FirstOrDefault(n => Environments.All(e => !e.Name.Equals(n, StringComparison.OrdinalIgnoreCase)))
+                   ?? Enumerable.Range(1, 99).Select(n => $"env-{n}").First(n => Environments.All(e => e.Name != n));
+        Environments.Add(new EnvironmentViewModel(name, "", "", VaultEnvironments.LooksLikeProduction(name)));
+        DefaultEnvironment ??= name;
+    }
+
+    [RelayCommand]
+    private void RemoveEnvironment(EnvironmentViewModel environment)
+    {
+        Environments.Remove(environment);
+        if (environment.Name == DefaultEnvironment) DefaultEnvironment = Environments.FirstOrDefault()?.Name;
+    }
+
+    /// <param name="validate">False for dirty tracking, which must not throw while a row is half-edited.</param>
+    public Dictionary<string, string> ToSettings(bool validate = true)
+    {
+        var settings = Settings.Where(s => !string.IsNullOrWhiteSpace(s.Value))
             .ToDictionary(s => s.Key, s => s.Value.Trim(), StringComparer.OrdinalIgnoreCase);
+        if (HasEnvironments)
+        {
+            var environments = Environments.Where(e => !string.IsNullOrWhiteSpace(e.Name)).Select(e => e.ToEnvironment()).ToList();
+            var duplicate = environments.GroupBy(e => e.Name, StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => g.Count() > 1);
+            if (duplicate is not null && validate) throw new KeyloException($"{DisplayName} has two environments named '{duplicate.Key}'.");
+            var defaultName = environments.Any(e => e.Name.Equals(DefaultEnvironment, StringComparison.OrdinalIgnoreCase)) ? DefaultEnvironment : null;
+            try
+            {
+                VaultEnvironments.Write(settings, environments, defaultName);
+            }
+            catch (KeyloException) when (!validate)
+            {
+                // A name being typed ("bad name"); Save reports it.
+            }
+        }
+        return settings;
+    }
 
     [RelayCommand]
     private async Task Test()
@@ -352,7 +426,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             k.AllowGet,
             k.Expires,
         }),
-        providers = Providers.Select(p => p.ToSettings()),
+        providers = Providers.Select(p => p.ToSettings(validate: false)),
     });
 
     private void UpdateDirty()
@@ -367,7 +441,12 @@ public sealed partial class SettingsViewModel : ObservableObject
         _watcher = new ChangeWatcher(UpdateDirty);
         _watcher.Watch(AccessKeys);
         foreach (var key in AccessKeys) WatchKey(key);
-        foreach (var provider in Providers) _watcher.Watch(provider.Settings);
+        foreach (var provider in Providers)
+        {
+            _watcher.Watch(provider.Settings);
+            _watcher.Watch(provider.Environments);
+            provider.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ProviderSettingsViewModel.DefaultEnvironment)) UpdateDirty(); };
+        }
     }
 
     private void WatchKey(AccessKeyViewModel key)
@@ -484,6 +563,17 @@ public sealed partial class SettingsViewModel : ObservableObject
             return;
         }
 
+        Dictionary<string, Dictionary<string, string>> providers;
+        try
+        {
+            providers = Providers.ToDictionary(p => p.Id, p => p.ToSettings(), StringComparer.OrdinalIgnoreCase);
+        }
+        catch (KeyloException ex)
+        {
+            _notify.Error(ex.Message); // e.g. two environments with one name
+            return;
+        }
+
         var keys = AccessKeys.Select(k => k.ToModel()).ToList();
 
         var updated = new KeyloConfig
@@ -493,7 +583,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             ClipboardSeconds = (int)ClipboardSeconds,
             AuditRetentionDays = AuditRetention.Days,
             AccessKeys = keys.Select(k => k.Key).ToList(),
-            Providers = Providers.ToDictionary(p => p.Id, p => p.ToSettings(), StringComparer.OrdinalIgnoreCase),
+            Providers = providers,
         };
 
         IsBusy = true;

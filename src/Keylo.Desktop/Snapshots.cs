@@ -8,7 +8,7 @@ using Keylo.App.ViewModels;
 namespace Keylo.Desktop;
 
 /// <summary>
-/// Debug builds only: KEYLO_SNAPSHOTS="home=a.png;select:NAME=b.png;settings=c.png;scroll:1200=d.png" drives the window
+/// Debug builds only: KEYLO_SNAPSHOTS="home=a.png;select:NAME=b.png;settings=c.png;tab:4=d.png;scroll:1200=e.png" drives the window
 /// through those states, renders each to a PNG, then quits. For checking the UI where no screen
 /// capture is available (e.g. over SSH on a Mac). Use it with a throwaway KEYLO_HOME / KEYLO_PREFIX.
 /// </summary>
@@ -54,8 +54,18 @@ internal static class Snapshots
             case "new":
                 vm.NewSecretCommand.Execute(null);
                 break;
-            case "settings":
+            case "settings": // settings, or settings:TAB to open on a tab
                 vm.OpenSettingsCommand.Execute(null);
+                if (arg.Length > 0)
+                {
+                    await Task.Delay(300);
+                    if (window.GetVisualDescendants().OfType<TabControl>().FirstOrDefault() is { } settingsTabs)
+                        settingsTabs.SelectedIndex = int.Parse(arg, System.Globalization.CultureInfo.InvariantCulture);
+                }
+                break;
+            case "tab": // tab:INDEX, a settings tab (0 General, 1 Themes, … 4 Vault providers)
+                if (window.GetVisualDescendants().OfType<TabControl>().FirstOrDefault() is { } tabs)
+                    tabs.SelectedIndex = int.Parse(arg, System.Globalization.CultureInfo.InvariantCulture);
                 break;
             case "scroll": // scroll:PIXELS, the open settings page
                 if (window.GetVisualDescendants().OfType<Views.SettingsView>().SelectMany(v => v.GetVisualDescendants().OfType<ScrollViewer>()).FirstOrDefault() is { } viewer)

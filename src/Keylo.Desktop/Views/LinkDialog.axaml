@@ -22,8 +22,14 @@
                     </DataTemplate>
                 </ComboBox.ItemTemplate>
             </ComboBox>
-            <TextBox Name="SearchBox" Grid.Column="1" Watermark="Search titles, vaults, categories…" KeyDown="OnSearchKeyDown" Classes="clearButton" />
+            <TextBox Name="SearchBox" Grid.Column="1" Watermark="Search names, vaults, tags…" KeyDown="OnSearchKeyDown" Classes="clearButton" />
             <Button Name="SearchButton" Grid.Column="2" Content="Search" Margin="8,0,0,0" Click="OnSearch" />
+        </Grid>
+
+        <!-- AWS Secrets Manager: which profile and region to search -->
+        <Grid Name="AwsPanel" ColumnDefinitions="*,8,180" Margin="0,0,0,8" IsVisible="False">
+            <ComboBox Name="ProfileBox" HorizontalAlignment="Stretch" PlaceholderText="Profile" SelectionChanged="OnProfileChanged" />
+            <ComboBox Name="RegionBox" Grid.Column="2" HorizontalAlignment="Stretch" PlaceholderText="Region" SelectionChanged="OnRegionChanged" />
         </Grid>
 
         <Border Classes="surface" Padding="4" Margin="0,0,0,8">
@@ -40,7 +46,7 @@
                 </ListBox>
                 <StackPanel Name="Busy" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="False">
                     <ProgressBar IsIndeterminate="True" Width="120" />
-                    <TextBlock Text="Waiting for 1Password… approve it if it asks." Classes="small secondary" Margin="0,8,0,0" />
+                    <TextBlock Name="BusyText" Classes="small secondary" Margin="0,8,0,0" />
                 </StackPanel>
             </Panel>
         </Border>
@@ -55,7 +61,7 @@
                 <StackPanel Grid.Column="2">
                     <TextBlock Text="Category" Classes="field" />
                     <ComboBox Name="CategoryBox" IsEditable="True" HorizontalAlignment="Stretch" />
-                    <TextBlock Name="CategoryHint" Text="Leave blank to use each item's vault (1Password · Vault)." FontSize="11" Margin="0,4,0,0"
+                    <TextBlock Name="CategoryHint" Text="Leave blank to use each item's vault, e.g. 1Password · Private." FontSize="11" Margin="0,4,0,0"
                                IsVisible="False" Foreground="{DynamicResource TextTertiary}" />
                 </StackPanel>
             </Grid>
