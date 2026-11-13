@@ -95,9 +95,12 @@ else
   [[ -n $identity ]] || { echo "error: --release needs a Developer ID Application certificate" >&2; exit 1; }
   entitlements=src/Keylo.Desktop/Keylo.entitlements
   sign() {
-    codesign --force --timestamp --options runtime --sign "$identity" "$@" >/dev/null 2>&1 || {
+    local out
+    out=$(codesign --force --timestamp --options runtime --sign "$identity" "$@" 2>&1) || {
+      echo "$out" >&2
       echo "error: couldn't sign ${@[-1]} with $identity" >&2
-      echo "       (over SSH, run 'security unlock-keychain' first; codesign can't prompt there)" >&2
+      [[ $out == *errSecInternalComponent* && -n ${SSH_CONNECTION:-} ]] &&
+        echo "       over SSH the keychain is locked: run 'security unlock-keychain' in this session first" >&2
       exit 1
     }
   }
