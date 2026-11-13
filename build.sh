@@ -66,8 +66,16 @@ cat > "$app/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
-# Ad-hoc signature: a stable identity for this build (the keychain's "Always Allow" is per signature).
-codesign --force --deep --sign - "$app" >/dev/null 2>&1 || echo "warning: codesign failed" >&2
+# Sign with a certificate when there is one (KEYLO_SIGN_IDENTITY, else the first "Apple Development"
+# identity): the keychain then trusts every build, not just this one. An ad-hoc signature is tied to
+# this exact build, so each rebuild asks again for every keychain item.
+identity=${KEYLO_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Apple Development: .*\)"/\1/p' | head -1)}
+if [[ -n $identity ]] && codesign --force --deep --sign "$identity" "$app" >/dev/null 2>&1; then
+  echo "Signed with $identity"
+else
+  [[ -n $identity ]] && echo "warning: couldn't sign with $identity; signing ad hoc" >&2
+  codesign --force --deep --sign - "$app" >/dev/null 2>&1 || echo "warning: codesign failed" >&2
+fi
 
 echo "Built Keylo $version ($commit, $config) for macOS ($rid): $app"
 [[ " $* " == *" --install "* ]] && ./install.sh
