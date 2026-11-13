@@ -88,7 +88,9 @@ if ! $release; then
   fi
 else
   # Distribution: a Developer ID certificate, the hardened runtime and a secure timestamp, each file
-  # in Contents/MacOS signed before the bundle (not --deep). The .NET host needs the JIT entitlement.
+  # in Contents/MacOS signed before the bundle (not --deep). The .NET host needs the JIT entitlement;
+  # library validation stays on, since every dylib is signed with the same Developer ID. (No XML
+  # comments in the entitlements file: the kernel's parser rejects them.)
   identity=${KEYLO_SIGN_IDENTITY:-}
   [[ $identity == "Developer ID Application: "* ]] ||
     identity=$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)
