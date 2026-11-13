@@ -106,8 +106,10 @@ else
       exit 1
     }
   }
+  # KeyloApp is the bundle's main executable: signing the bundle signs it (with the entitlements),
+  # and only once everything else in Contents/MacOS is signed.
   for f in "$bin"/*(.); do
-    [[ ${f:t} == KeyloApp ]] && sign --entitlements "$entitlements" "$f" || sign "$f"
+    [[ ${f:t} == KeyloApp ]] || sign "$f"
   done
   sign --entitlements "$entitlements" "$app"
   codesign --verify --strict "$app"
