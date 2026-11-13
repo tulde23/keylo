@@ -28,9 +28,15 @@ This builds `dist/Keylo.app` (self-contained: no .NET install needed to run it),
 `~/Applications`, and links `~/.local/bin/keylo` to the command inside it. Run `keylo` with no
 arguments to open the app. `./install.sh --uninstall` removes the program but leaves your secrets.
 
-- `keylo` is the app's own executable in command-line mode, so the keychain sees one app. It's
-  ad-hoc signed: macOS asks once per secret to let Keylo use the keychain (choose **Always Allow**),
-  and may ask again after a rebuild.
+- `keylo` is the app's own executable in command-line mode, so the keychain sees one app. macOS asks
+  once per secret to let Keylo use the keychain (choose **Always Allow**). `build.sh` signs with
+  `KEYLO_SIGN_IDENTITY`, or your "Apple Development" certificate, so that holds across rebuilds;
+  with no certificate it signs ad hoc, and macOS asks again after every rebuild.
+- `./build.sh --release` signs with your Developer ID certificate (hardened runtime), notarizes, and
+  writes `dist/keylo-<version>-macos-<arch>.zip`, which opens on other Macs without warnings. Store
+  notarization credentials once with
+  `xcrun notarytool store-credentials keylo-notary --apple-id <you> --team-id <TEAMID>`
+  (or set `KEYLO_NOTARY_PROFILE` to another profile name).
 - Keylo locks when the screen locks.
 
 - Secrets are generic-password items in your **login keychain** (service `Keylo`, visible in

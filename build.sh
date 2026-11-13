@@ -4,6 +4,8 @@
 #   ./build.sh             build
 #   ./build.sh --install   build, then install (install.sh)
 #   ./build.sh --debug     Debug build (enables KEYLO_SNAPSHOTS for UI checks)
+#   ./build.sh --release   signed with Developer ID and notarized: dist/keylo-<version>-macos-<arch>.zip
+#                          (once: xcrun notarytool store-credentials keylo-notary ...)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -11,10 +13,17 @@ dotnet_cmd=${DOTNET:-$(command -v dotnet || echo "$HOME/.dotnet/dotnet")}
 rid=osx-$( [[ $(uname -m) == arm64 ]] && echo arm64 || echo x64 )
 config=Release
 [[ " $* " == *" --debug "* ]] && config=Debug
+release=false
+[[ " $* " == *" --release "* ]] && release=true
 # KEYLO_COMMIT stamps a build made from a copy without .git (e.g. a release built on another machine).
 commit=${KEYLO_COMMIT:-$(git rev-parse --short=7 HEAD 2>/dev/null || echo nogit)}
 [[ -z ${KEYLO_COMMIT:-} && -n $(git status --porcelain 2>/dev/null) ]] && commit+=-dirty
 version=1.1.0
+
+if $release; then
+  [[ $config == Release ]] || { echo "error: --release and --debug don't mix" >&2; exit 1; }
+  [[ $commit != *-dirty ]] || { echo "error: --release needs a clean working tree (commit first)" >&2; exit 1; }
+fi
 
 app=dist/Keylo.app
 bin=$app/Contents/MacOS
@@ -69,12 +78,56 @@ EOF
 # Sign with a certificate when there is one (KEYLO_SIGN_IDENTITY, else the first "Apple Development"
 # identity): the keychain then trusts every build, not just this one. An ad-hoc signature is tied to
 # this exact build, so each rebuild asks again for every keychain item.
-identity=${KEYLO_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Apple Development: .*\)"/\1/p' | head -1)}
-if [[ -n $identity ]] && codesign --force --deep --sign "$identity" "$app" >/dev/null 2>&1; then
-  echo "Signed with $identity"
+if ! $release; then
+  identity=${KEYLO_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Apple Development: .*\)"/\1/p' | head -1)}
+  if [[ -n $identity ]] && codesign --force --deep --sign "$identity" "$app" >/dev/null 2>&1; then
+    echo "Signed with $identity"
+  else
+    [[ -n $identity ]] && echo "warning: couldn't sign with $identity; signing ad hoc" >&2
+    codesign --force --deep --sign - "$app" >/dev/null 2>&1 || echo "warning: codesign failed" >&2
+  fi
 else
-  [[ -n $identity ]] && echo "warning: couldn't sign with $identity; signing ad hoc" >&2
-  codesign --force --deep --sign - "$app" >/dev/null 2>&1 || echo "warning: codesign failed" >&2
+  # Distribution: a Developer ID certificate, the hardened runtime and a secure timestamp, each file
+  # in Contents/MacOS signed before the bundle (not --deep). The .NET host needs the JIT entitlement.
+  identity=${KEYLO_SIGN_IDENTITY:-}
+  [[ $identity == "Developer ID Application: "* ]] ||
+    identity=$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)
+  [[ -n $identity ]] || { echo "error: --release needs a Developer ID Application certificate" >&2; exit 1; }
+  entitlements=src/Keylo.Desktop/Keylo.entitlements
+  sign() {
+    codesign --force --timestamp --options runtime --sign "$identity" "$@" >/dev/null 2>&1 || {
+      echo "error: couldn't sign ${@[-1]} with $identity" >&2
+      echo "       (over SSH, run 'security unlock-keychain' first; codesign can't prompt there)" >&2
+      exit 1
+    }
+  }
+  for f in "$bin"/*(.); do
+    [[ ${f:t} == KeyloApp ]] && sign --entitlements "$entitlements" "$f" || sign "$f"
+  done
+  sign --entitlements "$entitlements" "$app"
+  codesign --verify --strict "$app"
+  echo "Signed with $identity"
+
+  # Notarize: Apple scans the zip, then the ticket is stapled to the app so it opens offline too.
+  profile=${KEYLO_NOTARY_PROFILE:-keylo-notary}
+  zip=dist/keylo-$version-macos-${rid#osx-}.zip
+  rm -f "$zip"
+  ditto -c -k --keepParent "$app" "$zip"
+  echo "Notarizing with profile $profile (a few minutes)..."
+  result=$(xcrun notarytool submit "$zip" --keychain-profile "$profile" --wait 2>&1) || true
+  if [[ $result != *"status: Accepted"* ]]; then
+    echo "$result" >&2
+    id=$(sed -n 's/^ *id: *//p' <<< "$result" | head -1)
+    [[ -n $id ]] && xcrun notarytool log "$id" --keychain-profile "$profile" >&2
+    echo "error: notarization failed" >&2
+    exit 1
+  fi
+  xcrun stapler staple -q "$app"
+  spctl --assess --type exec "$app"
+  rm -f "$zip"
+  ditto -c -k --keepParent "$app" "$zip"
+  echo "Notarized: $zip"
+  echo "  sha256 $(shasum -a 256 "$zip" | cut -d' ' -f1)"
 fi
 
 echo "Built Keylo $version ($commit, $config) for macOS ($rid): $app"
