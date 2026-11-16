@@ -40,6 +40,7 @@ exercises the MCP server, in a throwaway data folder and credential prefix.
 | App: custom secret types editor (Settings → Secret types; built-ins: icon and colour) | Done |
 | App: lock on screen lock, single instance | Done |
 | App: categories manager (create, rename, merge, style, delete with move or delete), per-secret icon and colour | Done |
+| App: icon images (upload, image address, paste; same icons/ files as C#), build number in the sidebar and lock screen | Done |
 | App: import, link, backup/restore | To do |
 | `keylo mcp` opening the app's approval window (message box only without the app) | Done; buttons wake after 0.8 s so a stray click can't answer |
 | macOS platform (Keychain, Touch ID) and Linux (Secret Service / file vault, polkit) | To do |

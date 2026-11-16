@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Lock, Plus, Trash2 } from "lucide-react";
 import { api, type FieldInput, type FieldKind, type Secret, type SecretType } from "../api";
 import type { Run } from "../App";
-import { ColorPicker, Drawer, IconPicker, iconFor, Modal, useToast } from "./ui";
+import { ColorPicker, Drawer, IconPicker, IconTile, Modal, useToast } from "./ui";
 
 const KINDS: { kind: FieldKind; label: string; help: string }[] = [
   { kind: "Text", label: "Text", help: "Shown without unlocking; searchable; agents with access can see it" },
@@ -46,13 +46,10 @@ export default function TypesSection({ types, secrets, run, onTypes }: {
       </div>
       <ul className="key-list">
         {types.map((t) => {
-          const Icon = iconFor(t.icon);
           const n = uses(t);
           return (
             <li key={t.id} className="key-row">
-              <span className="secret-icon" style={{ width: 32, height: 32, ...(t.color ? { background: t.color, color: "#fff" } : {}) }}>
-                <Icon size={16} />
-              </span>
+              <IconTile icon={t.icon} color={t.color} size={32} />
               <div className="key-text">
                 <strong>{t.name} {t.builtIn && <span className="chip chip-soft">Built-in</span>}</strong>
                 <span className="muted">

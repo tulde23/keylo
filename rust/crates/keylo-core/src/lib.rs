@@ -9,6 +9,7 @@ pub mod categories;
 pub mod config;
 pub mod error;
 pub mod gate;
+pub mod icons;
 pub mod password;
 pub mod paths;
 pub mod platform;

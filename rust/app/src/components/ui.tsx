@@ -1,10 +1,11 @@
 // Small shared pieces: secret icons, toasts, modals.
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  Building2, Cloud, CreditCard, Database, FileText, Globe, KeyRound, LayoutGrid, Link2, Lock, Mail, Server,
+  Building2, Cloud, CreditCard, Database, FileText, Globe, ImagePlus, KeyRound, LayoutGrid, Link2, Lock, Mail, Server,
   Shield, Smartphone, StickyNote, Terminal, User, Wallet, Wifi, X, type LucideIcon,
 } from "lucide-react";
 import type { CategorySummary, Secret, SecretType } from "../api";
+import { importImageFile, importImageUrl, isImageIcon, useIconImage } from "../iconImages";
 
 // Secrets store Fluent icon names ("Person24") from the C# app; these are the lucide equivalents.
 const ICONS: Record<string, LucideIcon> = {
@@ -32,14 +33,36 @@ export function iconFor(name: string | null | undefined): LucideIcon {
 export function SecretIcon({ secret, type, category, size = 36 }: {
   secret: Secret; type?: SecretType; category?: CategorySummary; size?: number;
 }) {
-  const Icon = secret.linked ? Link2 : iconFor(secret.icon ?? category?.icon ?? type?.icon);
+  const icon = secret.linked ? "Link24" : secret.icon ?? category?.icon ?? type?.icon ?? null;
   const color = secret.color ?? category?.color ?? type?.color ?? null;
+  return <IconTile icon={icon} color={color} size={size} />;
+}
+
+/** An icon name drawn at `size`: a built-in symbol, or an uploaded image ("img…"). */
+export function IconView({ icon, size, fallback, style }: {
+  icon: string | null | undefined; size: number; fallback?: LucideIcon; style?: React.CSSProperties;
+}) {
+  const image = useIconImage(icon);
+  if (isImageIcon(icon)) {
+    return image
+      ? <img src={image} alt="" width={size} height={size} className="icon-image" style={style} />
+      : <span style={{ width: size, height: size, display: "inline-block", ...style }} />;
+  }
+  const Icon = icon ? iconFor(icon) : fallback ?? KeyRound;
+  return <Icon size={size} strokeWidth={2} style={style} />;
+}
+
+/** The rounded tile secrets, categories and types show their icon on. Images fill it. */
+export function IconTile({ icon, color, size = 36, fallback }: {
+  icon: string | null | undefined; color: string | null | undefined; size?: number; fallback?: LucideIcon;
+}) {
+  const image = isImageIcon(icon);
   return (
     <span
-      className="secret-icon"
-      style={{ width: size, height: size, ...(color ? { background: color, color: "#fff" } : {}) }}
+      className={`secret-icon${image ? " has-image" : ""}`}
+      style={{ width: size, height: size, ...(color && !image ? { background: color, color: "#fff" } : {}) }}
     >
-      <Icon size={size * 0.5} strokeWidth={2} />
+      <IconView icon={icon} size={image ? size : size * 0.5} fallback={fallback} />
     </span>
   );
 }
@@ -152,8 +175,46 @@ export function Drawer({ title, onClose, children, footer, dirty = false }: {
 export function IconPicker({ value, onChange, allowDefault }: {
   value: string | null; onChange: (icon: string | null) => void; allowDefault?: boolean;
 }) {
+  const toast = useToast();
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const file = useRef<HTMLInputElement>(null);
+
+  const take = async (work: () => Promise<string>) => {
+    setBusy(true);
+    try {
+      onChange(await work());
+      setUrl("");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Ctrl+V with an image (or an image address) on the clipboard, anywhere in the picker.
+  const onPaste = (e: React.ClipboardEvent) => {
+    const image = [...e.clipboardData.items].find((i) => i.kind === "file" && i.type.startsWith("image/"))?.getAsFile();
+    if (image) {
+      e.preventDefault();
+      take(() => importImageFile(image));
+      return;
+    }
+    const text = e.clipboardData.getData("text").trim();
+    if (/^(https?:\/\/|data:image\/)/i.test(text) && !(e.target instanceof HTMLInputElement)) {
+      e.preventDefault();
+      take(() => importImageUrl(text));
+    }
+  };
+
   return (
+    <div className="icon-picker" onPaste={onPaste}>
     <div className="swatches" role="radiogroup" aria-label="Icon">
+      {isImageIcon(value) && (
+        <button type="button" role="radio" aria-checked className="icon-swatch active image" aria-label="Your image">
+          <IconView icon={value} size={28} />
+        </button>
+      )}
       {allowDefault && (
         <button type="button" role="radio" aria-checked={value === null} className={`icon-swatch default${value === null ? " active" : ""}`}
           onClick={() => onChange(null)} title="Default (from its category or type)">Auto</button>
@@ -167,6 +228,20 @@ export function IconPicker({ value, onChange, allowDefault }: {
           </button>
         );
       })}
+    </div>
+    <div className="image-source">
+      <button type="button" className="button small" onClick={() => file.current?.click()} disabled={busy}>
+        <ImagePlus size={15} /> Upload image
+      </button>
+      <input ref={file} type="file" accept="image/*" hidden
+        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) take(() => importImageFile(f)); }} />
+      <input className="small-input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="…or paste an image address"
+        aria-label="Image address" disabled={busy}
+        onKeyDown={(e) => { if (e.key === "Enter" && url.trim()) { e.preventDefault(); take(() => importImageUrl(url)); } }} />
+      <button type="button" className="button small" disabled={busy || !url.trim()} onClick={() => take(() => importImageUrl(url))}>
+        {busy ? "Adding…" : "Use"}
+      </button>
+    </div>
     </div>
   );
 }

@@ -745,7 +745,7 @@ fn status(c: &Context, args: &Args) -> CliResult<i32> {
             None => "locked".into(),
         },
     };
-    println!("Keylo {}: {state}", keylo_core::version::VERSION);
+    println!("Keylo {}: {state}", keylo_core::build_version!());
     println!("Data:  {}", paths::data_dir().display());
     Ok(0)
 }

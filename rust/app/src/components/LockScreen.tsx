@@ -36,7 +36,7 @@ export default function LockScreen({ info, onUnlock }: { info: AppInfo; onUnlock
           <Fingerprint size={18} /> {busy ? `Waiting for ${info.verifierName}…` : "Unlock"}
         </button>
         {error && <p className="error-text">{error}</p>}
-        <p className="lock-footer">Agents never see your secrets' values.</p>
+        <p className="lock-footer">Agents never see your secrets' values.<br />Keylo {info.version}</p>
       </div>
     </main>
   );

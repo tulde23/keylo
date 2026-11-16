@@ -428,6 +428,67 @@ pub fn generate_password(length: usize, symbols: bool) -> String {
     keylo_core::password::generate(length, symbols)
 }
 
+// ---------------------------------------------------------------------------- icon images
+
+const MAX_DOWNLOAD: u64 = 5 * 1024 * 1024;
+
+/// Downloads an image for an icon; returns it as a data: URL for the app to resize. http(s) only,
+/// at most 5 MB, an image content type, 15 seconds.
+#[tauri::command]
+pub async fn fetch_image(url: String) -> Res<String> {
+    use base64::Engine;
+    let url = url.trim().to_string();
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("Paste an image address starting with https://.".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(std::time::Duration::from_secs(15)))
+            .user_agent("Keylo")
+            .build()
+            .into();
+        let mut response = agent.get(&url).call().map_err(|e| format!("Couldn't download it: {e}"))?;
+        let mime = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_lowercase();
+        if !mime.starts_with("image/") {
+            return Err(format!("That address isn't an image ({}).", if mime.is_empty() { "no content type" } else { &mime }));
+        }
+        let bytes = response
+            .body_mut()
+            .with_config()
+            .limit(MAX_DOWNLOAD)
+            .read_to_vec()
+            .map_err(|_| "That image is too large (the most is 5 MB).".to_string())?;
+        Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Stores an icon image (a PNG the app made, base64); returns its icon name ("img" + hash).
+#[tauri::command]
+pub fn save_icon_image(state: State<'_, AppState>, png: String) -> Res<String> {
+    use base64::Engine;
+    require_unlocked(&state)?;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(png.trim()).map_err(|_| "That image couldn't be read.".to_string())?;
+    keylo_core::icons::save_png(&bytes).map_err(err)
+}
+
+/// A stored icon image as a data: URL, or None.
+#[tauri::command]
+pub fn icon_image(name: String) -> Option<String> {
+    use base64::Engine;
+    keylo_core::icons::load(&name).map(|png| format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png)))
+}
+
 // ---------------------------------------------------------------------------- categories
 
 #[tauri::command]

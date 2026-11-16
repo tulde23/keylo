@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Check, Folder, Plus, Trash2 } from "lucide-react";
 import { api, type CategorySummary } from "../api";
 import type { Run } from "../App";
-import { ColorPicker, Drawer, IconPicker, iconFor, useToast } from "./ui";
+import { ColorPicker, Drawer, IconPicker, IconTile, useToast } from "./ui";
 
 /**
  * Create, rename (renaming onto another merges them), style and delete categories. Categories live
@@ -66,7 +66,6 @@ function CategoryRow({ category: c, others, expanded, onToggle, apply }: {
   const [name, setName] = useState(c.name);
   const [deleting, setDeleting] = useState(false);
   const [moveTo, setMoveTo] = useState("");
-  const Icon = c.icon ? iconFor(c.icon) : Folder;
   const merging = others.find((o) => o.toLowerCase() === name.trim().toLowerCase());
 
   const rename = () => {
@@ -83,9 +82,8 @@ function CategoryRow({ category: c, others, expanded, onToggle, apply }: {
   return (
     <li className={`category-row${expanded ? " expanded" : ""}`}>
       <div className="category-main">
-        <button className="secret-icon category-style" style={{ width: 32, height: 32, ...(c.color ? { background: c.color, color: "#fff" } : {}) }}
-          onClick={onToggle} title="Icon and colour" aria-label={`Icon and colour of ${c.name}`} aria-expanded={expanded}>
-          <Icon size={16} />
+        <button className="category-style" onClick={onToggle} title="Icon and colour" aria-label={`Icon and colour of ${c.name}`} aria-expanded={expanded}>
+          <IconTile icon={c.icon} color={c.color} size={32} fallback={Folder} />
         </button>
         <input
           value={name}

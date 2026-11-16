@@ -1,6 +1,6 @@
 import { Activity, Folder, Home, Layers, Pencil } from "lucide-react";
-import type { CategorySummary, Secret, SecretType } from "../api";
-import { iconFor } from "./ui";
+import type { AppInfo, CategorySummary, Secret, SecretType } from "../api";
+import { IconView } from "./ui";
 
 /** "home", "all", "cat:NAME", "type:ID", "activity" or "settings". */
 export type View = string;
@@ -12,16 +12,19 @@ export default function Sidebar(props: {
   types: SecretType[];
   secrets: Secret[];
   onManageCategories: () => void;
+  info: AppInfo;
 }) {
   const { view, onView } = props;
   const usedTypes = props.types
     .map((t) => [t, props.secrets.filter((s) => s.type === t.id).length] as const)
     .filter(([, n]) => n > 0);
 
-  const item = (key: View, label: string, Icon: typeof Home, count?: number, color?: string | null) => (
+  const item = (key: View, label: string, icon: typeof Home | string | null, count?: number, color?: string | null) => (
     <button key={key} className={`nav-item${view === key ? " active" : ""}`} onClick={() => onView(key)}
       aria-current={view === key ? "page" : undefined}>
-      <Icon size={16} style={color ? { color } : undefined} />
+      {typeof icon === "string" || icon === null
+        ? <IconView icon={icon} size={16} fallback={Folder} style={color ? { color } : undefined} />
+        : (() => { const Icon = icon; return <Icon size={16} style={color ? { color } : undefined} />; })()}
       <span className="nav-label">{label}</span>
       {count !== undefined && <span className="nav-count">{count}</span>}
     </button>
@@ -41,18 +44,19 @@ export default function Sidebar(props: {
             <Pencil size={12} /> Manage
           </button>
         </div>
-        {props.categories.map((c) => item(`cat:${c.name}`, c.name, c.icon ? iconFor(c.icon) : Folder, c.count, c.color))}
+        {props.categories.map((c) => item(`cat:${c.name}`, c.name, c.icon, c.count, c.color))}
       </div>
 
       {usedTypes.length > 0 && (
         <div className="nav-section">
           <h3>Types</h3>
-          {usedTypes.map(([t, n]) => item(`type:${t.id}`, t.name, iconFor(t.icon), n))}
+          {usedTypes.map(([t, n]) => item(`type:${t.id}`, t.name, t.icon, n))}
         </div>
       )}
 
       <div className="nav-bottom">
         {item("activity", "Activity", Activity)}
+        <div className="build" title={`${props.info.storeName} · ${props.info.dataDir}`}>Keylo {props.info.version}</div>
       </div>
     </nav>
   );

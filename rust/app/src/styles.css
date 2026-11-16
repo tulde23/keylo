@@ -276,11 +276,19 @@ select {
 .category-row { border: 1px solid var(--border); border-radius: 8px; padding: 8px; background: var(--bg); }
 .category-main { display: flex; align-items: center; gap: 8px; }
 .category-main input { flex: 1; min-width: 0; }
-.category-style { border: 0; cursor: pointer; }
+.category-style { border: 0; padding: 0; background: transparent; cursor: pointer; border-radius: 9px; display: inline-flex; }
 .category-count { font-size: 12px; white-space: nowrap; }
 .category-row > p { margin: 6px 0 0 40px; }
 .category-delete { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
 .category-delete-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.secret-icon.has-image { background: transparent; overflow: hidden; }
+.icon-image { display: block; object-fit: contain; border-radius: inherit; }
+.icon-picker { display: flex; flex-direction: column; gap: 8px; }
+.icon-swatch.image { padding: 0; overflow: hidden; }
+.image-source { display: flex; gap: 6px; align-items: center; }
+.image-source .small-input { flex: 1; min-width: 0; }
+.build { font-size: 11px; color: var(--muted); padding: 8px 10px 0; user-select: text; }
 
 /* ------------------------------------------------------------------ slide-in panel */
 .drawer-backdrop { position: fixed; inset: 0; z-index: 9; background: rgba(0, 0, 0, 0.22); animation: fade-in 160ms ease-out; }

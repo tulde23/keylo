@@ -160,6 +160,7 @@ function Shell() {
         types={types}
         secrets={secrets}
         onManageCategories={() => setManagingCategories(true)}
+        info={info}
       />
       {isSecretsView && (
         <>
