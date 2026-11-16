@@ -1,0 +1,30 @@
+[package]
+name = "keylo-platform"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+keylo-core.workspace = true
+chrono.workspace = true
+zeroize.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-future = "0.3"
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = [
+  "Win32_Foundation",
+  "Win32_Security_Credentials",
+  "Win32_Security_Cryptography",
+  "Win32_System_DataExchange",
+  "Win32_System_Memory",
+  "Win32_System_Ole",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Threading",
+  "Win32_System_Console",
+  "Win32_System_WinRT",
+  "Win32_UI_WindowsAndMessaging",
+  "Security_Credentials_UI",
+  "Foundation",
+]

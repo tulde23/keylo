@@ -1,0 +1,21 @@
+[package]
+name = "keylo-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "keylo"
+path = "src/main.rs"
+
+[dependencies]
+keylo-core.workspace = true
+keylo-platform.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+zeroize.workspace = true
+rpassword = "7"
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging"]
