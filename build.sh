@@ -18,7 +18,7 @@ release=false
 # KEYLO_COMMIT stamps a build made from a copy without .git (e.g. a release built on another machine).
 commit=${KEYLO_COMMIT:-$(git rev-parse --short=7 HEAD 2>/dev/null || echo nogit)}
 [[ -z ${KEYLO_COMMIT:-} && -n $(git status --porcelain 2>/dev/null) ]] && commit+=-dirty
-version=1.1.0
+version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -1)
 
 if $release; then
   [[ $config == Release ]] || { echo "error: --release and --debug don't mix" >&2; exit 1; }

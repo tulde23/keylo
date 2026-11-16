@@ -56,7 +56,7 @@ The same app and `keylo` command, on x64 or ARM64, self-contained (no .NET insta
 the release bundle and run its installer:
 
 ```bash
-tar -xzf keylo-1.1.0-linux-x64.tar.gz && ./keylo-1.1.0-linux-x64/install.sh
+tar -xzf keylo-1.2.0-linux-x64.tar.gz && ./keylo-1.2.0-linux-x64/install.sh
 ```
 
 It installs to `~/.local/lib/keylo`, links `~/.local/bin/keylo`, adds a menu entry, and (with sudo,
