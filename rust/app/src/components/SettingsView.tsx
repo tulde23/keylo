@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 import { api, timeAgo, type AccessKey, type AppInfo, type KeyInput, type Secret, type SecretType, type Settings } from "../api";
 import TypesSection from "./TypesSection";
+import BackupSection from "./BackupSection";
 import type { Run } from "../App";
 import { Drawer, Modal, useToast } from "./ui";
 
@@ -13,6 +14,7 @@ export default function SettingsView(props: {
   categories: string[];
   run: Run;
   onSettingsSaved: () => Promise<void>;
+  onDataChanged: () => void;
 }) {
   const { info, run } = props;
   const toast = useToast();
@@ -132,6 +134,8 @@ export default function SettingsView(props: {
       </section>
 
       <TypesSection types={props.types} secrets={props.secrets} run={run} onTypes={props.onTypes} />
+
+      <BackupSection run={run} verifierName={info.verifierName} onRestored={props.onDataChanged} />
 
       <section className="card">
         <h2>About</h2>

@@ -290,6 +290,27 @@ select {
 .image-source .small-input { flex: 1; min-width: 0; }
 .build { font-size: 11px; color: var(--muted); padding: 8px 10px 0; user-select: text; }
 
+.form-actions.start { justify-content: flex-start; }
+.ok { color: #2f9e5b; }
+.bad { color: var(--danger); }
+.warning { display: flex; gap: 6px; align-items: center; color: #b7791f; }
+.import-pick { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+.import-sources { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.import-sources li { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.import-sources .mono { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.import-table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+.import-table th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding: 4px 6px; border-bottom: 1px solid var(--border); }
+.import-table td { padding: 6px; vertical-align: top; border-bottom: 1px solid var(--border); }
+.import-table td:first-child { width: 50%; }
+.import-table td input, .import-table td select { width: 100%; }
+.import-table td small { display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.import-table td.muted { padding-top: 12px; font-size: 13px; }
+.import-table tr.skipping input, .import-table tr.skipping select { opacity: 0.5; }
+.import-results { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; user-select: text; }
+.import-results li { display: flex; align-items: baseline; gap: 4px; flex-wrap: wrap; }
+.drop-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 14%, transparent); border: 3px dashed var(--accent); pointer-events: none; }
+.drop-overlay div { background: var(--surface); color: var(--text); padding: 14px 22px; border-radius: var(--radius); box-shadow: var(--shadow); font-weight: 600; }
+
 /* ------------------------------------------------------------------ slide-in panel */
 .drawer-backdrop { position: fixed; inset: 0; z-index: 9; background: rgba(0, 0, 0, 0.22); animation: fade-in 160ms ease-out; }
 .drawer {

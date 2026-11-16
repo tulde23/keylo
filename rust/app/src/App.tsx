@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api, LOCKED, message, type AppInfo, type CategorySummary, type RecentUse, type Secret, type SecretType, type Status } from "./api";
 import CategoryManager from "./components/CategoryManager";
+import ImportPanel from "./components/ImportPanel";
 import LockScreen from "./components/LockScreen";
 import Sidebar, { type View } from "./components/Sidebar";
 import SecretList from "./components/SecretList";
@@ -35,6 +37,8 @@ function Shell() {
   const [editing, setEditing] = useState<Editing>(null);
   const [categories, setCategories] = useState<CategorySummary[]>([]);
   const [managingCategories, setManagingCategories] = useState(false);
+  const [importing, setImporting] = useState<string[] | null>(null);
+  const [dropping, setDropping] = useState(false);
 
   /** Runs a backend call; a "locked" error shows the lock screen, others a toast. */
   const run = useCallback(async <T,>(call: () => Promise<T>): Promise<T | undefined> => {
@@ -79,6 +83,28 @@ function Shell() {
     });
     return () => { stop.then((f) => f()); };
   }, []);
+
+  // Files dropped on the window, or given with `keylow --import`, open Import with them (once
+  // unlocked; an open panel adds them).
+  const unlocked = !!status?.unlocked;
+  const addImports = useCallback((paths: string[]) => {
+    if (paths.length) setImporting((current) => [...(current ?? []), ...paths.filter((x) => !current?.includes(x))]);
+  }, []);
+  useEffect(() => {
+    if (!unlocked) return;
+    api.takeStartupImport().then(addImports).catch(() => {});
+    const stopArgs = listen<string[]>("keylo://import", (e) => addImports(e.payload));
+    const stop = getCurrentWebview().onDragDropEvent((e) => {
+      const p = e.payload;
+      if (p.type === "enter") setDropping(true);
+      else if (p.type === "leave") setDropping(false);
+      else if (p.type === "drop") {
+        setDropping(false);
+        addImports(p.paths);
+      }
+    });
+    return () => { stop.then((f) => f()); stopArgs.then((f) => f()); };
+  }, [unlocked, addImports]);
 
   // Activity keeps the session alive; the session ending (or a lock from the CLI) shows the lock screen.
   const lastTouch = useRef(0);
@@ -148,6 +174,7 @@ function Shell() {
           if (q && !isSecretsView) setView("all");
         }}
         onNew={newSecret}
+        onImport={() => setImporting([])}
         onSettings={() => setView(view === "settings" ? "home" : "settings")}
         onLock={lock}
         settingsActive={view === "settings"}
@@ -200,6 +227,7 @@ function Shell() {
           categories={categoryNames}
           run={run}
           onSettingsSaved={async () => setStatus(await api.status())}
+          onDataChanged={() => { run(refresh); api.types().then(setTypes).catch(() => {}); }}
         />
       )}
       {editing && (
@@ -219,6 +247,17 @@ function Shell() {
           }}
         />
       )}
+      {importing && (
+        <ImportPanel
+          initialPaths={importing}
+          types={types}
+          categories={categoryNames}
+          run={run}
+          onClose={() => setImporting(null)}
+          onImported={() => run(refresh)}
+        />
+      )}
+      {dropping && <div className="drop-overlay"><div>Drop files or folders to import them</div></div>}
       {managingCategories && (
         <CategoryManager
           categories={categories}

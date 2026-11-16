@@ -142,6 +142,61 @@ export interface SaveInput {
   color: string | null;
 }
 
+export interface ImportItem {
+  name: string;
+  sourcePath: string;
+  category: string | null;
+  /** Guessed (in a plan) or used (after importing); null for plain. */
+  type: string | null;
+  exists: boolean;
+}
+
+export interface SkippedFile {
+  sourcePath: string;
+  reason: string;
+}
+
+export interface ImportResult {
+  imported: ImportItem[];
+  skipped: SkippedFile[];
+}
+
+export interface ImportInput {
+  paths: string[];
+  category: string | null;
+  subfolderCategories: boolean;
+  overwrite: boolean;
+  names: Record<string, string>;
+  types: Record<string, string>;
+  deleteOriginals: boolean;
+}
+
+export interface BackupSummary {
+  path: string;
+  secrets: number;
+  categories: number;
+  icons: number;
+  bytes: number;
+}
+
+export interface BackupPreview {
+  path: string;
+  createdAt: string;
+  secrets: number;
+  existing: number;
+  categories: number;
+  icons: number;
+  types: number;
+}
+
+export interface RestoreResult {
+  added: number;
+  replaced: number;
+  skipped: number;
+  categoriesAdded: number;
+  errors: string[];
+}
+
 /** The error the backend returns when the session has ended. */
 export const LOCKED = "locked";
 
@@ -177,6 +232,17 @@ export const api = {
   revokeKey: (id: string) => invoke<void>("revoke_key", { id }),
   audit: (limit: number) => invoke<AuditRow[]>("audit_log", { limit }),
   generatePassword: (length: number, symbols: boolean) => invoke<string>("generate_password", { length, symbols }),
+  takeStartupImport: () => invoke<string[]>("take_startup_import"),
+  pickImport: (folder: boolean) => invoke<string[]>("pick_import", { folder }),
+  importPlan: (paths: string[], category: string | null, subfolderCategories: boolean) =>
+    invoke<ImportResult>("import_plan", { paths, category, subfolderCategories }),
+  importFiles: (input: ImportInput) => invoke<ImportResult & { deleted: number }>("import_files", { input }),
+  pickBackup: (save: boolean) => invoke<string | null>("pick_backup", { save }),
+  checkBackupPassword: (password: string) => invoke<string | null>("check_backup_password", { password }),
+  createBackup: (path: string, password: string) => invoke<BackupSummary>("create_backup", { path, password }),
+  openBackup: (path: string, password: string) => invoke<BackupPreview>("open_backup", { path, password }),
+  restoreBackup: (overwrite: boolean) => invoke<RestoreResult>("restore_backup", { overwrite }),
+  cancelRestore: () => invoke<void>("cancel_restore"),
   approval: () => invoke<Approval | null>("approval_request"),
   answerApproval: (choice: "deny" | "once" | "always") => invoke<void>("answer_approval", { choice }),
 };

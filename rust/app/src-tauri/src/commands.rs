@@ -21,11 +21,11 @@ use zeroize::Zeroizing;
 
 use crate::AppState;
 
-type Res<T> = Result<T, String>;
+pub type Res<T> = Result<T, String>;
 
 const LOCKED: &str = "locked";
 
-fn err(e: Error) -> String {
+pub fn err(e: Error) -> String {
     e.to_string()
 }
 
@@ -44,18 +44,18 @@ fn owner(window: &WebviewWindow) -> isize {
 
 /// Runs the identity check (or uses the session). Commands calling it are async, so they run off
 /// the UI thread; the gate is held for the prompt's duration (one prompt at a time).
-async fn ensure(window: &WebviewWindow, state: &State<'_, AppState>, message: &str, value_access: bool) -> Res<()> {
+pub async fn ensure(window: &WebviewWindow, state: &State<'_, AppState>, message: &str, value_access: bool) -> Res<()> {
     let hwnd = owner(window);
     let mut g = state.gate.lock().unwrap();
     g.ensure(hwnd, message, value_access).map_err(err)
 }
 
-fn confirm(window: &WebviewWindow, message: &str) -> Res<()> {
+pub fn confirm(window: &WebviewWindow, message: &str) -> Res<()> {
     let config = KeyloConfig::load().map_err(err)?;
     AccessGate::new(&config).confirm(owner(window), message).map_err(err)
 }
 
-fn require_unlocked(state: &State<'_, AppState>) -> Res<()> {
+pub fn require_unlocked(state: &State<'_, AppState>) -> Res<()> {
     if state.gate.lock().unwrap().is_unlocked() { Ok(()) } else { Err(LOCKED.into()) }
 }
 

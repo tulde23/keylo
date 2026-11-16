@@ -1,9 +1,11 @@
 //! Keylo's desktop app (Tauri + React). Started with `--approve <request>` by `keylo mcp`, it
 //! shows only an approval window and exits with the answer (10 denied, 11 once, 12 always).
+//! `keylow --import PATH...` opens the Import panel with those files and folders.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod transfer;
 
 use std::sync::Mutex;
 
@@ -15,6 +17,10 @@ use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 pub struct AppState {
     pub gate: Mutex<AccessGate>,
     pub approval: Option<ApprovalRequest>,
+    /// Paths from `--import` waiting for the UI to pick them up.
+    pub startup_import: Mutex<Vec<String>>,
+    /// A decrypted backup between previewing and restoring it.
+    pub pending_restore: Mutex<Option<keylo_core::backup::BackupContents>>,
 }
 
 fn main() {
@@ -32,13 +38,21 @@ fn main() {
 
     let config = KeyloConfig::load().unwrap_or_default();
     let approving = approval.is_some();
-    let state = AppState { gate: Mutex::new(AccessGate::new(&config)), approval };
+    let state = AppState { gate: Mutex::new(AccessGate::new(&config)), approval, startup_import: Mutex::new(import_args(&args)), pending_restore: Mutex::new(None) };
 
     let mut builder = tauri::Builder::default();
     if !approving {
         // Opening Keylo again shows the window that's already open. (Approval windows are separate:
         // several agents can ask at once.)
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            // `keylow --import ...` while Keylo is open: hand the paths (relative to that shell) over.
+            let paths: Vec<String> = import_args(&args)
+                .into_iter()
+                .map(|p| std::path::Path::new(&cwd).join(p).display().to_string())
+                .collect();
+            if !paths.is_empty() {
+                let _ = app.emit("keylo://import", paths);
+            }
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.unminimize();
                 let _ = w.show();
@@ -48,6 +62,7 @@ fn main() {
     }
 
     builder
+        .plugin(tauri_plugin_dialog::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
@@ -83,6 +98,16 @@ fn main() {
             commands::generate_password,
             commands::approval_request,
             commands::answer_approval,
+            transfer::pick_import,
+            transfer::take_startup_import,
+            transfer::import_plan,
+            transfer::import_files,
+            transfer::pick_backup,
+            transfer::check_backup_password,
+            transfer::create_backup,
+            transfer::open_backup,
+            transfer::restore_backup,
+            transfer::cancel_restore,
         ])
         .setup(move |app| {
             if approving {
@@ -121,6 +146,14 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Keylo");
+}
+
+/// The paths after `--import` (up to the next option).
+fn import_args(args: &[String]) -> Vec<String> {
+    match args.iter().position(|a| a == "--import") {
+        Some(i) => args[i + 1..].iter().take_while(|a| !a.starts_with("--")).cloned().collect(),
+        None => vec![],
+    }
 }
 
 /// Locks Keylo when the screen locks: the session ends (for the keylo command too) and the app shows

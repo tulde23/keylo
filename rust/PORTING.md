@@ -30,18 +30,20 @@ exercises the MCP server, in a throwaway data folder and credential prefix.
 
 | Area | State |
 |---|---|
-| Store format, types, config, keys, gate, audit, redaction | Done; compatible with C# (22 checks) |
+| Store format, types, config, keys, gate, audit, redaction | Done; compatible with C# (34 checks with backups and import) |
 | Windows platform | Done (Credential Manager, DPAPI, Hello, clipboard, ancestry) |
 | CLI: list, categories, types, get, set, edit, rm, run, keys, unlock, lock, status, config, version | Done |
 | MCP server: search_secrets, list_categories, list_types, run_with_secrets, request_access | Done; approvals use a message box until the app exists |
-| CLI: import, link, push, provider, backup, restore, keys --add-to-claude | To do |
+| CLI: import (type guessing, subfolder categories), backup, restore (C# KEYLOBK1 format, both directions) | Done |
+| CLI: link, push, provider, keys --add-to-claude | To do |
 | Linked secrets (1Password, AWS Secrets Manager, per-environment links), list_aws_* tools | To do: through the `op` and `aws` CLIs, not SDKs |
 | Tauri + React app: lock screen, top bar (ported from the WPF app, system window buttons), sidebar, list, detail, slide-in editor, settings, access keys, activity, approval window (`keylow --approve`) | Done (first version) |
 | App: custom secret types editor (Settings → Secret types; built-ins: icon and colour) | Done |
 | App: lock on screen lock, single instance | Done |
 | App: categories manager (create, rename, merge, style, delete with move or delete), per-secret icon and colour | Done |
 | App: icon images (upload, image address, paste; same icons/ files as C#), build number in the sidebar and lock screen | Done |
-| App: import, link, backup/restore | To do |
+| App: import panel (Import tile, drop files on the window, `keylow --import PATH...`), Settings → Backup (back up, restore with preview) | Done |
+| App: link | To do |
 | `keylo mcp` opening the app's approval window (message box only without the app) | Done; buttons wake after 0.8 s so a stray click can't answer |
 | macOS platform (Keychain, Touch ID) and Linux (Secret Service / file vault, polkit) | To do |
 | Packaging and CI (release workflow, signing, notarization) | To do |

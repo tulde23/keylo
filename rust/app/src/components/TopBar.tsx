@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Lock, Plus, Search, Settings, X } from "lucide-react";
+import { FileDown, Lock, Plus, Search, Settings, X } from "lucide-react";
 
 export const TAGLINE = "Agents use them. Never see them.";
 
@@ -12,6 +12,7 @@ export default function TopBar(props: {
   query: string;
   onQuery: (q: string) => void;
   onNew: () => void;
+  onImport: () => void;
   onSettings: () => void;
   onLock: () => void;
   settingsActive: boolean;
@@ -72,6 +73,9 @@ export default function TopBar(props: {
       <div className="topbar-tiles">
         <button className="tile accent" onClick={props.onNew} title="New secret (Ctrl+N)" aria-label="New secret">
           <Plus size={18} />
+        </button>
+        <button className="tile quiet" onClick={props.onImport} title="Import files as secrets" aria-label="Import">
+          <FileDown size={18} />
         </button>
         <span className="toolbar-gap" />
         <button className={`tile quiet${props.settingsActive ? " active" : ""}`} onClick={props.onSettings} title="Settings" aria-label="Settings">
