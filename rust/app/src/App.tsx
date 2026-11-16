@@ -56,9 +56,13 @@ function Shell() {
     api.types().then(setTypes).catch(() => {});
   }, []);
 
+  // Reload on unlock, and when Settings opens (it counts secrets per type; the CLI may have added some).
   useEffect(() => {
     if (status?.unlocked) run(refresh);
   }, [status?.unlocked, refresh, run]);
+  useEffect(() => {
+    if (view === "settings" && status?.unlocked) run(refresh);
+  }, [view, status?.unlocked, refresh, run]);
 
   // Activity keeps the session alive; the session ending (or a lock from the CLI) shows the lock screen.
   const lastTouch = useRef(0);
@@ -171,6 +175,8 @@ function Shell() {
         <SettingsView
           info={info}
           secrets={secrets}
+          types={types}
+          onTypes={setTypes}
           categories={categories.map(([c]) => c)}
           run={run}
           onSettingsSaved={async () => setStatus(await api.status())}

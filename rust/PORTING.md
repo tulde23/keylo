@@ -37,7 +37,8 @@ exercises the MCP server, in a throwaway data folder and credential prefix.
 | CLI: import, link, push, provider, backup, restore, keys --add-to-claude | To do |
 | Linked secrets (1Password, AWS Secrets Manager, per-environment links), list_aws_* tools | To do: through the `op` and `aws` CLIs, not SDKs |
 | Tauri + React app: lock screen, top bar (ported from the WPF app, system window buttons), sidebar, list, detail, slide-in editor, settings, access keys, activity, approval window (`keylow --approve`) | Done (first version) |
-| App: custom types and categories editors, icons and colours, import, link, lock on screen lock, single instance | To do |
+| App: custom secret types editor (Settings → Secret types; built-ins: icon and colour) | Done |
+| App: categories manager, per-secret icons and colours, import, link, lock on screen lock, single instance | To do |
 | `keylo mcp` opening the Tauri approval window instead of a message box | To do |
 | macOS platform (Keychain, Touch ID) and Linux (Secret Service / file vault, polkit) | To do |
 | Packaging and CI (release workflow, signing, notarization) | To do |

@@ -44,6 +44,8 @@ fn main() {
             commands::touch,
             commands::secrets,
             commands::secret_types,
+            commands::save_type,
+            commands::delete_type,
             commands::reveal,
             commands::copy_field,
             commands::save_secret,

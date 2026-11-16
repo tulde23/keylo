@@ -1,8 +1,8 @@
 // Small shared pieces: secret icons, toasts, modals.
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  Cloud, CreditCard, Database, FileText, Globe, KeyRound, Link2, Lock, Mail, Server, Shield, StickyNote,
-  Terminal, User, Wallet, X, type LucideIcon,
+  Building2, Cloud, CreditCard, Database, FileText, Globe, KeyRound, LayoutGrid, Link2, Lock, Mail, Server,
+  Shield, Smartphone, StickyNote, Terminal, User, Wallet, Wifi, X, type LucideIcon,
 } from "lucide-react";
 import type { Secret, SecretType } from "../api";
 
@@ -10,7 +10,17 @@ import type { Secret, SecretType } from "../api";
 const ICONS: Record<string, LucideIcon> = {
   Person: User, Key: KeyRound, Database, Server, Note: StickyNote, Cloud, Globe, Mail, Lock, Shield,
   Payment: CreditCard, Wallet, Document: FileText, Code: Terminal, WindowConsole: Terminal, Link: Link2,
+  Apps: LayoutGrid, LockClosed: Lock, Building: Building2, Phone: Smartphone, Wifi1: Wifi, Wifi,
 };
+
+/** Icons to choose from, by the Fluent names the C# app stores (so both apps show the same icon). */
+export const ICON_CHOICES = [
+  "Key24", "Person24", "Database24", "Server24", "Cloud24", "Globe24", "Mail24", "LockClosed24", "Shield24",
+  "Payment24", "Wallet24", "Document24", "Code24", "Building24", "Phone24", "Wifi24", "Note24", "Apps24",
+];
+
+/** Accent colours to choose from (stored as #RRGGBB). */
+export const COLOR_CHOICES = ["#6366F1", "#0EA5E9", "#10B981", "#84CC16", "#F59E0B", "#F97316", "#EF4444", "#EC4899", "#8B5CF6", "#64748B"];
 
 export function iconFor(name: string | null | undefined): LucideIcon {
   if (!name) return KeyRound;

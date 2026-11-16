@@ -14,6 +14,7 @@ use keylo_core::store::SecretStore;
 use keylo_core::types::{self, FieldKind, SecretTypeCatalog, SecretTypeDefinition};
 use keylo_core::{eq_ic, paths, platform, Error};
 use serde::{Deserialize, Serialize};
+
 use tauri::{AppHandle, State, WebviewWindow};
 use zeroize::Zeroizing;
 
@@ -200,6 +201,82 @@ fn type_dto(t: &SecretTypeDefinition) -> TypeDto {
 #[tauri::command]
 pub fn secret_types() -> Res<Vec<TypeDto>> {
     Ok(SecretTypeCatalog::default().all().map_err(err)?.iter().map(type_dto).collect())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldInput {
+    /// Empty for a new field (derived from the label); fixed once saved, since secrets store data under it.
+    id: String,
+    label: String,
+    kind: FieldKind,
+    options: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeInput {
+    name: String,
+    icon: Option<String>,
+    color: Option<String>,
+    fields: Vec<FieldInput>,
+}
+
+/// Adds a custom type (`id` None) or changes one. For a built-in type only the icon and colour change.
+#[tauri::command]
+pub fn save_type(state: State<'_, AppState>, id: Option<String>, input: TypeInput) -> Res<Vec<TypeDto>> {
+    require_unlocked(&state)?;
+    let catalog = SecretTypeCatalog::default();
+    let icon = keylo_core::store::normalize_icon(input.icon.as_deref()).map_err(err)?;
+    let color = keylo_core::store::normalize_color(input.color.as_deref()).map_err(err)?;
+
+    if let Some(built_in) = id.as_deref().and_then(|id| types::built_in().into_iter().find(|t| t.id == id)) {
+        let mut styles: BTreeMap<String, types::Style> = catalog
+            .built_in_styled()
+            .map_err(err)?
+            .into_iter()
+            .map(|t| (t.id.clone(), types::Style { icon: t.icon, color: t.color }))
+            .collect();
+        styles.insert(built_in.id.clone(), types::Style { icon: icon.or(built_in.icon), color });
+        catalog.save_built_in_styles(&styles).map_err(err)?;
+        return secret_types();
+    }
+
+    let fields = input
+        .fields
+        .into_iter()
+        .map(|f| types::FieldDefinition {
+            id: f.id,
+            label: f.label,
+            kind: f.kind,
+            options: f.options.map(|o| o.into_iter().map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()),
+        })
+        .collect();
+    let edited = SecretTypeDefinition { id: id.clone().unwrap_or_default(), name: input.name, icon, color, fields, is_built_in: false };
+    let mut custom = catalog.custom().map_err(err)?;
+    match id.as_deref().and_then(|id| custom.iter().position(|t| t.id == id)) {
+        Some(i) => custom[i] = edited,
+        None if id.is_some() => return Err("That type no longer exists.".into()),
+        None => custom.push(edited),
+    }
+    catalog.save_custom(custom).map_err(err)?;
+    secret_types()
+}
+
+#[tauri::command]
+pub fn delete_type(state: State<'_, AppState>, id: String) -> Res<Vec<TypeDto>> {
+    require_unlocked(&state)?;
+    let catalog = SecretTypeCatalog::default();
+    let mut custom = catalog.custom().map_err(err)?;
+    let Some(i) = custom.iter().position(|t| t.id == id) else { return Err("Built-in types can't be deleted.".into()) };
+    let used = SecretStore::default().list().map_err(err)?.iter().filter(|s| s.type_id.as_deref().is_some_and(|t| eq_ic(t, &id))).count();
+    if used > 0 {
+        let name = &custom[i].name;
+        return Err(format!("{used} secret{} use{} '{name}'. Change their type first.", if used == 1 { "" } else { "s" }, if used == 1 { "s" } else { "" }));
+    }
+    custom.remove(i);
+    catalog.save_custom(custom).map_err(err)?;
+    secret_types()
 }
 
 /// Every field's value (typed) or the value (plain). Needs the identity check.

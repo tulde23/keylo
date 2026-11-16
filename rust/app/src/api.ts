@@ -109,6 +109,21 @@ export interface Approval {
   verifierName: string;
 }
 
+export interface FieldInput {
+  /** "" for a new field; fixed once saved. */
+  id: string;
+  label: string;
+  kind: FieldKind;
+  options: string[] | null;
+}
+
+export interface TypeInput {
+  name: string;
+  icon: string | null;
+  color: string | null;
+  fields: FieldInput[];
+}
+
 export interface SaveInput {
   originalName: string | null;
   name: string;
@@ -131,6 +146,8 @@ export const api = {
   touch: () => invoke<void>("touch"),
   secrets: () => invoke<Secret[]>("secrets"),
   types: () => invoke<SecretType[]>("secret_types"),
+  saveType: (id: string | null, input: TypeInput) => invoke<SecretType[]>("save_type", { id, input }),
+  deleteType: (id: string) => invoke<SecretType[]>("delete_type", { id }),
   reveal: (name: string, forEdit = false) => invoke<Record<string, string>>("reveal", { name, forEdit }),
   copy: (name: string, field?: string) => invoke<number>("copy_field", { name, field: field ?? null }),
   save: (input: SaveInput) => invoke<Secret>("save_secret", { input }),

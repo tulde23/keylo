@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
-import { api, timeAgo, type AccessKey, type AppInfo, type KeyInput, type Secret, type Settings } from "../api";
+import { api, timeAgo, type AccessKey, type AppInfo, type KeyInput, type Secret, type SecretType, type Settings } from "../api";
+import TypesSection from "./TypesSection";
 import type { Run } from "../App";
 import { Drawer, Modal, useToast } from "./ui";
 
 export default function SettingsView(props: {
   info: AppInfo;
   secrets: Secret[];
+  types: SecretType[];
+  onTypes: (types: SecretType[]) => void;
   categories: string[];
   run: Run;
   onSettingsSaved: () => Promise<void>;
@@ -127,6 +130,8 @@ export default function SettingsView(props: {
           </ul>
         )}
       </section>
+
+      <TypesSection types={props.types} secrets={props.secrets} run={run} onTypes={props.onTypes} />
 
       <section className="card">
         <h2>About</h2>
