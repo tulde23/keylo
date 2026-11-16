@@ -229,6 +229,17 @@ input:disabled { opacity: 0.5; }
 }
 .type-option.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 
+.chip-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.pick-chip {
+  display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--bg); cursor: pointer;
+}
+.pick-chip:hover { background: var(--row-hover); }
+.pick-chip.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.pick-chip.add { border-style: dashed; color: var(--muted); }
+.pick-chip-input { display: inline-flex; align-items: center; gap: 2px; height: 30px; padding: 0 4px 0 2px; border: 1px solid var(--accent); border-radius: 999px; }
+.pick-chip-input input { width: 150px; height: 26px; border: 0 !important; background: transparent !important; padding: 0 8px !important; }
+
 /* ------------------------------------------------------------------ slide-in panel */
 .drawer-backdrop { position: fixed; inset: 0; z-index: 9; background: rgba(0, 0, 0, 0.22); animation: fade-in 160ms ease-out; }
 .drawer {

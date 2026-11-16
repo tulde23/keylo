@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Eye, EyeOff, Wand2 } from "lucide-react";
 import { api, type Secret, type SecretType } from "../api";
 import type { Run } from "../App";
+import CategoryPicker from "./CategoryPicker";
 import { Drawer, iconFor } from "./ui";
 
 const PLAIN = "";
@@ -147,11 +148,10 @@ export default function SecretEditor(props: {
           );
         })}
 
-        <label className="form-row">
+        <div className="form-row">
           <span>Category</span>
-          <input value={category} onChange={(e) => setCategory(e.target.value)} list="categories" placeholder="dev, prod, personal…" />
-          <datalist id="categories">{props.categories.map((c) => <option key={c} value={c} />)}</datalist>
-        </label>
+          <CategoryPicker value={category} onChange={setCategory} categories={props.categories} />
+        </div>
 
         <label className="form-row">
           <span>Notes</span>
