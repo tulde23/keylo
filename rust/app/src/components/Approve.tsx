@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ShieldAlert } from "lucide-react";
 import { api, message, type Approval } from "../api";
 
@@ -7,9 +7,19 @@ export default function Approve() {
   const [request, setRequest] = useState<Approval | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The window opens on top and takes focus; a click or key press meant for another window mustn't
+  // answer it, so the buttons wake up a moment after it appears.
+  const [ready, setReady] = useState(false);
+  const deny = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (ready) deny.current?.focus(); // the safe answer has the keyboard
+  }, [ready]);
 
   useEffect(() => {
-    api.approval().then(setRequest);
+    api.approval().then((r) => {
+      setRequest(r);
+      setTimeout(() => setReady(true), 800);
+    });
   }, []);
 
   if (!request) return <div className="splash" />;
@@ -55,18 +65,18 @@ export default function Approve() {
       </p>
       {error && <p className="error-text">{error}</p>}
       <footer className="approve-actions">
-        <button className="button" onClick={() => answer("deny")} disabled={busy} autoFocus>Deny</button>
+        <button ref={deny} className="button" onClick={() => answer("deny")} disabled={busy || !ready}>Deny</button>
         <span className="toolbar-gap" />
         {request.grantOnly ? (
-          <button className="button primary" onClick={() => answer("always")} disabled={busy}>Add to its key</button>
+          <button className="button primary" onClick={() => answer("always")} disabled={busy || !ready}>Add to its key</button>
         ) : (
           <>
             {request.canAlwaysAllow && (
-              <button className="button" onClick={() => answer("always")} disabled={busy} title="Adds these secrets to the agent's access key">
+              <button className="button" onClick={() => answer("always")} disabled={busy || !ready} title="Adds these secrets to the agent's access key">
                 Always allow
               </button>
             )}
-            <button className="button primary" onClick={() => answer("once")} disabled={busy}>Allow once</button>
+            <button className="button primary" onClick={() => answer("once")} disabled={busy || !ready}>Allow once</button>
           </>
         )}
       </footer>

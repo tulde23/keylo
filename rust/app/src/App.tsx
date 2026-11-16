@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { api, LOCKED, message, type AppInfo, type RecentUse, type Secret, type SecretType, type Status } from "./api";
 import LockScreen from "./components/LockScreen";
 import Sidebar, { type View } from "./components/Sidebar";
@@ -63,6 +64,17 @@ function Shell() {
   useEffect(() => {
     if (view === "settings" && status?.unlocked) run(refresh);
   }, [view, status?.unlocked, refresh, run]);
+
+  // The screen locked: Keylo locked with it.
+  useEffect(() => {
+    const stop = listen("keylo://locked", () => {
+      setSecrets([]);
+      setSelected(null);
+      setEditing(null);
+      api.status().then(setStatus);
+    });
+    return () => { stop.then((f) => f()); };
+  }, []);
 
   // Activity keeps the session alive; the session ending (or a lock from the CLI) shows the lock screen.
   const lastTouch = useRef(0);

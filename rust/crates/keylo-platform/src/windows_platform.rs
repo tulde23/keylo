@@ -469,3 +469,20 @@ impl ProcessAncestry for Toolhelp {
 fn last_error() -> String {
     format!("{:?}", unsafe { GetLastError() })
 }
+
+// ---------------------------------------------------------------------------- screen lock
+
+/// While Windows shows the lock screen (or the session is disconnected), the input desktop is the
+/// secure Winlogon desktop, which a user process can't open.
+pub fn is_screen_locked() -> bool {
+    use windows::Win32::System::StationsAndDesktops::{CloseDesktop, OpenInputDesktop, DESKTOP_CONTROL_FLAGS, DESKTOP_SWITCHDESKTOP};
+    unsafe {
+        match OpenInputDesktop(DESKTOP_CONTROL_FLAGS(0), false, DESKTOP_SWITCHDESKTOP) {
+            Ok(desk) => {
+                let _ = CloseDesktop(desk);
+                false
+            }
+            Err(_) => true,
+        }
+    }
+}

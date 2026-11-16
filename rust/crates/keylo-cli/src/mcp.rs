@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Local};
 use keylo_core::access::{self, AccessKey, SecretOperation};
+use keylo_core::approval::{self, ApprovalRequest};
 use keylo_core::config::KeyloConfig;
 use keylo_core::gate::AccessGate;
 use keylo_core::platform;
@@ -429,6 +430,27 @@ impl Server {
         grant_only: bool,
     ) -> Approval {
         let _one = self.approval.lock().unwrap();
+
+        // The Keylo app's approval window, when the app is installed next to keylo: it verifies the
+        // user and adds "always" grants itself, and answers with its exit code.
+        if let Some(app) = app_path() {
+            let request = ApprovalRequest {
+                operation: ApprovalRequest::op_code(SecretOperation::Run),
+                secrets: names.to_vec(),
+                key_id: Some(key.id.clone()),
+                key_name: Some(key.name.clone()),
+                reason: reason.map(str::to_string),
+                command: command.map(str::to_string),
+                can_always_allow: can_always,
+                grant_only,
+            };
+            return match run_approval_app(&app, &request) {
+                Some(approval::ALLOWED_ALWAYS) => Approval::Always,
+                Some(approval::ALLOWED_ONCE) => Approval::Once,
+                _ => Approval::Denied,
+            };
+        }
+
         let what = if names.len() == 1 { "a secret".to_string() } else { format!("{} secrets", names.len()) };
         let title = format!("{} wants {verb} {what}", if key.name.is_empty() { "An agent" } else { &key.name });
         let mut message = names.join(", ");
@@ -821,7 +843,38 @@ enum Approval {
     Always,
 }
 
-/// Until the Tauri app's approval window exists: a native message box.
+/// The Keylo app next to this keylo (keylow.exe on Windows, keylow elsewhere), if installed.
+fn app_path() -> Option<std::path::PathBuf> {
+    let dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    let app = dir.join(if cfg!(windows) { "keylow.exe" } else { "keylow" });
+    app.is_file().then_some(app)
+}
+
+/// Opens the app's approval window and waits for its answer. The window denies by itself after
+/// 5 minutes; this is a backstop if it never answers.
+fn run_approval_app(app: &std::path::Path, request: &ApprovalRequest) -> Option<i32> {
+    let mut child = Command::new(app)
+        .args([approval::ARGUMENT, &request.encode()])
+        .env_remove(access::ENVIRONMENT_VARIABLE)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let deadline = Instant::now() + Duration::from_secs(6 * 60);
+    loop {
+        if let Ok(Some(status)) = child.try_wait() {
+            return status.code();
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// Without the app: a native message box.
 #[cfg(windows)]
 fn approval_dialog(title: &str, message: &str, can_always: bool) -> Approval {
     use windows::core::PCWSTR;

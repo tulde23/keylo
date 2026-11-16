@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use keylo_core::approval::{self, ApprovalRequest};
 use keylo_core::config::KeyloConfig;
 use keylo_core::gate::AccessGate;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub struct AppState {
     pub gate: Mutex<AccessGate>,
@@ -34,7 +34,20 @@ fn main() {
     let approving = approval.is_some();
     let state = AppState { gate: Mutex::new(AccessGate::new(&config)), approval };
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    if !approving {
+        // Opening Keylo again shows the window that's already open. (Approval windows are separate:
+        // several agents can ask at once.)
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }));
+    }
+
+    builder
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
@@ -69,6 +82,8 @@ fn main() {
                     .title("Keylo: approve access")
                     .inner_size(480.0, 440.0)
                     .resizable(false)
+                    .minimizable(false)
+                    .maximizable(false)
                     .always_on_top(true)
                     .center()
                     .focused(true)
@@ -86,6 +101,7 @@ fn main() {
                     .min_inner_size(760.0, 480.0)
                     .center()
                     .build()?;
+                watch_screen_lock(app.handle().clone());
             }
             Ok(())
         })
@@ -97,4 +113,21 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Keylo");
+}
+
+/// Locks Keylo when the screen locks: the session ends (for the keylo command too) and the app shows
+/// its lock screen.
+fn watch_screen_lock(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        let mut was_locked = false;
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let locked = keylo_platform::is_screen_locked();
+            if locked && !was_locked {
+                app.state::<AppState>().gate.lock().unwrap().lock();
+                let _ = app.emit("keylo://locked", ());
+            }
+            was_locked = locked;
+        }
+    });
 }
