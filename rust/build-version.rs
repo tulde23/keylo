@@ -21,6 +21,33 @@ fn stamp_version() {
     });
     println!("cargo:rustc-env=KEYLO_BUILD_DATE={date}");
     println!("cargo:rustc-env=KEYLO_COMMIT={commit}");
+
+    // Restamp when this crate changes (cargo's default), and when git moves: a commit, a checkout,
+    // or staging (the index). Works in worktrees too, where .git is a file.
+    println!("cargo:rerun-if-changed=.");
+    println!("cargo:rerun-if-env-changed=KEYLO_COMMIT");
+    println!("cargo:rerun-if-env-changed=KEYLO_BUILD_DATE");
+    let git_path = |p: &str| {
+        std::process::Command::new("git")
+            .args(["rev-parse", "--path-format=absolute", "--git-path", p])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    };
+    let branch = std::process::Command::new("git")
+        .args(["symbolic-ref", "-q", "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    for p in ["HEAD", "index"].into_iter().map(str::to_string).chain(branch) {
+        if let Some(path) = git_path(&p) {
+            if std::path::Path::new(&path).exists() {
+                println!("cargo:rerun-if-changed={path}");
+            }
+        }
+    }
 }
 
 /// Today (UTC) as yyyymmdd, without a date library: days since 1970 to a civil date.
