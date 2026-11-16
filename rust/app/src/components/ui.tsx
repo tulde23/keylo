@@ -4,7 +4,7 @@ import {
   Building2, Cloud, CreditCard, Database, FileText, Globe, KeyRound, LayoutGrid, Link2, Lock, Mail, Server,
   Shield, Smartphone, StickyNote, Terminal, User, Wallet, Wifi, X, type LucideIcon,
 } from "lucide-react";
-import type { Secret, SecretType } from "../api";
+import type { CategorySummary, Secret, SecretType } from "../api";
 
 // Secrets store Fluent icon names ("Person24") from the C# app; these are the lucide equivalents.
 const ICONS: Record<string, LucideIcon> = {
@@ -28,9 +28,12 @@ export function iconFor(name: string | null | undefined): LucideIcon {
   return ICONS[base] ?? KeyRound;
 }
 
-export function SecretIcon({ secret, type, size = 36 }: { secret: Secret; type?: SecretType; size?: number }) {
-  const Icon = secret.linked ? Link2 : iconFor(secret.icon ?? type?.icon);
-  const color = secret.color ?? type?.color ?? null;
+/** A secret's icon and colour: its own, else its category's, else its type's. */
+export function SecretIcon({ secret, type, category, size = 36 }: {
+  secret: Secret; type?: SecretType; category?: CategorySummary; size?: number;
+}) {
+  const Icon = secret.linked ? Link2 : iconFor(secret.icon ?? category?.icon ?? type?.icon);
+  const color = secret.color ?? category?.color ?? type?.color ?? null;
   return (
     <span
       className="secret-icon"
@@ -139,6 +142,44 @@ export function Drawer({ title, onClose, children, footer, dirty = false }: {
           ) : footer}
         </footer>
       </aside>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------- icon and colour pickers
+
+/** Icon choices; `allowDefault` adds a "Default" choice (null: inherit). */
+export function IconPicker({ value, onChange, allowDefault }: {
+  value: string | null; onChange: (icon: string | null) => void; allowDefault?: boolean;
+}) {
+  return (
+    <div className="swatches" role="radiogroup" aria-label="Icon">
+      {allowDefault && (
+        <button type="button" role="radio" aria-checked={value === null} className={`icon-swatch default${value === null ? " active" : ""}`}
+          onClick={() => onChange(null)} title="Default (from its category or type)">Auto</button>
+      )}
+      {ICON_CHOICES.map((choice) => {
+        const Icon = iconFor(choice);
+        return (
+          <button type="button" key={choice} role="radio" aria-checked={value === choice} aria-label={choice.replace(/\d+$/, "")}
+            className={`icon-swatch${value === choice ? " active" : ""}`} onClick={() => onChange(choice)}>
+            <Icon size={17} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function ColorPicker({ value, onChange }: { value: string | null; onChange: (color: string | null) => void }) {
+  return (
+    <div className="swatches" role="radiogroup" aria-label="Colour">
+      <button type="button" role="radio" aria-checked={value === null} aria-label="Default"
+        className={`color-swatch none${value === null ? " active" : ""}`} onClick={() => onChange(null)} />
+      {COLOR_CHOICES.map((c) => (
+        <button type="button" key={c} role="radio" aria-checked={value === c} aria-label={c}
+          className={`color-swatch${value === c ? " active" : ""}`} style={{ background: c }} onClick={() => onChange(c)} />
+      ))}
     </div>
   );
 }

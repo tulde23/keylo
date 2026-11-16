@@ -5,6 +5,7 @@
 pub mod access;
 pub mod activity;
 pub mod approval;
+pub mod categories;
 pub mod config;
 pub mod error;
 pub mod gate;
@@ -30,3 +31,6 @@ pub fn eq_ic(a: &str, b: &str) -> bool {
 pub fn contains_ic(haystack: &str, needle: &str) -> bool {
     haystack.to_lowercase().contains(&needle.to_lowercase())
 }
+
+#[cfg(test)]
+pub(crate) mod testing;

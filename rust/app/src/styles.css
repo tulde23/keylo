@@ -264,6 +264,24 @@ select {
 .add-field { align-self: flex-start; margin-top: 4px; }
 .drawer-problem { margin-right: auto; color: var(--muted); font-size: 12px; }
 
+.nav-heading { display: flex; align-items: center; justify-content: space-between; padding-right: 4px; }
+.nav-manage { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; padding: 4px 6px; border-radius: 6px; }
+.nav-manage:hover { background: var(--row-hover); color: var(--text); }
+.icon-swatch.default { width: auto; padding: 0 10px; font-size: 12px; }
+.style-preview { display: flex; align-items: center; gap: 10px; }
+.style-preview .button { margin-left: auto; }
+.style-pickers, .category-style-pickers { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.add-category { display: flex; gap: 8px; margin-bottom: 14px; }
+.category-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.category-row { border: 1px solid var(--border); border-radius: 8px; padding: 8px; background: var(--bg); }
+.category-main { display: flex; align-items: center; gap: 8px; }
+.category-main input { flex: 1; min-width: 0; }
+.category-style { border: 0; cursor: pointer; }
+.category-count { font-size: 12px; white-space: nowrap; }
+.category-row > p { margin: 6px 0 0 40px; }
+.category-delete { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+.category-delete-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
 /* ------------------------------------------------------------------ slide-in panel */
 .drawer-backdrop { position: fixed; inset: 0; z-index: 9; background: rgba(0, 0, 0, 0.22); animation: fade-in 160ms ease-out; }
 .drawer {

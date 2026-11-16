@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Pin, Plus } from "lucide-react";
-import { timeAgo, type RecentUse, type Secret, type SecretType } from "../api";
+import { timeAgo, type CategorySummary, type RecentUse, type Secret, type SecretType } from "../api";
 import type { View } from "./Sidebar";
 import { SecretIcon } from "./ui";
 
@@ -20,6 +20,7 @@ export default function SecretList(props: {
   secrets: Secret[];
   recent: RecentUse[];
   typeOf: (s: Secret) => SecretType | undefined;
+  categoryOf: (s: Secret) => CategorySummary | undefined;
   query: string;
   selected: string | null;
   onSelect: (name: string) => void;
@@ -95,7 +96,7 @@ export default function SecretList(props: {
                           className={`secret-row${props.selected === s.name ? " selected" : ""}`}
                           onClick={() => props.onSelect(s.name)}
                         >
-                          <SecretIcon secret={s} type={t} />
+                          <SecretIcon secret={s} type={t} category={props.categoryOf(s)} />
                           <span className="row-text">
                             <span className="row-name">{s.name}</span>
                             <span className="row-sub">

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Check, Copy, Eye, EyeOff, Pencil, Pin, PinOff, Terminal, Trash2 } from "lucide-react";
-import { api, timeAgo, type AppInfo, type Secret, type SecretType } from "../api";
+import { api, timeAgo, type AppInfo, type CategorySummary, type Secret, type SecretType } from "../api";
 import type { Run } from "../App";
 import { Modal, SecretIcon, useToast } from "./ui";
 
@@ -36,6 +36,7 @@ function rowsFor(secret: Secret, type: SecretType | undefined): Row[] {
 export default function SecretDetail(props: {
   secret: Secret | null;
   type: SecretType | undefined;
+  category: CategorySummary | undefined;
   info: AppInfo;
   run: Run;
   onEdit: (values: Record<string, string>) => void;
@@ -96,7 +97,7 @@ export default function SecretDetail(props: {
   return (
     <section className="detail-pane" aria-label={secret.name}>
       <header className="detail-header">
-        <SecretIcon secret={secret} type={type} size={48} />
+        <SecretIcon secret={secret} type={type} category={props.category} size={48} />
         <div className="detail-title">
           <h1>{secret.name}</h1>
           <div className="chips">

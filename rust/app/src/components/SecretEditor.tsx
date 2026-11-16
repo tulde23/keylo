@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { Eye, EyeOff, Wand2 } from "lucide-react";
-import { api, type Secret, type SecretType } from "../api";
+import { api, type CategorySummary, type Secret, type SecretType } from "../api";
 import type { Run } from "../App";
 import CategoryPicker from "./CategoryPicker";
-import { Drawer, iconFor } from "./ui";
+import { ColorPicker, Drawer, IconPicker, iconFor, SecretIcon } from "./ui";
 
 const PLAIN = "";
 
@@ -13,6 +13,7 @@ export default function SecretEditor(props: {
   values: Record<string, string> | null;
   types: SecretType[];
   categories: string[];
+  categoryOf: (s: Secret) => CategorySummary | undefined;
   run: Run;
   onClose: () => void;
   onSaved: (saved: Secret) => void;
@@ -22,6 +23,9 @@ export default function SecretEditor(props: {
   const [name, setName] = useState(editing?.name ?? "");
   const [category, setCategory] = useState(editing?.category ?? "");
   const [notes, setNotes] = useState(editing?.notes ?? "");
+  const [icon, setIcon] = useState<string | null>(editing?.icon ?? null);
+  const [color, setColor] = useState<string | null>(editing?.color ?? null);
+  const [styling, setStyling] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>(() => ({ ...(props.values ?? {}) }));
   const [shown, setShown] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
@@ -48,7 +52,8 @@ export default function SecretEditor(props: {
   const initial = useMemo(() => JSON.stringify([props.values ?? {}, editing?.name ?? "", editing?.category ?? "", editing?.notes ?? ""]), [props.values, editing]);
   const nonEmpty = (f: Record<string, string>) => Object.fromEntries(Object.entries(f).filter(([, v]) => v !== ""));
   const dirty = editing
-    ? JSON.stringify([nonEmpty(fields), name, category, notes]) !== JSON.stringify([nonEmpty(JSON.parse(initial)[0]), ...JSON.parse(initial).slice(1)])
+    ? (JSON.stringify([nonEmpty(fields), name, category, notes]) !== JSON.stringify([nonEmpty(JSON.parse(initial)[0]), ...JSON.parse(initial).slice(1)])
+       || icon !== (editing.icon ?? null) || color !== (editing.color ?? null))
     : Object.values(fields).some((v) => v !== "") || name !== "" || category !== "" || notes !== "";
   const canSave = name.trim() !== "" && (!mainField || (fields[mainField.id] ?? "") !== "" || !!editing);
 
@@ -63,8 +68,8 @@ export default function SecretEditor(props: {
         fields: Object.fromEntries(Object.entries(fields).filter(([k]) => ids.has(k))),
         category: category.trim() || null,
         notes: notes.trim() || null,
-        icon: editing?.icon ?? null,
-        color: editing?.color ?? null,
+        icon,
+        color,
       }),
     );
     setBusy(false);
@@ -151,6 +156,27 @@ export default function SecretEditor(props: {
         <div className="form-row">
           <span>Category</span>
           <CategoryPicker value={category} onChange={setCategory} categories={props.categories} />
+        </div>
+
+        <div className="form-row">
+          <span>Icon and colour</span>
+          <div className="style-preview">
+            {/* As it will show: its own choice, else its category's, else its type's. */}
+            <SecretIcon
+              secret={{ ...(editing ?? ({} as Secret)), name, category: category || null, icon, color, type: typeId || null, linked: false }}
+              type={type}
+              category={category ? props.categoryOf({ category } as Secret) : undefined}
+              size={36}
+            />
+            <span className="muted small-text">{icon || color ? "Its own" : "From its category or type"}</span>
+            <button type="button" className="button small" onClick={() => setStyling(!styling)}>{styling ? "Done" : "Change"}</button>
+          </div>
+          {styling && (
+            <div className="style-pickers">
+              <IconPicker value={icon} allowDefault onChange={setIcon} />
+              <ColorPicker value={color} onChange={setColor} />
+            </div>
+          )}
         </div>
 
         <label className="form-row">

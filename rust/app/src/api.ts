@@ -54,6 +54,13 @@ export interface SecretType {
   fields: Field[];
 }
 
+export interface CategorySummary {
+  name: string;
+  count: number;
+  icon: string | null;
+  color: string | null;
+}
+
 export interface RecentUse {
   name: string;
   time: string;
@@ -154,6 +161,14 @@ export const api = {
   remove: (name: string) => invoke<void>("delete_secret", { name }),
   setPinned: (name: string, pinned: boolean) => invoke<void>("set_pinned", { name, pinned }),
   recent: () => invoke<RecentUse[]>("recent"),
+  categories: () => invoke<CategorySummary[]>("categories"),
+  createCategory: (name: string, icon: string | null, color: string | null) =>
+    invoke<CategorySummary[]>("create_category", { name, icon, color }),
+  setCategoryStyle: (name: string, icon: string | null, color: string | null) =>
+    invoke<CategorySummary[]>("set_category_style", { name, icon, color }),
+  renameCategory: (from: string, to: string) => invoke<CategorySummary[]>("rename_category", { from, to }),
+  deleteCategory: (name: string, moveTo: string | null, deleteSecrets: boolean) =>
+    invoke<CategorySummary[]>("delete_category", { name, moveTo, deleteSecrets }),
   settings: () => invoke<Settings>("settings"),
   saveSettings: (settings: Settings) => invoke<Settings>("save_settings", { settings }),
   keys: () => invoke<AccessKey[]>("access_keys"),

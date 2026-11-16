@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Lock, Plus, Trash2 } from "lucide-react";
 import { api, type FieldInput, type FieldKind, type Secret, type SecretType } from "../api";
 import type { Run } from "../App";
-import { COLOR_CHOICES, Drawer, ICON_CHOICES, iconFor, Modal, useToast } from "./ui";
+import { ColorPicker, Drawer, IconPicker, iconFor, Modal, useToast } from "./ui";
 
 const KINDS: { kind: FieldKind; label: string; help: string }[] = [
   { kind: "Text", label: "Text", help: "Shown without unlocking; searchable; agents with access can see it" },
@@ -175,29 +175,12 @@ function TypeEditor({ type, inUse, run, onClose, onSaved }: {
 
         <div className="form-row">
           <span>Icon</span>
-          <div className="swatches" role="radiogroup" aria-label="Icon">
-            {ICON_CHOICES.map((choice) => {
-              const Icon = iconFor(choice);
-              return (
-                <button type="button" key={choice} role="radio" aria-checked={icon === choice} aria-label={choice.replace(/\d+$/, "")}
-                  className={`icon-swatch${icon === choice ? " active" : ""}`} onClick={() => setIcon(choice)}>
-                  <Icon size={17} />
-                </button>
-              );
-            })}
-          </div>
+          <IconPicker value={icon} onChange={(i) => setIcon(i ?? "Apps24")} />
         </div>
 
         <div className="form-row">
           <span>Colour</span>
-          <div className="swatches" role="radiogroup" aria-label="Colour">
-            <button type="button" role="radio" aria-checked={color === null} aria-label="Default"
-              className={`color-swatch none${color === null ? " active" : ""}`} onClick={() => setColor(null)} />
-            {COLOR_CHOICES.map((c) => (
-              <button type="button" key={c} role="radio" aria-checked={color === c} aria-label={c}
-                className={`color-swatch${color === c ? " active" : ""}`} style={{ background: c }} onClick={() => setColor(c)} />
-            ))}
-          </div>
+          <ColorPicker value={color} onChange={setColor} />
         </div>
 
         <div className="form-row">

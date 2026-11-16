@@ -39,7 +39,8 @@ exercises the MCP server, in a throwaway data folder and credential prefix.
 | Tauri + React app: lock screen, top bar (ported from the WPF app, system window buttons), sidebar, list, detail, slide-in editor, settings, access keys, activity, approval window (`keylow --approve`) | Done (first version) |
 | App: custom secret types editor (Settings → Secret types; built-ins: icon and colour) | Done |
 | App: lock on screen lock, single instance | Done |
-| App: categories manager, per-secret icons and colours, import, link | To do |
+| App: categories manager (create, rename, merge, style, delete with move or delete), per-secret icon and colour | Done |
+| App: import, link, backup/restore | To do |
 | `keylo mcp` opening the app's approval window (message box only without the app) | Done; buttons wake after 0.8 s so a stray click can't answer |
 | macOS platform (Keychain, Touch ID) and Linux (Secret Service / file vault, polkit) | To do |
 | Packaging and CI (release workflow, signing, notarization) | To do |

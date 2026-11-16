@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { api, LOCKED, message, type AppInfo, type RecentUse, type Secret, type SecretType, type Status } from "./api";
+import { api, LOCKED, message, type AppInfo, type CategorySummary, type RecentUse, type Secret, type SecretType, type Status } from "./api";
+import CategoryManager from "./components/CategoryManager";
 import LockScreen from "./components/LockScreen";
 import Sidebar, { type View } from "./components/Sidebar";
 import SecretList from "./components/SecretList";
@@ -32,6 +33,8 @@ function Shell() {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<Editing>(null);
+  const [categories, setCategories] = useState<CategorySummary[]>([]);
+  const [managingCategories, setManagingCategories] = useState(false);
 
   /** Runs a backend call; a "locked" error shows the lock screen, others a toast. */
   const run = useCallback(async <T,>(call: () => Promise<T>): Promise<T | undefined> => {
@@ -46,9 +49,10 @@ function Shell() {
   }, [toast]);
 
   const refresh = useCallback(async () => {
-    const [list, uses] = await Promise.all([api.secrets(), api.recent()]);
+    const [list, uses, cats] = await Promise.all([api.secrets(), api.recent(), api.categories()]);
     setSecrets(list);
     setRecent(uses);
+    setCategories(cats);
   }, []);
 
   useEffect(() => {
@@ -100,11 +104,11 @@ function Shell() {
     return (s: Secret) => (s.type ? map.get(s.type) : undefined);
   }, [types]);
 
-  const categories = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const s of secrets) if (s.category) counts.set(s.category, (counts.get(s.category) ?? 0) + 1);
-    return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: "base" }));
-  }, [secrets]);
+  const categoryOf = useMemo(() => {
+    const map = new Map(categories.map((c) => [c.name.toLowerCase(), c]));
+    return (s: Secret) => (s.category ? map.get(s.category.toLowerCase()) : undefined);
+  }, [categories]);
+  const categoryNames = categories.map((c) => c.name);
 
   const current = secrets.find((s) => s.name === selected) ?? null;
 
@@ -155,6 +159,7 @@ function Shell() {
         categories={categories}
         types={types}
         secrets={secrets}
+        onManageCategories={() => setManagingCategories(true)}
       />
       {isSecretsView && (
         <>
@@ -163,6 +168,7 @@ function Shell() {
             secrets={secrets}
             recent={recent}
             typeOf={typeOf}
+            categoryOf={categoryOf}
             query={query}
             selected={selected}
             onSelect={setSelected}
@@ -172,6 +178,7 @@ function Shell() {
             key={current?.name ?? "none"}
             secret={current}
             type={current ? typeOf(current) : undefined}
+            category={current ? categoryOf(current) : undefined}
             info={info}
             run={run}
             onEdit={(values) => current && setEditing({ secret: current, values })}
@@ -189,7 +196,7 @@ function Shell() {
           secrets={secrets}
           types={types}
           onTypes={setTypes}
-          categories={categories.map(([c]) => c)}
+          categories={categoryNames}
           run={run}
           onSettingsSaved={async () => setStatus(await api.status())}
         />
@@ -199,7 +206,8 @@ function Shell() {
           secret={editing.secret}
           values={editing.values}
           types={types}
-          categories={categories.map(([c]) => c)}
+          categories={categoryNames}
+          categoryOf={categoryOf}
           run={run}
           onClose={() => setEditing(null)}
           onSaved={async (saved) => {
@@ -208,6 +216,19 @@ function Shell() {
             setSelected(saved.name);
             toast(editing.secret ? `Saved '${saved.name}'.` : `Added '${saved.name}'.`);
           }}
+        />
+      )}
+      {managingCategories && (
+        <CategoryManager
+          categories={categories}
+          run={run}
+          onChanged={(cats) => {
+            setCategories(cats);
+            run(refresh);
+            // A category renamed or deleted while it's the current view: go to everything.
+            if (view.startsWith("cat:") && !cats.some((c) => c.name === view.slice(4))) setView("all");
+          }}
+          onClose={() => setManagingCategories(false)}
         />
       )}
     </div>

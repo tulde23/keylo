@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use keylo_core::access::{self, KeyScope};
 use keylo_core::activity::{Activity, RecentUse};
 use keylo_core::approval;
+use keylo_core::categories::{CategoryCatalog, CategorySummary};
 use keylo_core::config::{HelloMode, KeyloConfig};
 use keylo_core::gate::AccessGate;
 use keylo_core::refs::is_linked;
@@ -425,6 +426,64 @@ pub fn recent(state: State<'_, AppState>) -> Res<Vec<RecentUse>> {
 #[tauri::command]
 pub fn generate_password(length: usize, symbols: bool) -> String {
     keylo_core::password::generate(length, symbols)
+}
+
+// ---------------------------------------------------------------------------- categories
+
+#[tauri::command]
+pub fn categories(state: State<'_, AppState>) -> Res<Vec<CategorySummary>> {
+    require_unlocked(&state)?;
+    Ok(CategoryCatalog::default().all(&SecretStore::default().list().map_err(err)?))
+}
+
+#[tauri::command]
+pub fn create_category(state: State<'_, AppState>, name: String, icon: Option<String>, color: Option<String>) -> Res<Vec<CategorySummary>> {
+    require_unlocked(&state)?;
+    CategoryCatalog::default().create(&name, icon.as_deref(), color.as_deref()).map_err(err)?;
+    categories(state)
+}
+
+#[tauri::command]
+pub fn set_category_style(state: State<'_, AppState>, name: String, icon: Option<String>, color: Option<String>) -> Res<Vec<CategorySummary>> {
+    require_unlocked(&state)?;
+    CategoryCatalog::default().set_style(&name, icon.as_deref(), color.as_deref()).map_err(err)?;
+    categories(state)
+}
+
+/// Renames a category on every secret in it; onto an existing name, merges the two.
+#[tauri::command]
+pub async fn rename_category(window: WebviewWindow, state: State<'_, AppState>, from: String, to: String) -> Res<Vec<CategorySummary>> {
+    ensure(&window, &state, "Unlock Keylo", false).await?;
+    CategoryCatalog::default().rename(&SecretStore::default(), &from, &to).map_err(err)?;
+    categories(state)
+}
+
+/// Deletes a category: its secrets move to `move_to` (None: uncategorized) or, with
+/// `delete_secrets`, are deleted (which always asks for the identity check).
+#[tauri::command]
+pub async fn delete_category(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    name: String,
+    move_to: Option<String>,
+    delete_secrets: bool,
+) -> Res<Vec<CategorySummary>> {
+    if delete_secrets {
+        confirm(&window, &format!("Keylo: delete every secret in '{name}'"))?;
+    } else {
+        ensure(&window, &state, "Unlock Keylo", false).await?;
+    }
+    let store = SecretStore::default();
+    let doomed: Vec<String> = if delete_secrets {
+        store.list().map_err(err)?.into_iter().filter(|s| s.category.as_deref().is_some_and(|c| eq_ic(c, &name))).map(|s| s.name).collect()
+    } else {
+        vec![]
+    };
+    CategoryCatalog::default().delete(&store, &name, move_to.as_deref().filter(|m| !m.trim().is_empty()), delete_secrets).map_err(err)?;
+    if !doomed.is_empty() {
+        let _ = Activity::default().removed(&doomed);
+    }
+    categories(state)
 }
 
 // ---------------------------------------------------------------------------- settings
