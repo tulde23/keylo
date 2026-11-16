@@ -84,6 +84,12 @@ internal static class Program
             if (argv.Length == 0) return LaunchApp();
 
             var command = argv[0].ToLowerInvariant();
+#if !WINDOWS
+            // Linux's vault may ask for its passphrase on the terminal, but never from the MCP
+            // server (the agent owns the terminal) or the background clipboard cleaner.
+            if (OperatingSystem.IsLinux())
+                Keylo.Platform.Linux.FileVault.CanPromptOnTerminal = command is not ("mcp" or "__clip-clear");
+#endif
             var args = new Args(argv.Skip(1), Flags);
             if (args.Flag("help") || command is "help" or "-h" or "--help" or "/?")
             {
@@ -198,8 +204,9 @@ internal static class Program
 #if WINDOWS
         Keylo.Platform.Windows.WindowsPlatform.Install();
 #else
-        if (!OperatingSystem.IsMacOS()) throw new PlatformNotSupportedException("Keylo runs on Windows and macOS.");
-        Keylo.Platform.MacOS.MacPlatform.Install();
+        if (OperatingSystem.IsMacOS()) Keylo.Platform.MacOS.MacPlatform.Install();
+        else if (OperatingSystem.IsLinux()) Keylo.Platform.Linux.LinuxPlatform.Install();
+        else throw new PlatformNotSupportedException("Keylo runs on Windows, macOS and Linux.");
 #endif
     }
 
@@ -212,6 +219,14 @@ internal static class Program
             if (OperatingSystem.IsMacOS() && bundle.EndsWith(".app", StringComparison.OrdinalIgnoreCase) && Directory.Exists(bundle))
             {
                 Process.Start(new ProcessStartInfo("/usr/bin/open", [bundle]) { UseShellExecute = false })?.Dispose();
+                return 0;
+            }
+            // On Linux keylo is KeyloApp --cli; start KeyloApp in its own session so it outlives the terminal.
+            var linuxApp = Path.Combine(AppContext.BaseDirectory, "KeyloApp");
+            if (OperatingSystem.IsLinux() && File.Exists(linuxApp) &&
+                (Environment.GetEnvironmentVariable("WAYLAND_DISPLAY") is { Length: > 0 } || Environment.GetEnvironmentVariable("DISPLAY") is { Length: > 0 }))
+            {
+                Process.Start(new ProcessStartInfo("setsid", ["-f", linuxApp]) { UseShellExecute = false })?.Dispose();
                 return 0;
             }
             Console.WriteLine(Usage);
@@ -1057,6 +1072,15 @@ internal static class Program
     private static async Task<int> UnlockAsync(Context c, Args args)
     {
         args.ThrowOnUnknown();
+#if !WINDOWS
+        // Linux without a keyring: unlock the vault (asks for its passphrase, then caches the key).
+        if (Keylo.Platform.Linux.LinuxPlatform.Current?.Vault is { } vault)
+        {
+            vault.Lock();
+            _ = c.Store.List();
+            Terminal.Info("Vault unlocked.");
+        }
+#endif
         if (c.Gate.Mode == HelloMode.Never)
         {
             Terminal.Info($"{Platform.VerifierName} is off (hello = never); nothing to unlock.");
@@ -1075,6 +1099,9 @@ internal static class Program
     {
         args.ThrowOnUnknown();
         c.Gate.Lock();
+#if !WINDOWS
+        Keylo.Platform.Linux.LinuxPlatform.Current?.Vault?.Lock();
+#endif
         Terminal.Info("Locked.");
         return 0;
     }
@@ -1090,6 +1117,10 @@ internal static class Program
         };
         Console.WriteLine($"Keylo {typeof(Program).Assembly.GetName().Version?.ToString(3)}: {state}");
         Console.WriteLine($"Data:  {KeyloPaths.DefaultDataDirectory}");
+#if !WINDOWS
+        if (Keylo.Platform.Linux.LinuxPlatform.Current is { } linux)
+            Console.WriteLine($"Store: {linux.StoreName}{(linux.Vault is { } v ? $" ({v.Path}, {(v.TryUnlockQuietly() ? "unlocked" : "locked")})" : "")}");
+#endif
         return 0;
     }
 

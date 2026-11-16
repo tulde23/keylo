@@ -18,7 +18,7 @@ internal static class McpServer
     private static readonly string[] ProtocolVersions = ["2025-06-18", "2025-03-26", "2024-11-05"];
 
     private static string Instructions => $"""
-        Keylo holds the user's secrets (API keys, passwords, tokens) on this {(OperatingSystem.IsMacOS() ? "Mac" : "Windows PC")}.
+        Keylo holds the user's secrets (API keys, passwords, tokens) on this {(OperatingSystem.IsMacOS() ? "Mac" : OperatingSystem.IsLinux() ? "Linux machine" : "Windows PC")}.
         - Find secrets with search_secrets. Each result says what your access key allows: "run" or "needs approval".
         - Secrets have types (login, api_key, database, ssh_key, note, custom) with named fields; search results include each
           secret's field schema. Address one field as "name:field" (e.g. "prod-db:connection_string"); a bare name means its main value.

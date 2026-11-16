@@ -64,7 +64,7 @@ public sealed class AvaloniaUiHost : IUiHost
 
     private EventHandler? _sessionLocked;
 
-    /// <summary>On macOS, polled: Keylo locks once the screen does.</summary>
+    /// <summary>On macOS and Linux, polled: Keylo locks once the screen does.</summary>
     public event EventHandler? SessionLocked
     {
         add
@@ -81,9 +81,12 @@ public sealed class AvaloniaUiHost : IUiHost
     private DispatcherTimer StartLockWatch()
     {
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-        timer.Tick += (_, _) =>
+        timer.Tick += async (_, _) =>
         {
-            var locked = Keylo.Platform.MacOS.MacSession.IsScreenLocked();
+            // Linux asks logind (a short-lived process), so off the UI thread.
+            var locked = OperatingSystem.IsLinux()
+                ? await Task.Run(Keylo.Platform.Linux.LinuxSession.IsScreenLocked)
+                : Keylo.Platform.MacOS.MacSession.IsScreenLocked();
             if (locked && !_wasLocked) _sessionLocked?.Invoke(this, EventArgs.Empty);
             _wasLocked = locked;
         };

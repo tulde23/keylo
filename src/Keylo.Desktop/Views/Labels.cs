@@ -19,7 +19,9 @@ public static class Labels
         "Then choose what it can use without asking and Save settings. Keylo keeps only a hash; delete a key to revoke it.";
     public static string BackupIntro =>
         "One .keylo file with every secret, category and icon, encrypted with AES-256-GCM under your password. " +
-        (OperatingSystem.IsMacOS() ? "It works on any Mac or PC, unlike the keychain." : "It works on any PC or Windows account, unlike Keylo's normal storage.");
+        (OperatingSystem.IsMacOS() ? "It works on any Mac or PC, unlike the keychain."
+            : OperatingSystem.IsLinux() ? "It works on any computer, unlike Keylo's normal storage."
+            : "It works on any PC or Windows account, unlike Keylo's normal storage.");
 
     /// <summary>The settings footer: what saving asks for, or that there are unsaved changes.</summary>
     public static readonly IValueConverter SaveHint = new FuncValueConverter<bool, string>(dirty => dirty

@@ -8,6 +8,9 @@ public partial class PasswordDialog : DialogWindow
 {
     private readonly bool _isNew;
 
+    /// <summary>The password entered, once OK closes the dialog (for callers that show it without an owner).</summary>
+    public string? Result { get; private set; }
+
     public PasswordDialog() : this("", "", "OK", false) { }
 
     public PasswordDialog(string heading, string message, string okText, bool isNew, string? error = null)
@@ -27,7 +30,7 @@ public partial class PasswordDialog : DialogWindow
     private string? Validate()
     {
         var password = First.Text ?? "";
-        if (!_isNew) return password.Length == 0 ? "Enter the backup's password." : null;
+        if (!_isNew) return password.Length == 0 ? "Enter the password." : null;
         return KeyloBackup.CheckPassword(password) ?? (password != (Second.Text ?? "") ? "The passwords don't match." : null);
     }
 
@@ -38,6 +41,7 @@ public partial class PasswordDialog : DialogWindow
             Problem.Text = problem;
             return;
         }
+        Result = First.Text;
         Close(First.Text);
     }
 

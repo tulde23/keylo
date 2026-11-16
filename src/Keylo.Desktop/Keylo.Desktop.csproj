@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- Keylo's desktop app on Avalonia: the macOS app (Keylo.app). It also builds for Windows, for
-         development; Windows users get the WPF app (Keylo.App). -->
+    <!-- Keylo's desktop app on Avalonia: the macOS app (Keylo.app) and the Linux app. It also builds
+         for Windows, for development; Windows users get the WPF app (Keylo.App). -->
     <OutputType>WinExe</OutputType>
     <TargetFrameworks>net10.0;net10.0-windows10.0.19041.0</TargetFrameworks>
     <AssemblyName>KeyloApp</AssemblyName>
@@ -36,6 +36,7 @@
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
     <ProjectReference Include="..\Keylo.Platform.MacOS\Keylo.Platform.MacOS.csproj" />
+    <ProjectReference Include="..\Keylo.Platform.Linux\Keylo.Platform.Linux.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="$(TargetFramework.Contains('-windows'))">

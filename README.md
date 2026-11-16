@@ -3,8 +3,9 @@
 *Your secrets, not ours.*
 
 Local secrets for one machine, with a command line (`keylo`) and a desktop app. On Windows they
-live in Credential Manager (app: `keylow`); on macOS in your login keychain (app: Keylo.app).
-No server, no account, no sync. Backups move between the two.
+live in Credential Manager (app: `keylow`); on macOS in your login keychain (app: Keylo.app); on
+Linux in your desktop keyring, or Keylo's own encrypted vault where there isn't one.
+No server, no account, no sync. Backups move between them.
 
 ## Install
 
@@ -48,6 +49,40 @@ arguments to open the app. `./install.sh --uninstall` removes the program but le
   alerts; it sits inside Keylo.app next to `keylo`.
 - The login keychain is locked in SSH sessions; `KEYLO_KEYCHAIN=/path/to.keychain-db` points Keylo at
   another keychain (`tests/macos-smoke.sh` uses a throwaway one).
+
+## Linux
+
+The same app and `keylo` command, on x64 or ARM64, self-contained (no .NET install needed). Unpack
+the release bundle and run its installer:
+
+```bash
+tar -xzf keylo-1.1.0-linux-x64.tar.gz && ./keylo-1.1.0-linux-x64/install.sh
+```
+
+It installs to `~/.local/lib/keylo`, links `~/.local/bin/keylo`, adds a menu entry, and (with sudo,
+once) installs Keylo's polkit policy. `install.sh --uninstall` removes the program but leaves your
+secrets. To build the bundle yourself: `./build-linux.sh` (needs the .NET 10 SDK; or run it in the
+`mcr.microsoft.com/dotnet/sdk:10.0` container).
+
+- **Where secrets live.** With a desktop keyring (GNOME Keyring, KWallet, KeePassXC: anything that
+  speaks the Secret Service API), secrets are keyring items, encrypted and unlocked with your login.
+  Without one (servers, containers, WSL), Keylo keeps them in its own **encrypted vault**,
+  `~/.local/share/Keylo/vault.json`: AES-256-GCM under a random key, wrapped with your passphrase
+  (PBKDF2-SHA256, 600,000 iterations). Keylo picks one the first time and remembers it
+  (`store.txt`); `KEYLO_STORE=keyring|file` overrides.
+- **The vault's passphrase** is asked for on the terminal (or in the app), then the unlocked key is
+  cached in the kernel keyring for 15 minutes (`KEYLO_VAULT_CACHE_MINUTES`), so `keylo` commands and
+  the MCP server don't ask again. `keylo unlock` / `keylo lock` open and forget it. For unattended
+  use, `KEYLO_PASSPHRASE` or `KEYLO_PASSPHRASE_FILE` supply it. The MCP server never prompts: unlock
+  first.
+- **The identity check** (Windows Hello / Touch ID elsewhere) is polkit: your desktop's password
+  prompt, or a fingerprint where fprintd is set up; over SSH it asks on the terminal. Without
+  polkit or its policy, use `keylo config hello never`. polkit always allows root, so don't run
+  Keylo as root.
+- **Agents' approval dialogs** use zenity or kdialog; **copying** uses wl-clipboard (Wayland) or
+  xclip / xsel (X11). Keylo locks when the screen locks (logind).
+- `tests/linux-smoke.sh` checks a build end to end, against the vault or (with `KEYLO_STORE=keyring`)
+  a running keyring.
 
 ## Use
 

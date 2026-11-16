@@ -29,7 +29,9 @@ public static class Convert
     {
         HelloMode.Session => "Once per session",
         HelloMode.Always => "Every time a value is revealed or used",
-        HelloMode.Never => OperatingSystem.IsMacOS() ? "Never (Mac login only)" : "Never (Windows sign-in only)",
+        HelloMode.Never => OperatingSystem.IsMacOS() ? "Never (Mac login only)"
+            : OperatingSystem.IsLinux() ? "Never (Linux login only)"
+            : "Never (Windows sign-in only)",
         _ => mode.ToString(),
     });
 

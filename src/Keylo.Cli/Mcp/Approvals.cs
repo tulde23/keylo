@@ -5,7 +5,7 @@ using Keylo.Core.Security;
 
 namespace Keylo.Cli.Mcp;
 
-/// <summary>Asks the user whether an agent may use secrets: the Keylo app's approval window on Windows, an alert on macOS.</summary>
+/// <summary>Asks the user whether an agent may use secrets: the Keylo app's approval window on Windows, a native dialog on macOS and Linux.</summary>
 internal static class Approvals
 {
     // One window at a time: parallel tool calls queue rather than stacking prompts.
@@ -20,7 +20,7 @@ internal static class Approvals
         await OneAtATime.WaitAsync();
         try
         {
-            return await RequestOnMacAsync(request);
+            return await RequestNativeAsync(request);
         }
         finally
         {
@@ -62,10 +62,11 @@ internal static class Approvals
 
 #if !WINDOWS
     /// <summary>
-    /// macOS (no Keylo app yet): a native alert from keylo-mac — Deny / Allow once / Always allow —
-    /// then Touch ID, as the Windows approval window does with Windows Hello.
+    /// macOS and Linux: a native dialog — Deny / Allow once / Always allow — from keylo-mac (macOS)
+    /// or zenity / kdialog (Linux), then Touch ID or polkit, as the Windows approval window does with
+    /// Windows Hello.
     /// </summary>
-    private static async Task<ApprovalResult> RequestOnMacAsync(ApprovalRequest request)
+    private static async Task<ApprovalResult> RequestNativeAsync(ApprovalRequest request)
     {
         var agent = string.IsNullOrWhiteSpace(request.KeyName) ? "An agent" : request.KeyName;
         var verb = request.GrantOnly ? "permanent access to" : request.Operation == SecretOperation.Get ? "read" : "use";
@@ -76,8 +77,10 @@ internal static class Approvals
         if (request.Operation == SecretOperation.Get) message.AppendLine().AppendLine("The value will be shown to the agent.");
 
         var canAlways = !request.GrantOnly && request.CanAlwaysAllow && request.KeyId is not null;
-        var (code, _) = await Keylo.Platform.MacOS.MacHelper.RunAsync(
-            ["approve", $"{agent} wants {verb} {(request.Secrets.Count == 1 ? "a secret" : $"{request.Secrets.Count} secrets")}", message.ToString().Trim(), canAlways ? "1" : "0"]);
+        var title = $"{agent} wants {verb} {(request.Secrets.Count == 1 ? "a secret" : $"{request.Secrets.Count} secrets")}";
+        var code = OperatingSystem.IsLinux()
+            ? await Keylo.Platform.Linux.LinuxDialogs.ApproveAsync(title, message.ToString().Trim(), canAlways)
+            : (await Keylo.Platform.MacOS.MacHelper.RunAsync(["approve", title, message.ToString().Trim(), canAlways ? "1" : "0"])).Code;
         var choice = request.GrantOnly && code == (int)ApprovalResult.AllowedOnce ? ApprovalResult.AllowedAlways : (ApprovalResult)code;
         if (choice is not (ApprovalResult.AllowedOnce or ApprovalResult.AllowedAlways)) return ApprovalResult.Denied;
 

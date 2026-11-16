@@ -15,7 +15,8 @@ internal static class Program
 #if WINDOWS
         Keylo.Platform.Windows.WindowsPlatform.Install();
 #else
-        Keylo.Platform.MacOS.MacPlatform.Install();
+        if (OperatingSystem.IsLinux()) Keylo.Platform.Linux.LinuxPlatform.Install();
+        else Keylo.Platform.MacOS.MacPlatform.Install();
 #endif
         Ui.Install(new AvaloniaUiHost());
         return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
@@ -26,5 +27,6 @@ internal static class Program
         AppBuilder.Configure<App>()
             .UsePlatformDetect()
             .With(new MacOSPlatformOptions { ShowInDock = true })
+            .With(new X11PlatformOptions { WmClass = "keylo" })
             .LogToTrace();
 }

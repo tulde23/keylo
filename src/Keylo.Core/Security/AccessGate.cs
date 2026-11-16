@@ -67,12 +67,13 @@ public sealed class AccessGate(KeyloConfig config, IUserVerifier verifier, strin
                 return;
             case VerificationResult.Unavailable:
                 throw new AccessDeniedException(
-                    $"Windows Hello isn't available ({detail}). Set it up in Settings → Accounts → Sign-in options, " +
-                    "or run 'keylo config hello never'.");
+                    $"{VerifierName} isn't available ({detail}). " +
+                    (OperatingSystem.IsWindows() ? "Set it up in Settings → Accounts → Sign-in options, or run " : "Set it up, or run ") +
+                    "'keylo config hello never'.");
             case VerificationResult.Canceled:
-                throw new AccessDeniedException("Windows Hello was canceled.");
+                throw new AccessDeniedException($"{VerifierName} was canceled.");
             default:
-                throw new AccessDeniedException($"Windows Hello verification failed{(detail is null ? "" : $" ({detail})")}.");
+                throw new AccessDeniedException($"{VerifierName} verification failed{(detail is null ? "" : $" ({detail})")}.");
         }
     }
 
@@ -87,9 +88,15 @@ public sealed class AccessGate(KeyloConfig config, IUserVerifier verifier, strin
         var (result, detail) = await verifier.VerifyAsync(owner, message);
         if (result != VerificationResult.Verified)
             throw new AccessDeniedException(result == VerificationResult.Canceled
-                ? "Windows Hello was canceled."
-                : $"Windows Hello verification failed{(detail is null ? "" : $" ({detail})")}.");
+                ? $"{VerifierName} was canceled."
+                : $"{VerifierName} verification failed{(detail is null ? "" : $" ({detail})")}.");
     }
+
+    /// <summary>"Windows Hello", "Touch ID", "System authentication"…, to start a message with.</summary>
+    private static string VerifierName =>
+        (Platform.KeyloPlatform.IsInstalled ? Platform.KeyloPlatform.Current.VerifierName : "Windows Hello") is var name && name.Length > 0
+            ? char.ToUpperInvariant(name[0]) + name[1..]
+            : name;
 
     /// <summary>
     /// Slides an active session's expiry to a full session length from now (Session mode only).
