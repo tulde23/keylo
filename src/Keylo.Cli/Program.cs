@@ -52,7 +52,7 @@ internal static class Program
         keylo restore FILE [--overwrite] [--dry-run] [--password-stdin]
                                                 Restore a backup (existing secrets are skipped unless --overwrite)
         keylo keys                              List access keys (let tools use secrets without {Platform.VerifierName})
-        keylo keys create NAME [--all | --category C... --secret S...] [--allow-get] [--expires-days N] [--add-to-claude]
+        keylo keys create NAME [--all | --category C... --secret S...] [--expires-days N] [--add-to-claude]
                                                 Create a key (shown once; --add-to-claude registers the MCP server instead)
         keylo keys revoke NAME                  Revoke a key
         keylo mcp                               The MCP server for AI agents (started by the agent; run it
@@ -61,7 +61,7 @@ internal static class Program
         keylo config [hello session|always|never | session-minutes N | clipboard-seconds N | audit-days N|forever]
         """;
 
-    private static readonly string[] Flags = ["clip", "yes", "overwrite", "delete-originals", "flat", "plain", "all", "json", "force", "dry-run", "password-stdin", "both", "allow-get", "add-to-claude", "help", "stdio", "ask", "no-ask"];
+    private static readonly string[] Flags = ["clip", "yes", "overwrite", "delete-originals", "flat", "plain", "all", "json", "force", "dry-run", "password-stdin", "both", "add-to-claude", "help", "stdio", "ask", "no-ask"];
 
     private static Keylo.Core.Platform.IKeyloPlatform Platform => Keylo.Core.Platform.KeyloPlatform.Current;
 
@@ -977,13 +977,12 @@ internal static class Program
                 }
 
                 var now = DateTimeOffset.Now;
-                PrintTable(["NAME", "ID", "COVERS", "ALLOWS", "EXPIRES"], c.Config.AccessKeys.Select(k => new[]
+                PrintTable(["NAME", "ID", "COVERS", "EXPIRES"], c.Config.AccessKeys.Select(k => new[]
                 {
                     k.Name,
                     k.Id,
                     k.Scope == KeyScope.All ? "everything"
                         : string.Join(", ", k.Categories.Select(cat => $"cat:{cat}").Concat(k.Secrets)) is { Length: > 0 } covers ? covers : "nothing (asks each time)",
-                    k.AllowGet ? "run, get" : "run",
                     k.Expires is { } e ? (k.IsExpired(now) ? "expired" : e.LocalDateTime.ToString("yyyy-MM-dd")) : "never",
                 }));
 
@@ -1001,7 +1000,6 @@ internal static class Program
                 var name = args.Positional(1, "key name").Trim();
                 var categories = args.Options("category");
                 var secrets = args.Options("secret");
-                var allowGet = args.Flag("allow-get");
                 var everything = args.Flag("all");
                 var expiresDays = args.Option("expires-days");
                 var addToClaude = args.Flag("add-to-claude");
@@ -1019,7 +1017,6 @@ internal static class Program
                 var (key, token) = AccessKeys.Create(name, expires);
                 key.Categories = categories.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                 key.Secrets = secrets.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-                key.AllowGet = allowGet;
                 key.Scope = everything ? KeyScope.All : KeyScope.Selected;
                 c.Config.AccessKeys.Add(key);
                 c.Config.Save();

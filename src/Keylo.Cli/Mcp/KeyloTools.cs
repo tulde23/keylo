@@ -34,7 +34,7 @@ internal sealed class KeyloTools
     private readonly OutputRedactor _redactor = new();
     private readonly Lock _redactorLock = new();
 
-    private static readonly string[] Names = ["search_secrets", "list_categories", "list_types", "run_with_secrets", "get_secret", "request_access", "list_aws_profiles", "list_aws_secrets"];
+    private static readonly string[] Names = ["search_secrets", "list_categories", "list_types", "run_with_secrets", "request_access", "list_aws_profiles", "list_aws_secrets"];
 
     public static bool Exists(string name) => Names.Contains(name);
 
@@ -44,7 +44,6 @@ internal sealed class KeyloTools
         "list_categories" => Task.FromResult(ListCategories()),
         "list_types" => Task.FromResult(ListTypes()),
         "run_with_secrets" => RunAsync(args),
-        "get_secret" => GetAsync(args),
         "request_access" => RequestAccessAsync(args),
         "list_aws_profiles" => Task.FromResult(ListAwsProfiles()),
         "list_aws_secrets" => ListAwsSecretsAsync(args),
@@ -61,7 +60,7 @@ internal sealed class KeyloTools
     }
 
     private static string Access(AccessKey key, SecretInfo secret) =>
-        !key.Covers(secret) ? "needs approval" : key.AllowGet ? "run, get" : "run";
+        !key.Covers(secret) ? "needs approval" : "run";
 
     // ------------------------------------------------------------------ browse
 
@@ -82,7 +81,7 @@ internal sealed class KeyloTools
                 name = s.Name,
                 type = type?.Id ?? "plain",
                 category = s.Category,
-                // The schema: which fields exist and which are secret (usable via run_with_secrets/get_secret).
+                // The schema: which fields exist and which are secret (usable via run_with_secrets).
                 fields = Schema(type, s),
                 // Values of non-secret fields, and notes, only for secrets this key may use.
                 details = covered ? Details(type, s) : null,
@@ -265,28 +264,6 @@ internal sealed class KeyloTools
         return output.ToString().TrimEnd();
     }
 
-    private async Task<string> GetAsync(JsonObject args)
-    {
-        var (_, key) = LoadKey();
-        var name = RequiredString(args, "name");
-        var reason = OptionalString(args, "reason");
-        var use = ResolveSource(name);
-        var info = use.Info;
-
-        await AuthorizeAsync(key, SecretOperation.Get, [use], reason, command: null);
-
-        var all = ReadAll(use);
-        var field = OptionalString(args, "field") ?? use.Field;
-        if (field is not null) return Pick(info, all, field);
-
-        var text = new StringBuilder();
-        text.Append($"type: {info.Type ?? "plain"}");
-        foreach (var (id, value) in all) text.Append($"\n{id}: {value}");
-        if (LinkedSecrets.Read(info) is { } linkInfo)
-            text.Insert(0, $"linked to: {linkInfo.Title} ({linkInfo.Target.Provider}{(use.Environment is { } e ? $", environment {e.Name}" : "")})\n");
-        return text.ToString();
-    }
-
     private async Task<string> RequestAccessAsync(JsonObject args)
     {
         var (_, key) = LoadKey();
@@ -305,12 +282,11 @@ internal sealed class KeyloTools
             SecretOperation.Run, missing.Select(s => s.Name).ToList(), key.Id, key.Name, reason, Command: null, CanAlwaysAllow: true, GrantOnly: true));
 
         return result == ApprovalResult.AllowedAlways
-            ? $"Approved: {string.Join(", ", missing.Select(s => s.Name))} added to the key '{key.Name}' ({(key.AllowGet ? "run and get" : "run only")})."
+            ? $"Approved: {string.Join(", ", missing.Select(s => s.Name))} added to the key '{key.Name}'."
             : throw new AccessDeniedException("The user declined. Don't ask again unless they bring it up.");
     }
 
-    // Approvals last for the Hello session length (config.sessionMinutes), per secret: a get
-    // approval also covers running with it, not the other way round.
+    // Approvals last for the Hello session length (config.sessionMinutes), per secret.
     private readonly Dictionary<(SecretOperation Operation, string Name), DateTimeOffset> _approved = new();
     private readonly Lock _approvedLock = new();
 
@@ -319,8 +295,7 @@ internal sealed class KeyloTools
         var now = DateTimeOffset.Now;
         lock (_approvedLock)
             return names.All(n =>
-                (_approved.TryGetValue((operation, n.ToLowerInvariant()), out var until) && until > now) ||
-                (operation == SecretOperation.Run && _approved.TryGetValue((SecretOperation.Get, n.ToLowerInvariant()), out var getUntil) && getUntil > now));
+                _approved.TryGetValue((operation, n.ToLowerInvariant()), out var until) && until > now);
     }
 
     /// <summary>
@@ -347,8 +322,8 @@ internal sealed class KeyloTools
             return;
         }
 
-        // "Always" adds secrets to the key's scope; for a get that only helps if the key may print values.
-        var canAlways = !alwaysAsk && (operation == SecretOperation.Run || key.AllowGet);
+        // "Always" adds secrets to the key's scope (not in "always ask" environments).
+        var canAlways = !alwaysAsk;
         var result = await Approvals.RequestAsync(new ApprovalRequest(operation, names, key.Id, key.Name, reason, command, canAlways));
         if (result == ApprovalResult.Denied)
             throw new AccessDeniedException($"The user denied access to {string.Join(", ", names)}. Don't retry; ask them if it's needed.");
@@ -482,7 +457,7 @@ internal sealed class KeyloTools
           {
             "name": "search_secrets",
             "title": "Search secrets",
-            "description": "Find the user's secrets by name, category, username, notes or non-secret field values (never secret values). Each result has its 'type' (login, api_key, database, ssh_key, note, a custom type, or plain), its 'fields' schema (which are secret; 'main' is the default value), and 'access': 'run' (usable with run_with_secrets), 'run, get' (also get_secret), or 'needs approval' (using it asks the user). 'details' (non-secret field values such as host or url) and notes are only shown for secrets your access key covers.",
+            "description": "Find the user's secrets by name, category, username, notes or non-secret field values (never secret values). Each result has its 'type' (login, api_key, database, ssh_key, note, a custom type, or plain), its 'fields' schema (which are secret; 'main' is the default value), and 'access': 'run' (usable with run_with_secrets) or 'needs approval' (using it asks the user). 'details' (non-secret field values such as host or url) and notes are only shown for secrets your access key covers.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -532,7 +507,7 @@ internal sealed class KeyloTools
           {
             "name": "run_with_secrets",
             "title": "Run a command with secrets",
-            "description": "Run a shell command with secrets as environment variables. Preferred over get_secret: values never enter the conversation, and any that appear in the output are replaced with [keylo:name]. Returns the exit code, stdout and stderr. Secrets your key doesn't cover ask the user first.",
+            "description": "Run a shell command with secrets as environment variables. This is the only way to use a secret: Keylo never returns values, and any that appear in the output are replaced with [keylo:name]. Returns the exit code, stdout and stderr. Secrets your key doesn't cover ask the user first.",
             "inputSchema": {
               "type": "object",
               "properties": {
@@ -542,7 +517,7 @@ internal sealed class KeyloTools
                   "additionalProperties": { "type": "string" }
                 },
                 "command": { "type": "string", "description": "The command line. Reference variables in the shell's syntax: $env:VAR (powershell), %VAR% (cmd), $VAR (bash, zsh, sh)." },
-                "shell": { "type": "string", "enum": ["powershell", "cmd", "bash", "zsh", "sh"], "description": "Windows: powershell (default; pwsh if installed), cmd, or bash (Git Bash). macOS: zsh (default), bash, sh, or powershell if installed." },
+                "shell": { "type": "string", "enum": ["powershell", "cmd", "bash", "zsh", "sh"], "description": "Windows: powershell (default; pwsh if installed), cmd, or bash (Git Bash). macOS: zsh (default), bash, sh, or powershell if installed. Linux: bash (default), zsh, sh, or powershell if installed." },
                 "working_directory": { "type": "string", "description": "Defaults to the server's working directory (the project Claude Code was started in)." },
                 "timeout_seconds": { "type": "integer", "description": "Default 120, max 600. The process tree is killed on timeout." },
                 "reason": { "type": "string", "description": "Why you need these secrets; shown to the user if approval is needed." }
@@ -550,21 +525,6 @@ internal sealed class KeyloTools
               "required": ["env", "command"]
             },
             "annotations": { "destructiveHint": true, "openWorldHint": true }
-          },
-          {
-            "name": "get_secret",
-            "title": "Get a secret's value",
-            "description": "Return a secret's fields as 'field: value' lines (plain secrets: username and value), or just one field. Values become part of this conversation, so only use this when a value itself is needed; otherwise use run_with_secrets. Needs a key that allows 'get', or the user's approval.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "name": { "type": "string", "description": "Exact secret name (see search_secrets)." },
-                "field": { "type": "string", "description": "Only this field (e.g. 'password', 'connection_string'); returns the bare value." },
-                "reason": { "type": "string", "description": "Why you need the value; shown to the user if approval is needed." }
-              },
-              "required": ["name"]
-            },
-            "annotations": { "readOnlyHint": true, "openWorldHint": false }
           },
           {
             "name": "request_access",

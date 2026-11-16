@@ -175,13 +175,13 @@ or from a terminal: `keylo keys create "Claude Code" --all --add-to-claude` (or 
 | `search_secrets` / `list_categories` | Find secrets (never values), with each one's type, field schema and whether the key covers it. |
 | `list_types` | Secret types and their fields. |
 | `run_with_secrets` | Runs a command with secrets (or single fields, `name:field`) as environment variables; values in its output become `[keylo:name]`. |
-| `get_secret` | Returns every field, or one — into the AI conversation, so only when needed. |
 | `request_access` | Asks you to add secrets to the key permanently. |
 | `list_aws_secrets` | Secrets in AWS Secrets Manager for a profile and region (names, ARNs, descriptions, tags; never values), grouped by the first part of the name, with which are already linked in Keylo. |
 | `list_aws_profiles` | AWS profiles from `~/.aws` (name, region, how each signs in; never keys), every region, and whether the `aws` CLI is installed. |
 
 - **What a key can use without asking**: *Everything*, *Only these categories*, or *Nothing — ask
-  me each time*. It only passes values to commands unless "Also let it read values" is on.
+  me each time*. Keys only pass values to commands: no MCP tool returns a secret's value, and
+  `keylo get` with an access key still asks you.
 - **Outside the scope**, Keylo opens an approval window showing the secrets, the command and the
   agent's stated reason: Deny, Allow for 15 min (your session length), or Always allow (adds them
   to the key). Allowing needs Windows Hello; unanswered requests are denied after 5 minutes.

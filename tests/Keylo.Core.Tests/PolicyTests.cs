@@ -38,12 +38,11 @@ public sealed class AccessKeyTests
     private static SecretInfo Info(string name, string? category) =>
         new(name, category, null, null, DateTimeOffset.Now, 1, StorageKind.CredentialManager);
 
-    private static (KeyloConfig Config, string Token) Config(bool allowGet = false, DateTimeOffset? expires = null)
+    private static (KeyloConfig Config, string Token) Config(DateTimeOffset? expires = null)
     {
         var (key, token) = AccessKeys.Create("agents", expires);
         key.Categories = ["dev"];
         key.Secrets = ["one-off"];
-        key.AllowGet = allowGet;
         return (new KeyloConfig { AccessKeys = [key] }, token);
     }
 
@@ -76,10 +75,11 @@ public sealed class AccessKeyTests
     }
 
     [Fact]
-    public void Get_needs_allow_get()
+    public void Keys_never_allow_reading_values()
     {
-        Assert.False(Config().Config.AccessKeys[0].Allows(SecretOperation.Get, [Info("x", "dev")]));
-        Assert.True(Config(allowGet: true).Config.AccessKeys[0].Allows(SecretOperation.Get, [Info("x", "dev")]));
+        var key = Config().Config.AccessKeys[0];
+        Assert.True(key.Allows(SecretOperation.Run, [Info("x", "dev")]));
+        Assert.False(key.Allows(SecretOperation.Get, [Info("x", "dev")]));
     }
 
     [Fact]

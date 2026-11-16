@@ -31,8 +31,8 @@ public enum KeyScope
 /// <summary>
 /// Lets a tool such as Claude Code use a set of secrets without Windows Hello. The tool presents the
 /// key in the <see cref="AccessKeys.EnvironmentVariable"/> environment variable; Keylo stores only
-/// its SHA-256 hash. Run-only unless <see cref="AllowGet"/>: an agent that prints a secret puts it in
-/// its conversation, while <c>keylo run</c> hands it straight to the command.
+/// its SHA-256 hash. Keys are run-only: they let a tool pass secrets to commands (<c>keylo run</c>,
+/// the MCP server's run_with_secrets), never read values. Reading a value always needs the user.
 /// </summary>
 public sealed class AccessKey
 {
@@ -50,8 +50,6 @@ public sealed class AccessKey
 
     /// <summary>Individual secrets, mostly added by "Always allow" in an approval window.</summary>
     public List<string> Secrets { get; set; } = [];
-
-    public bool AllowGet { get; set; }
 
     public DateTimeOffset Created { get; set; }
 
@@ -71,7 +69,7 @@ public sealed class AccessKey
     public bool Allows(SecretOperation operation, IReadOnlyCollection<SecretInfo> secrets) => operation switch
     {
         SecretOperation.Browse => true,
-        SecretOperation.Get when !AllowGet => false,
+        SecretOperation.Get => false, // keys never read values; that always needs the user
         _ => secrets.Count > 0 && secrets.All(Covers),
     };
 }

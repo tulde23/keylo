@@ -19,7 +19,7 @@ internal static class McpServer
 
     private static string Instructions => $"""
         Keylo holds the user's secrets (API keys, passwords, tokens) on this {(OperatingSystem.IsMacOS() ? "Mac" : "Windows PC")}.
-        - Find secrets with search_secrets. Each result says what your access key allows: "run", "run, get", or "needs approval".
+        - Find secrets with search_secrets. Each result says what your access key allows: "run" or "needs approval".
         - Secrets have types (login, api_key, database, ssh_key, note, custom) with named fields; search results include each
           secret's field schema. Address one field as "name:field" (e.g. "prod-db:connection_string"); a bare name means its main value.
         - Some secrets are links (type "link") to items in another vault such as 1Password or AWS Secrets Manager; they work the same way and are read
@@ -28,7 +28,7 @@ internal static class McpServer
           "orders-db@uat" or "orders-db@prod:password"; without it the default environment is used. Environments marked
           "always ask" (usually prod) open an approval window every time, whatever your key covers.
         - Prefer run_with_secrets: values reach the command as environment variables and are redacted from its output, so they never enter this conversation.
-        - Use get_secret only when the value itself is needed (e.g. to fill in a login). It returns the value into the conversation.
+        - Keylo never returns secret values to agents. To use one, run a command with run_with_secrets.
         - Using a secret outside your key's scope asks the user to approve it in a Keylo window (with {KeyloPlatform.Current.VerifierName}); an approval
           lasts for their Keylo session (15 minutes by default). If they deny it, don't retry; ask them.
         - request_access asks the user to add secrets to your key permanently.

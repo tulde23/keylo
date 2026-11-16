@@ -43,7 +43,6 @@ public sealed partial class AccessKeyViewModel : ObservableObject
         ApprovedSecrets.Clear();
         OnPropertyChanged(nameof(HasApproved));
     }
-    [ObservableProperty] private bool _allowGet;
     [ObservableProperty] private DateTime? _expires;
 
     /// <summary>The saved key this row edits, or null for a key that is created on Save.</summary>
@@ -66,7 +65,7 @@ public sealed partial class AccessKeyViewModel : ObservableObject
     /// </summary>
     public static AccessKeyViewModel From(AccessKey key, IEnumerable<string> allCategories)
     {
-        var vm = new AccessKeyViewModel { Original = key, Name = key.Name, AllowGet = key.AllowGet, Expires = key.Expires?.LocalDateTime.Date };
+        var vm = new AccessKeyViewModel { Original = key, Name = key.Name, Expires = key.Expires?.LocalDateTime.Date };
         vm.Scope = ScopeOptions.First(o => o.Value == (key.Scope == KeyScope.All ? ScopeChoice.Everything
             : key.Categories.Count > 0 ? ScopeChoice.Categories : ScopeChoice.Nothing));
         Fill(vm.Categories, allCategories, key.Categories);
@@ -93,7 +92,6 @@ public sealed partial class AccessKeyViewModel : ObservableObject
         key.Scope = Scope.Value == ScopeChoice.Everything ? KeyScope.All : KeyScope.Selected;
         key.Categories = Scope.Value == ScopeChoice.Categories ? Categories.Where(c => c.IsSelected).Select(c => c.Name).ToList() : [];
         key.Secrets = [.. ApprovedSecrets];
-        key.AllowGet = AllowGet;
         key.Expires = expires;
         return (key, token);
     }
@@ -423,7 +421,6 @@ public sealed partial class SettingsViewModel : ObservableObject
             scope = k.Scope.Value,
             categories = k.Categories.Where(c => c.IsSelected).Select(c => c.Name),
             approved = k.ApprovedSecrets,
-            k.AllowGet,
             k.Expires,
         }),
         providers = Providers.Select(p => p.ToSettings(validate: false)),

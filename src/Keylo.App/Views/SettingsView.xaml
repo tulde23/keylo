@@ -370,14 +370,6 @@
                                                 <TextBlock Text="{Binding ApprovedText}" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"
                                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                             </DockPanel>
-                                            <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                                                <ui:ToggleSwitch IsChecked="{Binding AllowGet}" Content="Also let it read values (not just pass them to commands)" />
-                                                <ui:SymbolIcon Style="{StaticResource InfoIcon}">
-                                                        <ui:SymbolIcon.ToolTip>
-                                                            <TextBlock MaxWidth="340" TextWrapping="Wrap" Text="Off (recommended): covered secrets can only be passed to commands as environment variables, and values are redacted from command output, so they never enter the AI conversation. On: the tool may also read values directly (get_secret / keylo get), which puts them in the conversation." />
-                                                        </ui:SymbolIcon.ToolTip>
-                                                    </ui:SymbolIcon>
-                                            </StackPanel>
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>

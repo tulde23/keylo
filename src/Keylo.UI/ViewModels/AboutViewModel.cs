@@ -40,7 +40,7 @@ public sealed partial class AboutViewModel(KeyloService keylo) : ObservableObjec
     private static string Describe(Keylo.Core.Security.AccessKey key) =>
         (key.Scope == Keylo.Core.Security.KeyScope.All ? "everything"
             : key.Categories.Count > 0 ? string.Join(", ", key.Categories)
-            : "asks each time") + (key.AllowGet ? ", can read values" : ", run only");
+            : "asks each time") + ", run only";
 
     [RelayCommand] private void OpenInstallFolder() => Open(InstallFolder);
     [RelayCommand] private void OpenDataFolder() => Open(DataFolder);
