@@ -11,7 +11,7 @@ encrypted `blobs/` files), so both builds can be used on one machine during the 
 | `crates/keylo-core` | Store format, secret types, settings, access keys, the identity gate, audit log, redaction, search, pins/recent |
 | `crates/keylo-platform` | The OS layer: Windows (Credential Manager, DPAPI, Windows Hello, clipboard, process ancestry); macOS and Linux to come |
 | `crates/keylo-cli` | The `keylo` command and the MCP server (`keylo mcp`) |
-| `app/` (to come) | The Tauri app with a React front end |
+| `app/` | The Tauri app (`keylow`): React front end in `app/src`, Rust commands in `app/src-tauri` |
 
 ## Building on Windows
 
@@ -35,7 +35,9 @@ exercises the MCP server, in a throwaway data folder and credential prefix.
 | CLI: list, categories, types, get, set, edit, rm, run, keys, unlock, lock, status, config, version | Done |
 | MCP server: search_secrets, list_categories, list_types, run_with_secrets, request_access | Done; approvals use a message box until the app exists |
 | CLI: import, link, push, provider, backup, restore, keys --add-to-claude | To do |
-| Linked secrets (1Password, AWS Secrets Manager, per-environment links), list_aws_* tools | To do |
-| Tauri + React app (secrets, details, settings, access keys, types, categories, approval window) | To do: designed fresh, not a copy of the WPF/Avalonia screens |
+| Linked secrets (1Password, AWS Secrets Manager, per-environment links), list_aws_* tools | To do: through the `op` and `aws` CLIs, not SDKs |
+| Tauri + React app: lock screen, top bar (ported from the WPF app, system window buttons), sidebar, list, detail, slide-in editor, settings, access keys, activity, approval window (`keylow --approve`) | Done (first version) |
+| App: custom types and categories editors, icons and colours, import, link, lock on screen lock, single instance | To do |
+| `keylo mcp` opening the Tauri approval window instead of a message box | To do |
 | macOS platform (Keychain, Touch ID) and Linux (Secret Service / file vault, polkit) | To do |
 | Packaging and CI (release workflow, signing, notarization) | To do |

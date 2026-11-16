@@ -1,0 +1,567 @@
+//! The commands the React front end calls. Values only cross into the web view when the user
+//! reveals them (after the identity check); copying happens here, on the secure clipboard.
+
+use std::collections::BTreeMap;
+
+use keylo_core::access::{self, KeyScope};
+use keylo_core::activity::{Activity, RecentUse};
+use keylo_core::approval;
+use keylo_core::config::{HelloMode, KeyloConfig};
+use keylo_core::gate::AccessGate;
+use keylo_core::refs::is_linked;
+use keylo_core::secrets::{SecretDraft, SecretInfo, StorageKind};
+use keylo_core::store::SecretStore;
+use keylo_core::types::{self, FieldKind, SecretTypeCatalog, SecretTypeDefinition};
+use keylo_core::{eq_ic, paths, platform, Error};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, State, WebviewWindow};
+use zeroize::Zeroizing;
+
+use crate::AppState;
+
+type Res<T> = Result<T, String>;
+
+const LOCKED: &str = "locked";
+
+fn err(e: Error) -> String {
+    e.to_string()
+}
+
+/// The native window handle, to parent the identity prompt to.
+fn owner(window: &WebviewWindow) -> isize {
+    #[cfg(windows)]
+    {
+        window.hwnd().map(|h| h.0 as isize).unwrap_or(0)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = window;
+        0
+    }
+}
+
+/// Runs the identity check (or uses the session). Commands calling it are async, so they run off
+/// the UI thread; the gate is held for the prompt's duration (one prompt at a time).
+async fn ensure(window: &WebviewWindow, state: &State<'_, AppState>, message: &str, value_access: bool) -> Res<()> {
+    let hwnd = owner(window);
+    let mut g = state.gate.lock().unwrap();
+    g.ensure(hwnd, message, value_access).map_err(err)
+}
+
+fn confirm(window: &WebviewWindow, message: &str) -> Res<()> {
+    let config = KeyloConfig::load().map_err(err)?;
+    AccessGate::new(&config).confirm(owner(window), message).map_err(err)
+}
+
+fn require_unlocked(state: &State<'_, AppState>) -> Res<()> {
+    if state.gate.lock().unwrap().is_unlocked() { Ok(()) } else { Err(LOCKED.into()) }
+}
+
+// ---------------------------------------------------------------------------- app and session
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    platform: String,
+    verifier_name: String,
+    store_name: String,
+    file_protection: String,
+    version: String,
+    data_dir: String,
+    keylo_path: String,
+}
+
+#[tauri::command]
+pub fn app_info() -> AppInfo {
+    let p = platform::current();
+    let exe = std::env::current_exe().ok();
+    let keylo = exe
+        .as_ref()
+        .and_then(|e| e.parent())
+        .map(|d| d.join(if cfg!(windows) { "keylo.exe" } else { "keylo" }))
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "keylo".into());
+    AppInfo {
+        platform: p.name().into(),
+        verifier_name: p.verifier_name(),
+        store_name: p.store_name(),
+        file_protection: p.file_protection_name(),
+        version: keylo_core::build_version!(),
+        data_dir: paths::data_dir().display().to_string(),
+        keylo_path: keylo,
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Status {
+    unlocked: bool,
+    mode: HelloMode,
+    session_expires: Option<String>,
+}
+
+#[tauri::command]
+pub fn status(state: State<'_, AppState>) -> Status {
+    let g = state.gate.lock().unwrap();
+    Status { unlocked: g.is_unlocked(), mode: g.mode(), session_expires: g.session_expires_at().map(|t| t.to_rfc3339()) }
+}
+
+#[tauri::command]
+pub async fn unlock(window: WebviewWindow, state: State<'_, AppState>) -> Res<()> {
+    ensure(&window, &state, "Unlock Keylo", false).await
+}
+
+#[tauri::command]
+pub fn lock(state: State<'_, AppState>) {
+    state.gate.lock().unwrap().lock();
+}
+
+/// User activity: slides the session so it lasts while someone is at the keyboard.
+#[tauri::command]
+pub fn touch(state: State<'_, AppState>) {
+    let _ = state.gate.lock().unwrap().extend_session();
+}
+
+// ---------------------------------------------------------------------------- secrets
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretRow {
+    #[serde(flatten)]
+    info: SecretInfo,
+    pinned: bool,
+    linked: bool,
+    file_backed: bool,
+}
+
+#[tauri::command]
+pub fn secrets(state: State<'_, AppState>) -> Res<Vec<SecretRow>> {
+    require_unlocked(&state)?;
+    let activity = Activity::default();
+    let pins = activity.pins();
+    Ok(SecretStore::default()
+        .list()
+        .map_err(err)?
+        .into_iter()
+        .map(|info| SecretRow {
+            pinned: pins.iter().any(|p| eq_ic(p, &info.name)),
+            linked: is_linked(&info),
+            file_backed: info.storage == StorageKind::EncryptedFile,
+            info,
+        })
+        .collect())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldDto {
+    id: String,
+    label: String,
+    kind: FieldKind,
+    secret: bool,
+    main: bool,
+    options: Option<Vec<String>>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeDto {
+    id: String,
+    name: String,
+    icon: Option<String>,
+    color: Option<String>,
+    built_in: bool,
+    fields: Vec<FieldDto>,
+}
+
+fn type_dto(t: &SecretTypeDefinition) -> TypeDto {
+    let primary = t.primary().map(|p| p.id.clone());
+    TypeDto {
+        id: t.id.clone(),
+        name: t.name.clone(),
+        icon: t.icon.clone(),
+        color: t.color.clone(),
+        built_in: t.is_built_in,
+        fields: t
+            .fields
+            .iter()
+            .map(|f| FieldDto {
+                id: f.id.clone(),
+                label: f.label.clone(),
+                kind: f.kind,
+                secret: f.is_secret(),
+                main: Some(&f.id) == primary.as_ref(),
+                options: f.options.clone(),
+            })
+            .collect(),
+    }
+}
+
+#[tauri::command]
+pub fn secret_types() -> Res<Vec<TypeDto>> {
+    Ok(SecretTypeCatalog::default().all().map_err(err)?.iter().map(type_dto).collect())
+}
+
+/// Every field's value (typed) or the value (plain). Needs the identity check.
+#[tauri::command]
+/// `for_edit`: only stored fields (no derived connection string), to save back.
+pub async fn reveal(window: WebviewWindow, state: State<'_, AppState>, name: String, for_edit: bool) -> Res<BTreeMap<String, String>> {
+    ensure(&window, &state, &format!("Keylo: show '{name}'"), true).await?;
+    let fields = read_fields(&name, !for_edit)?;
+    let _ = Activity::default().record_use(&name, "viewed");
+    Ok(fields)
+}
+
+fn read_fields(name: &str, derive: bool) -> Res<BTreeMap<String, String>> {
+    let store = SecretStore::default();
+    let secret = store.get(name).map_err(err)?;
+    if is_linked(&secret.info) {
+        return Err("Linked secrets (1Password, AWS) aren't in the Rust build of Keylo yet.".into());
+    }
+    let mut out = BTreeMap::new();
+    match SecretTypeCatalog::default().find(secret.info.type_id.as_deref()).map_err(err)? {
+        Some(t) => out = types::read_fields(&t, &secret.info, &secret.value, derive),
+        None => {
+            if let Some(u) = &secret.info.username {
+                out.insert("username".into(), u.clone());
+            }
+            match types::decode_text(&secret.value) {
+                Some(v) => out.insert("value".into(), v),
+                None => return Err(format!("'{name}' is binary; it can't be shown as text.")),
+            };
+        }
+    }
+    Ok(out)
+}
+
+/// Copies one field (default: the main value) to the secure clipboard; it clears itself later.
+#[tauri::command]
+pub async fn copy_field(window: WebviewWindow, state: State<'_, AppState>, name: String, field: Option<String>) -> Res<i64> {
+    let info = SecretStore::default().find(&name).map_err(err)?.ok_or_else(|| err(Error::NotFound(name.clone())))?;
+    let t = SecretTypeCatalog::default().find(info.type_id.as_deref()).map_err(err)?;
+    let field = field.unwrap_or_else(|| t.as_ref().and_then(|t| t.primary()).map(|p| p.id.clone()).unwrap_or_else(|| "value".into()));
+    // Non-secret fields (host, url, username) copy without the identity check.
+    let is_secret = match &t {
+        Some(t) => t.field(&field).is_some_and(|f| f.is_secret()),
+        None => field != "username",
+    };
+    if is_secret {
+        ensure(&window, &state, &format!("Keylo: copy '{name}'"), true).await?;
+    } else {
+        require_unlocked(&state)?;
+    }
+    let fields = read_fields(&name, true)?;
+    let Some(text) = fields.get(&field).map(|v| Zeroizing::new(v.clone())) else {
+        return Err(format!("'{name}' has no {field}."));
+    };
+    let token = platform::current().clipboard().set_text(&text).map_err(err)?;
+    let seconds = KeyloConfig::load().map(|c| c.clipboard_seconds).unwrap_or(30);
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(seconds as u64));
+        platform::current().clipboard().clear_if_unchanged(token);
+    });
+    if is_secret {
+        let _ = Activity::default().record_use(&name, "copied");
+    }
+    Ok(seconds)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveInput {
+    /// The secret being edited (None: a new one).
+    original_name: Option<String>,
+    name: String,
+    type_id: Option<String>,
+    /// Typed: every field by id. Plain: "value" (absent keeps the stored value) and "username".
+    fields: BTreeMap<String, String>,
+    category: Option<String>,
+    notes: Option<String>,
+    icon: Option<String>,
+    color: Option<String>,
+}
+
+#[tauri::command]
+pub async fn save_secret(window: WebviewWindow, state: State<'_, AppState>, input: SaveInput) -> Res<SecretInfo> {
+    ensure(&window, &state, "Unlock Keylo", false).await?;
+    let store = SecretStore::default();
+    let catalog = SecretTypeCatalog::default();
+    let non_empty = |v: &Option<String>| v.clone().filter(|s| !s.trim().is_empty());
+
+    let draft = match input.type_id.as_deref().filter(|t| !t.is_empty()) {
+        Some(type_id) => {
+            let t = catalog.find(Some(type_id)).map_err(err)?.ok_or_else(|| format!("No type '{type_id}'."))?;
+            let fields: BTreeMap<String, String> = input.fields.into_iter().filter(|(_, v)| !v.is_empty()).collect();
+            types::typed_draft(&t, &input.name, &fields, non_empty(&input.category), non_empty(&input.notes), non_empty(&input.icon), non_empty(&input.color))
+                .map_err(err)?
+        }
+        None => {
+            let value = match input.fields.get("value") {
+                Some(v) => Zeroizing::new(v.as_bytes().to_vec()),
+                None => match &input.original_name {
+                    Some(original) => store.get(original).map_err(err)?.value,
+                    None => return Err("A value is required.".into()),
+                },
+            };
+            if value.is_empty() {
+                return Err("A value is required.".into());
+            }
+            SecretDraft {
+                name: input.name.clone(),
+                value,
+                category: non_empty(&input.category),
+                username: input.fields.get("username").cloned().filter(|u| !u.trim().is_empty()),
+                notes: non_empty(&input.notes),
+                icon: non_empty(&input.icon),
+                color: non_empty(&input.color),
+                ..Default::default()
+            }
+        }
+    };
+    let saved = store.save(&draft, input.original_name.as_deref()).map_err(err)?;
+    if let Some(original) = &input.original_name {
+        let _ = Activity::default().renamed(original, &saved.name);
+    }
+    Ok(saved)
+}
+
+#[tauri::command]
+pub async fn delete_secret(window: WebviewWindow, state: State<'_, AppState>, name: String) -> Res<()> {
+    ensure(&window, &state, "Unlock Keylo", false).await?;
+    SecretStore::default().delete(&name).map_err(err)?;
+    let _ = Activity::default().removed(&[name]);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_pinned(state: State<'_, AppState>, name: String, pinned: bool) -> Res<()> {
+    require_unlocked(&state)?;
+    Activity::default().set_pinned(&name, pinned).map_err(err)
+}
+
+#[tauri::command]
+pub fn recent(state: State<'_, AppState>) -> Res<Vec<RecentUse>> {
+    require_unlocked(&state)?;
+    Ok(Activity::default().recent(12))
+}
+
+#[tauri::command]
+pub fn generate_password(length: usize, symbols: bool) -> String {
+    keylo_core::password::generate(length, symbols)
+}
+
+// ---------------------------------------------------------------------------- settings
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsDto {
+    hello: HelloMode,
+    session_minutes: i64,
+    clipboard_seconds: i64,
+    audit_retention_days: i64,
+}
+
+#[tauri::command]
+pub fn settings() -> Res<SettingsDto> {
+    let c = KeyloConfig::load().map_err(err)?;
+    Ok(SettingsDto {
+        hello: c.hello,
+        session_minutes: c.session_minutes,
+        clipboard_seconds: c.clipboard_seconds,
+        audit_retention_days: c.audit_retention_days,
+    })
+}
+
+/// These settings decide when verification happens, so changing them always verifies.
+#[tauri::command]
+pub async fn save_settings(window: WebviewWindow, state: State<'_, AppState>, settings: SettingsDto) -> Res<SettingsDto> {
+    confirm(&window, "Keylo: change settings")?;
+    let mut c = KeyloConfig::load().map_err(err)?;
+    c.hello = settings.hello;
+    c.session_minutes = settings.session_minutes;
+    c.clipboard_seconds = settings.clipboard_seconds;
+    c.audit_retention_days = settings.audit_retention_days;
+    c.save().map_err(err)?;
+    let mut gate = AccessGate::new(&c);
+    // The identity check just passed: keep the app open under the new settings.
+    gate.mark_verified().map_err(err)?;
+    *state.gate.lock().unwrap() = gate;
+    self::settings()
+}
+
+// ---------------------------------------------------------------------------- access keys
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyDto {
+    id: String,
+    name: String,
+    scope: KeyScope,
+    categories: Vec<String>,
+    secrets: Vec<String>,
+    created: String,
+    expires: Option<String>,
+    expired: bool,
+}
+
+#[tauri::command]
+pub fn access_keys(state: State<'_, AppState>) -> Res<Vec<KeyDto>> {
+    require_unlocked(&state)?;
+    let now = chrono::Local::now().fixed_offset();
+    Ok(KeyloConfig::load()
+        .map_err(err)?
+        .access_keys
+        .iter()
+        .map(|k| KeyDto {
+            id: k.id.clone(),
+            name: k.name.clone(),
+            scope: k.scope,
+            categories: k.categories.clone(),
+            secrets: k.secrets.clone(),
+            created: k.created.to_rfc3339(),
+            expires: k.expires.map(|e| e.to_rfc3339()),
+            expired: k.is_expired(now),
+        })
+        .collect())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyInput {
+    name: String,
+    scope: KeyScope,
+    categories: Vec<String>,
+    secrets: Vec<String>,
+    expires_days: Option<i64>,
+}
+
+/// Returns the key's token: shown once, never stored.
+#[tauri::command]
+pub async fn create_key(window: WebviewWindow, input: KeyInput) -> Res<String> {
+    let name = input.name.trim().to_string();
+    if name.is_empty() {
+        return Err("Give the key a name, e.g. 'Claude Code'.".into());
+    }
+    let mut c = KeyloConfig::load().map_err(err)?;
+    if c.access_keys.iter().any(|k| eq_ic(&k.name, &name)) {
+        return Err(format!("There's already a key called '{name}'."));
+    }
+    confirm(&window, &format!("Keylo: create access key '{name}'"))?;
+    let (mut key, token) = access::create(&name, input.expires_days.filter(|d| *d > 0));
+    key.scope = input.scope;
+    key.categories = input.categories;
+    key.secrets = input.secrets;
+    c.access_keys.push(key);
+    c.save().map_err(err)?;
+    Ok(token)
+}
+
+#[tauri::command]
+pub async fn update_key(window: WebviewWindow, id: String, input: KeyInput) -> Res<()> {
+    let mut c = KeyloConfig::load().map_err(err)?;
+    let Some(key) = c.access_keys.iter_mut().find(|k| k.id == id) else { return Err("That key no longer exists.".into()) };
+    let name = key.name.clone();
+    confirm(&window, &format!("Keylo: change what '{name}' can use"))?;
+    key.scope = input.scope;
+    key.categories = input.categories;
+    key.secrets = input.secrets;
+    c.save().map_err(err)
+}
+
+#[tauri::command]
+pub async fn revoke_key(window: WebviewWindow, id: String) -> Res<()> {
+    let mut c = KeyloConfig::load().map_err(err)?;
+    let Some(pos) = c.access_keys.iter().position(|k| k.id == id) else { return Ok(()) };
+    let name = c.access_keys[pos].name.clone();
+    confirm(&window, &format!("Keylo: revoke access key '{name}'"))?;
+    c.access_keys.remove(pos);
+    c.save().map_err(err)
+}
+
+// ---------------------------------------------------------------------------- audit log
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditRow {
+    time: String,
+    operation: String,
+    secrets: Vec<String>,
+    key: Option<String>,
+    via: String,
+    chain: Vec<String>,
+}
+
+#[tauri::command]
+pub fn audit_log(state: State<'_, AppState>, limit: usize) -> Res<Vec<AuditRow>> {
+    require_unlocked(&state)?;
+    let text = std::fs::read_to_string(access::audit_path_in(&paths::data_dir())).unwrap_or_default();
+    let strs = |v: &serde_json::Value| -> Vec<String> {
+        v.as_array().map(|a| a.iter().filter_map(|s| s.as_str().map(str::to_string)).collect()).unwrap_or_default()
+    };
+    Ok(text
+        .lines()
+        .rev()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .take(limit.clamp(1, 2000))
+        .map(|v| AuditRow {
+            time: v["time"].as_str().unwrap_or("").into(),
+            operation: v["operation"].as_str().unwrap_or("").into(),
+            secrets: strs(&v["secrets"]),
+            key: v["key"].as_str().map(str::to_string),
+            via: v["via"].as_str().unwrap_or("").into(),
+            chain: strs(&v["chain"]),
+        })
+        .collect())
+}
+
+// ---------------------------------------------------------------------------- approvals
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalDto {
+    operation: String,
+    secrets: Vec<String>,
+    key_name: Option<String>,
+    reason: Option<String>,
+    command: Option<String>,
+    can_always_allow: bool,
+    grant_only: bool,
+    verifier_name: String,
+}
+
+#[tauri::command]
+pub fn approval_request(state: State<'_, AppState>) -> Option<ApprovalDto> {
+    state.approval.as_ref().map(|r| ApprovalDto {
+        operation: r.op().as_str().into(),
+        secrets: r.secrets.clone(),
+        key_name: r.key_name.clone(),
+        reason: r.reason.clone(),
+        command: r.command.clone(),
+        can_always_allow: r.can_always_allow && r.key_id.is_some() && !r.grant_only,
+        grant_only: r.grant_only,
+        verifier_name: platform::current().verifier_name(),
+    })
+}
+
+/// "deny", "once" or "always": verifies the user for an allow, grants for always, then exits with
+/// the answer for `keylo mcp`.
+#[tauri::command]
+pub async fn answer_approval(window: WebviewWindow, app: AppHandle, state: State<'_, AppState>, choice: String) -> Res<()> {
+    let Some(request) = state.approval.clone() else { return Err("No approval is pending.".into()) };
+    if choice == "deny" {
+        app.exit(approval::DENIED);
+        return Ok(());
+    }
+    let always = choice == "always" || request.grant_only;
+    let agent = request.key_name.clone().unwrap_or_else(|| "an agent".into());
+    confirm(&window, &format!("Keylo: allow '{agent}' to use {}", request.secrets.join(", ")))?;
+    let mut code = approval::ALLOWED_ONCE;
+    if always {
+        let mut c = KeyloConfig::load().map_err(err)?;
+        if access::grant(&mut c, request.key_id.as_deref().unwrap_or(""), &request.secrets) && c.save().is_ok() {
+            code = approval::ALLOWED_ALWAYS;
+        }
+    }
+    app.exit(code);
+    Ok(())
+}

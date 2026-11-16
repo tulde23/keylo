@@ -4,9 +4,11 @@
 
 pub mod access;
 pub mod activity;
+pub mod approval;
 pub mod config;
 pub mod error;
 pub mod gate;
+pub mod password;
 pub mod paths;
 pub mod platform;
 pub mod redactor;

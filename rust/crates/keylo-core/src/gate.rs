@@ -89,6 +89,16 @@ impl AccessGate {
         }
     }
 
+    /// Records a verification that just happened elsewhere (e.g. [`AccessGate::confirm`]): unlocks
+    /// browsing and, in Session mode, starts a session.
+    pub fn mark_verified(&mut self) -> Result<()> {
+        self.browse_unlocked = true;
+        if self.mode == HelloMode::Session {
+            self.write_session(Utc::now() + Duration::minutes(self.session_minutes))?;
+        }
+        Ok(())
+    }
+
     /// Always verifies (ignoring any session) unless the check is off. For changes to the settings
     /// that decide what skips verification.
     pub fn confirm(&self, owner: isize, message: &str) -> Result<()> {

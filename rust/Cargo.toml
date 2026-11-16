@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/keylo-core", "crates/keylo-platform", "crates/keylo-cli"]
+members = ["crates/keylo-core", "crates/keylo-platform", "crates/keylo-cli", "app/src-tauri"]
 
 [workspace.package]
 version = "1.2.0"
