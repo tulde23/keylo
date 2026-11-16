@@ -5,11 +5,14 @@
 pub mod access;
 pub mod activity;
 pub mod approval;
+pub mod backup;
 pub mod categories;
 pub mod config;
 pub mod error;
 pub mod gate;
 pub mod icons;
+pub mod import;
+pub mod inference;
 pub mod password;
 pub mod paths;
 pub mod platform;

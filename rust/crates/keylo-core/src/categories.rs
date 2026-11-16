@@ -86,6 +86,21 @@ impl CategoryCatalog {
         self.set_style(&name, icon, color)
     }
 
+    /// Adds a category from elsewhere (a backup). Its style applies when `overwrite_style`, or when
+    /// the existing category has none. Returns whether the category is new.
+    pub fn merge(&mut self, name: &str, style: &Style, overwrite_style: bool) -> Result<bool> {
+        let name = validate(name)?;
+        let key = self.key(&name);
+        let is_new = key.is_none();
+        let key = key.unwrap_or(name);
+        let existing = self.entries.entry(key).or_default();
+        if overwrite_style || (existing.icon.is_none() && existing.color.is_none()) {
+            *existing = Style { icon: normalize_icon(style.icon.as_deref())?, color: normalize_color(style.color.as_deref())? };
+        }
+        self.save()?;
+        Ok(is_new)
+    }
+
     pub fn set_style(&mut self, name: &str, icon: Option<&str>, color: Option<&str>) -> Result<()> {
         let name = validate(name)?;
         let style = Style { icon: normalize_icon(icon)?, color: normalize_color(color)? };

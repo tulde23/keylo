@@ -14,11 +14,21 @@ export KEYLO_HOME=$(mktemp -d)
 export KEYLO_PREFIX="KeyloCompat$RANDOM:"
 unset KEYLO_ACCESS_KEY
 echo '{"hello":"never"}' > "$KEYLO_HOME/config.json"
-cleanup() {
-  for n in $("$rust" list --json 2>/dev/null | grep '"name"' | sed 's/.*"name": "\(.*\)",/\1/'); do
-    "$rust" rm "$n" --yes >/dev/null 2>&1 || true
+# Second and third stores, to restore backups into.
+store2=$(mktemp -d); prefix2="KeyloCompat${RANDOM}b:"
+store3=$(mktemp -d); prefix3="KeyloCompat${RANDOM}c:"
+in2() { KEYLO_HOME=$store2 KEYLO_PREFIX=$prefix2 "$@"; }
+in3() { KEYLO_HOME=$store3 KEYLO_PREFIX=$prefix3 "$@"; }
+wipe() { # wipe HOME PREFIX
+  for n in $(KEYLO_HOME=$1 KEYLO_PREFIX=$2 "$rust" list --json 2>/dev/null | grep '"name"' | sed 's/.*"name": "\(.*\)",/\1/'); do
+    KEYLO_HOME=$1 KEYLO_PREFIX=$2 "$rust" rm "$n" --yes >/dev/null 2>&1 || true
   done
-  rm -rf "$KEYLO_HOME"
+  rm -rf "$1"
+}
+cleanup() {
+  wipe "$KEYLO_HOME" "$KEYLO_PREFIX"
+  wipe "$store2" "$prefix2"
+  wipe "$store3" "$prefix3"
 }
 trap cleanup EXIT
 
@@ -79,5 +89,38 @@ check "mcp never prints the value" "0" "$(grep -c from-rust <<< "$out" || true)"
 check "audit log written" "1" "$(grep -c '"via":"access key"' "$KEYLO_HOME/audit.log" || true)"
 "$csharp" keys revoke compat >/dev/null 2>&1
 check "key revoked by C# stops the Rust server" "1" "$(mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_types","arguments":{}}}' | grep -c "isn't valid" || true)"
+
+# Backups: each build restores the other's, into an empty store.
+pw='correct horse battery staple'
+printf '%s
+' "$pw" | "$rust" backup "$KEYLO_HOME/rs" --password-stdin >/dev/null 2>&1
+printf '%s
+' "$pw" | "$csharp" backup "$KEYLO_HOME/cs" --password-stdin >/dev/null 2>&1
+check "Rust wrote a backup" "KEYLOBK1" "$(head -c 8 "$KEYLO_HOME/rs.keylo")"
+for s in "$store2" "$store3"; do echo '{"hello":"never"}' > "$s/config.json"; done
+printf '%s
+' "$pw" | in2 "$csharp" restore "$KEYLO_HOME/rs.keylo" --password-stdin >/dev/null 2>&1
+check "C# restores a Rust backup" "from-csharp" "$(in2 "$csharp" get cs-renamed | tr -d '')"
+check "  typed fields" "https://example.com" "$(in2 "$csharp" get rs-login --field url | tr -d '')"
+check "  large values" "$(cat "$KEYLO_HOME/big2.txt")" "$(in2 "$csharp" get rs-big | tr -d '
+')"
+check "  categories" "1" "$(in2 "$csharp" list cat:ops 2>/dev/null | grep -c rs-plain || true)"
+printf '%s
+' "$pw" | in3 "$rust" restore "$KEYLO_HOME/cs.keylo" --password-stdin >/dev/null 2>&1
+check "Rust restores a C# backup" "from-rust" "$(in3 "$rust" get rs-plain)"
+check "  typed main field" "pw-1" "$(in3 "$rust" get cs-db)"
+check "  large values" "$(cat "$KEYLO_HOME/big.txt")" "$(in3 "$rust" get cs-big)"
+check "wrong password is refused" "1" "$(printf 'not the password
+' | in3 "$rust" restore "$KEYLO_HOME/cs.keylo" --password-stdin 2>&1 | grep -c 'Wrong password' || true)"
+
+# Import by Rust, read by C#.
+mkdir -p "$KEYLO_HOME/import/prod"
+printf 'ghp_compat
+' > "$KEYLO_HOME/import/compat-token"
+printf 'postgres://erin:pw-3@db.prod:5432/orders' > "$KEYLO_HOME/import/prod/orders-db.env"
+"$rust" import "$KEYLO_HOME/import" >/dev/null 2>&1
+check "imported token, guessed api_key" "ghp_compat" "$("$csharp" get compat-token | tr -d '')"
+check "imported database, split into fields" "db.prod" "$("$csharp" get orders-db --field host | tr -d '')"
+check "subfolder became the category" "1" "$("$csharp" list cat:prod 2>/dev/null | grep -c orders-db || true)"
 
 echo "$pass checks passed."

@@ -17,7 +17,9 @@ use keylo_core::refs::{is_linked, SecretReference};
 use keylo_core::secrets::{SecretDraft, SecretInfo};
 use keylo_core::store::{normalize_name, SecretStore};
 use keylo_core::types::{self, SecretTypeCatalog, SecretTypeDefinition};
-use keylo_core::{eq_ic, paths, search, Error};
+use keylo_core::categories::CategoryCatalog;
+use keylo_core::import::{self, ImportOptions};
+use keylo_core::{backup, eq_ic, paths, search, Error};
 use terminal::info;
 use zeroize::Zeroizing;
 
@@ -50,11 +52,18 @@ keylo run --env VAR=NAME [...] -- CMD [ARGS]
 keylo keys                              List access keys (let tools use secrets without {verifier})
 keylo keys create NAME [--all | --category C... --secret S...] [--expires-days N]
 keylo keys revoke NAME
+keylo import PATH... [--category C | --flat] [--overwrite] [--delete-originals] [--plain]
+                                        Import files as secrets (a folder's subfolders become
+                                        categories; types are guessed unless --plain)
+keylo backup FILE [--force] [--password-stdin]
+                                        Encrypted, password-protected backup of everything
+keylo restore FILE [--overwrite] [--dry-run] [--password-stdin]
+                                        Restore a backup (existing secrets are skipped unless --overwrite)
 keylo mcp                               The MCP server for AI agents
 keylo unlock | lock | status | version
 keylo config [hello session|always|never | session-minutes N | clipboard-seconds N | audit-days N|forever]
 
-Not in the Rust build yet: import, link, push, provider, backup, restore (use the C# keylo).",
+Not in the Rust build yet: link, push, provider (use the C# keylo).",
         store = p.store_name(),
         verifier = p.verifier_name()
     )
@@ -122,7 +131,10 @@ fn run(argv: &[String]) -> CliResult<i32> {
         "status" => status(&c, &args),
         "config" => config_cmd(&mut c, &args),
         "__clip-clear" => clip_clear(&args),
-        "import" | "link" | "push" | "provider" | "providers" | "backup" | "export" | "restore" => {
+        "import" => import_cmd(&mut c, &args),
+        "backup" | "export" => backup_cmd(&mut c, &args),
+        "restore" => restore_cmd(&mut c, &args),
+        "link" | "push" | "provider" | "providers" => {
             fail!("'{first}' isn't in the Rust build of keylo yet; use the C# keylo for it.")
         }
         _ => usage!("Unknown command '{first}'. Run 'keylo help'."),
@@ -565,6 +577,120 @@ fn remove(c: &mut Context, args: &Args) -> CliResult<i32> {
     c.store.delete(&name)?;
     info(&format!("Deleted '{name}'."));
     Ok(0)
+}
+
+fn import_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
+    let paths = args.positionals_from(0);
+    let category = args.option("category");
+    let mut options = ImportOptions::new();
+    options.overwrite = args.flag("overwrite");
+    options.subfolder_categories = !args.flag("flat");
+    options.infer_types = !args.flag("plain");
+    let delete_originals = args.flag("delete-originals");
+    args.throw_on_unknown(None)?;
+    if paths.is_empty() {
+        usage!("Give one or more files or folders to import.");
+    }
+    if args.flag("flat") && category.is_some() {
+        usage!("Use --category or --flat, not both.");
+    }
+    options.category = category;
+    c.browse()?;
+
+    let result = import::import(&c.store, &c.types, &paths, &options)?;
+    for item in &result.imported {
+        let t = item.type_id.as_ref().map(|t| format!("  ({t})")).unwrap_or_default();
+        let cat = item.category.as_ref().map(|c| format!("  [{c}]")).unwrap_or_default();
+        info(&format!("  + {}{t}{cat}", item.name));
+    }
+    for skip in &result.skipped {
+        info(&format!("  - {}: {}", skip.source_path, skip.reason));
+    }
+    info(&format!("Imported {}, skipped {}.", result.imported.len(), result.skipped.len()));
+
+    if delete_originals && !result.imported.is_empty() {
+        let failed = import::delete_originals(&result.imported);
+        for f in &failed {
+            info(&format!("  ! couldn't delete {}: {}", f.source_path, f.reason));
+        }
+        info(&format!("Deleted {} original file(s).", result.imported.len() - failed.len()));
+    } else if !result.imported.is_empty() {
+        info("The original files are untouched. Re-run with --delete-originals once you've checked the import.");
+    }
+    Ok(if result.skipped.is_empty() { 0 } else { 1 })
+}
+
+fn backup_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
+    let path = backup::with_extension(std::path::Path::new(&absolute(&args.positional(0, "backup file")?)));
+    let force = args.flag("force");
+    let from_stdin = args.flag("password-stdin");
+    args.throw_on_unknown(Some(1))?;
+    if path.exists() && !force {
+        usage!("{} exists. Use --force to replace it.", path.display());
+    }
+
+    // Exports every value, so it always verifies: no session shortcut.
+    c.gate.confirm(0, "Keylo: back up all secrets")?;
+    let password = terminal::read_password("Backup password: ", true, from_stdin)?;
+    if let Some(problem) = backup::check_password(&password) {
+        usage!("{problem}");
+    }
+
+    info("Encrypting\u{2026}");
+    let contents = backup::collect(&c.store, &CategoryCatalog::default(), &c.types, &paths::data_dir())?;
+    let s = backup::write(&contents, &path, &password, backup::DEFAULT_ITERATIONS)?;
+    info(&format!(
+        "Backed up {} secrets, {} categories and {} icons to {} ({:.1} KB).",
+        s.secrets, s.categories, s.icons, s.path, s.bytes as f64 / 1024.0
+    ));
+    info("Keep the password somewhere other than Keylo. Without it the backup can't be opened.");
+    Ok(0)
+}
+
+fn restore_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
+    let path = std::path::PathBuf::from(absolute(&args.positional(0, "backup file")?));
+    let overwrite = args.flag("overwrite");
+    let dry_run = args.flag("dry-run");
+    let from_stdin = args.flag("password-stdin");
+    args.throw_on_unknown(Some(1))?;
+    if !path.is_file() {
+        usage!("{} doesn't exist.", path.display());
+    }
+    c.browse()?;
+    let password = terminal::read_password("Backup password: ", false, from_stdin)?;
+
+    info("Decrypting\u{2026}");
+    let contents = backup::read(&path, &password)?;
+    let mut existing = 0;
+    for s in &contents.secrets {
+        if c.store.exists(&s.name)? {
+            existing += 1;
+        }
+    }
+    let total = contents.secrets.len();
+    info(&format!(
+        "Backup from {}: {total} secrets ({existing} already here), {} categories, {} icons.",
+        contents.created_at.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M"),
+        contents.categories.len(),
+        contents.icons.len()
+    ));
+    if dry_run {
+        let verb = if existing > 0 && !overwrite { "skip" } else { "replace" };
+        info(&format!("Would add {} and {verb} {existing}. Nothing was changed (--dry-run).", total - existing));
+        return Ok(0);
+    }
+
+    let mut catalog = CategoryCatalog::default();
+    let r = backup::restore(&c.store, &mut catalog, &c.types, &paths::data_dir(), &contents, overwrite)?;
+    let hint = if r.skipped > 0 && !overwrite { " (use --overwrite to replace them)" } else { "" };
+    info(&format!(
+        "Restored: {} added, {} replaced, {} skipped{hint}; {} new categories.",
+        r.added, r.replaced, r.skipped, r.categories_added
+    ));
+    for e in &r.errors {
+        info(&format!("  ! {e}"));
+    }
+    Ok(if r.errors.is_empty() { 0 } else { 1 })
 }
 
 fn run_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
