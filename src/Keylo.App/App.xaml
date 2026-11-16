@@ -20,7 +20,7 @@
 
             <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas</FontFamily>
 
-            <sys:String x:Key="Tagline">Your secrets, not ours.</sys:String>
+            <sys:String x:Key="Tagline">Agents use them. Never see them.</sys:String>
             <!-- The logo's gradient: the logo tile and avatars on the lock screen and dialogs. -->
             <LinearGradientBrush x:Key="BrandBrush" StartPoint="0,0" EndPoint="1,1">
                 <GradientStop Color="#A855F7" Offset="0" />

@@ -1,6 +1,11 @@
 # Keylo
 
-*Your secrets, not ours.*
+*Agents use them. Never see them.*
+
+Keylo is a secrets manager for developers working with AI agents. Agents use your API keys,
+passwords and tokens without ever seeing their values: secrets go straight into the commands that
+need them and are redacted from the output, so they don't end up in conversation logs or get pasted
+into your code and commit history.
 
 Local secrets for one machine, with a command line (`keylo`) and a desktop app. On Windows they
 live in Credential Manager (app: `keylow`); on macOS in your login keychain (app: Keylo.app); on

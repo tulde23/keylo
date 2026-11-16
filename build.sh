@@ -70,7 +70,7 @@ cat > "$app/Contents/Info.plist" <<EOF
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSHumanReadableCopyright</key><string>Your secrets, not ours.</string>
+  <key>NSHumanReadableCopyright</key><string>Agents use them. Never see them.</string>
 </dict>
 </plist>
 EOF
