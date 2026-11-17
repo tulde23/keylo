@@ -64,14 +64,15 @@ suite() { # the same checks, in whichever store this environment selects
 
 # 1. No desktop keyring: Keylo's vault file, unlocked with KEYLO_PASSPHRASE.
 (
+  # The vault, even where a keyring service could start on demand (as on CI machines).
   unset DBUS_SESSION_BUS_ADDRESS
-  export KEYLO_PASSPHRASE="correct horse battery staple"
+  export KEYLO_STORE=file KEYLO_PASSPHRASE="correct horse battery staple"
   suite "encrypted vault"
   # A wrong passphrase is refused; the vault isn't readable without it.
   printf 'x1234' | $rust set probe >/dev/null
   check "vault: wrong passphrase refused" "doesn't unlock" "$(KEYLO_PASSPHRASE='wrong passphrase!!' $rust get probe 2>&1 || true)"
   check "vault: file is sealed" "0" "$(grep -c x1234 "$KEYLO_HOME/vault.json" || true)"
-  check "vault: remembered" "file" "$(cat "$KEYLO_HOME/store.txt")"
+  check "vault: the vault file exists" "keylo-vault" "$(head -c 200 "$KEYLO_HOME/vault.json")"
 )
 
 # 2. A desktop keyring (gnome-keyring on a private session bus, unlocked with a test password).

@@ -49,12 +49,15 @@ impl SecretServiceStore {
         SecretServiceStore { service: service.to_string() }
     }
 
-    /// Whether a Secret Service answers on this session's D-Bus; the reason when it doesn't.
+    /// Whether a usable Secret Service answers on this session's D-Bus: one that can be searched
+    /// and has a default collection to save into (a keyring service started on demand without a
+    /// keyring, as on servers and CI machines, answers searches but can't store anything).
     pub fn probe() -> std::result::Result<(), String> {
         let ss = SecretService::connect(EncryptionType::Dh).map_err(|e| e.to_string())?;
         let mut query = HashMap::new();
         query.insert("service", "Keylo.Probe");
-        ss.search_items(query).map(|_| ()).map_err(|e| e.to_string())
+        ss.search_items(query).map_err(|e| e.to_string())?;
+        ss.get_default_collection().map(|_| ()).map_err(|e| format!("no default keyring ({e})"))
     }
 
     /// Keylo's items (or the one for `account`), unlocking the keyring if needed.
