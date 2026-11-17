@@ -28,7 +28,20 @@ pub const DEFAULT_PREFIX: &str = "keylo/";
 const MANAGED_TAG: &str = "keylo:managed";
 const NAME_TAG: &str = "keylo:name";
 const CATEGORY_TAG: &str = "keylo:category";
-const NOT_INSTALLED: &str = "The AWS CLI (aws) isn't installed. Install it with: winget install Amazon.AWSCLI";
+/// How to install the AWS CLI on this OS.
+pub fn install_hint() -> &'static str {
+    if cfg!(windows) {
+        "winget install Amazon.AWSCLI"
+    } else if cfg!(target_os = "macos") {
+        "brew install awscli"
+    } else {
+        "see https://aws.amazon.com/cli/"
+    }
+}
+
+fn not_installed() -> String {
+    format!("The AWS CLI (aws) isn't installed. To install it: {}", install_hint())
+}
 
 /// A secret in Secrets Manager, without its value.
 #[derive(Debug, Clone, Serialize)]
@@ -202,7 +215,7 @@ fn matches(s: &AwsSecretSummary, query: Option<&str>) -> bool {
 /// SSO session).
 fn explain(out: &Output, profile: Option<&str>) -> Error {
     if out.code.is_none() {
-        return Error::msg(NOT_INSTALLED);
+        return Error::msg(not_installed());
     }
     let text = out.stderr.trim();
     let line = text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("the aws command failed");

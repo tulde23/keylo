@@ -46,7 +46,7 @@ fn instructions() -> String {
     format!(
         "Keylo holds the user's secrets (API keys, passwords, tokens) on this {}.
 - Find secrets with search_secrets. Each result says what your access key allows: \"run\" or \"needs approval\".
-- Secrets have types (login, api_key, database, ssh_key, note, custom) with named fields; search results include each
+- Secrets have types (login, api_key, database, ssh_key, server, email_account, credit_card, and more: list_types has them all; plus the user's custom ones) with named fields; search results include each
   secret's field schema. Address one field as \"name:field\" (e.g. \"prod-db:connection_string\"); a bare name means its main value.
 - Some secrets are links (type \"link\") to items in another vault such as 1Password or AWS Secrets Manager; they work the same way and are read
   live from that vault, which may ask the user to unlock it.
@@ -280,7 +280,7 @@ impl Server {
             .map(|e| json!({ "name": e.name, "profile": e.profile, "region": e.region, "alwaysAsk": e.always_ask }))
             .collect();
         let result = json!({
-            "awsCli": if aws::cli_installed() { "installed" } else { "not found on PATH (Keylo reads AWS secrets through it: winget install Amazon.AWSCLI)" },
+            "awsCli": if aws::cli_installed() { "installed".to_string() } else { format!("not found on PATH (Keylo reads AWS secrets through it; to install: {})", aws::install_hint()) },
             "keylo": {
                 "profile": links::setting(&settings, "profile"),
                 "region": links::setting(&settings, "region"),
@@ -1101,7 +1101,7 @@ pub fn definitions() -> Value {
       {
         "name": "search_secrets",
         "title": "Search secrets",
-        "description": "Find the user's secrets by name, category, username, notes or non-secret field values (never secret values). Each result has its 'type' (login, api_key, database, ssh_key, note, a custom type, or plain), its 'fields' schema (which are secret; 'main' is the default value), and 'access': 'run' (usable with run_with_secrets) or 'needs approval' (using it asks the user). 'details' (non-secret field values such as host or url) and notes are only shown for secrets your access key covers.",
+        "description": "Find the user's secrets by name, category, username, notes or non-secret field values (never secret values). Each result has its 'type' (login, api_key, database, credit_card… see list_types; a custom type; or plain), its 'fields' schema (which are secret; 'main' is the default value), and 'access': 'run' (usable with run_with_secrets) or 'needs approval' (using it asks the user). 'details' (non-secret field values such as host or url) and notes are only shown for secrets your access key covers.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -1122,7 +1122,7 @@ pub fn definitions() -> Value {
       {
         "name": "list_types",
         "title": "List secret types",
-        "description": "The secret types (login, api_key, database, ssh_key, note and the user's custom ones) with their fields: which are secret and which is the main value.",
+        "description": "The secret types (login, api_key, database, ssh_key, note, password, server, email_account, software_license, wireless_router, crypto_wallet, document, credit_card, bank_account, and the user's custom ones) with their fields: which are secret and which is the main value.",
         "inputSchema": { "type": "object", "properties": {} },
         "annotations": { "readOnlyHint": true, "openWorldHint": false }
       },

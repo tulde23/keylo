@@ -75,6 +75,53 @@ pub struct AppInfo {
     keylo_path: String,
 }
 
+// ---------------------------------------------------------------------------- appearance
+
+/// The colour theme and light/dark mode, kept in ui.json with the C# app's window layout (same
+/// names, so both apps share them): Theme = Twilight | QuietViolet | Aurora, Mode = System | Light | Dark.
+#[derive(Serialize)]
+pub struct UiTheme {
+    theme: String,
+    mode: String,
+}
+
+const THEMES: &[&str] = &["Twilight", "QuietViolet", "Aurora"];
+const MODES: &[&str] = &["System", "Light", "Dark"];
+
+fn ui_json() -> serde_json::Map<String, serde_json::Value> {
+    std::fs::read_to_string(paths::data_dir().join("ui.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(t.trim_start_matches('\u{feff}')).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default()
+}
+
+fn pick(value: Option<&str>, choices: &[&str]) -> String {
+    let v = value.unwrap_or("");
+    choices.iter().find(|c| c.eq_ignore_ascii_case(v)).unwrap_or(&choices[0]).to_string()
+}
+
+#[tauri::command]
+pub fn ui_theme() -> UiTheme {
+    let ui = ui_json();
+    UiTheme {
+        theme: pick(ui.get("Theme").and_then(|v| v.as_str()), THEMES),
+        mode: pick(ui.get("Mode").and_then(|v| v.as_str()), MODES),
+    }
+}
+
+/// Saves the appearance at once (it's cosmetic: no identity check, not part of Save settings).
+#[tauri::command]
+pub fn set_ui_theme(theme: String, mode: String) -> Res<UiTheme> {
+    let mut ui = ui_json();
+    ui.insert("Theme".into(), pick(Some(&theme), THEMES).into());
+    ui.insert("Mode".into(), pick(Some(&mode), MODES).into());
+    let dir = paths::data_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("ui.json"), serde_json::to_string(&ui).unwrap()).map_err(|e| e.to_string())?;
+    Ok(ui_theme())
+}
+
 /// The keylo command installed next to the app.
 fn keylo_path() -> String {
     std::env::current_exe()

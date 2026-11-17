@@ -1,0 +1,140 @@
+/* Keylo's colour themes, generated from the C# app's Themes.cs (same colours, so both apps look
+   alike). <html data-theme="twilight|quietviolet|aurora" data-mode="system|light|dark">. */
+
+:root[data-theme="quietviolet"][data-mode="light"],
+:root[data-theme="quietviolet"][data-mode="system"] {
+  --bg: #F5F4F8;
+  --surface: #FFFFFF;
+  --sidebar: #FAF9FC;
+  --border: #E5E2EC;
+  --text: #1C1A22;
+  --muted: #6E6879;
+  --accent: #6D28D9;
+  --accent-hover: #6D28D9;
+  --accent-soft: #F1ECFD;
+  --row-hover: #EFEDF4;
+  --row-selected: #ECE6FB;
+  color-scheme: light;
+}
+
+:root[data-theme="aurora"][data-mode="light"],
+:root[data-theme="aurora"][data-mode="system"] {
+  --bg: #FAF9FB;
+  --surface: #FFFFFF;
+  --sidebar: #FFFFFF;
+  --border: #E7E5EC;
+  --text: #1B1A20;
+  --muted: #6C6977;
+  --accent: #9333EA;
+  --accent-hover: #9333EA;
+  --accent-soft: #F3E8FF;
+  --row-hover: #F2F1F5;
+  --row-selected: #F3E8FF;
+  color-scheme: light;
+}
+
+:root[data-theme="twilight"][data-mode="light"],
+:root[data-theme="twilight"][data-mode="system"] {
+  --bg: #F6F2FD;
+  --surface: #FFFFFF;
+  --sidebar: #FBF9FE;
+  --border: #E2D8F4;
+  --text: #1E1630;
+  --muted: #6B5F86;
+  --accent: #9333EA;
+  --accent-hover: #5B21B6;
+  --accent-soft: #EDE5FA;
+  --row-hover: #EEE6FB;
+  --row-selected: #E2D3FA;
+  color-scheme: light;
+}
+
+:root[data-theme="quietviolet"][data-mode="dark"] {
+  --bg: #1B1A21;
+  --surface: #26242E;
+  --sidebar: #1F1D26;
+  --border: #34313E;
+  --text: #F4F2FA;
+  --muted: #8C869B;
+  --accent: #A78BFA;
+  --accent-hover: #A78BFA;
+  --accent-soft: #2A2540;
+  --row-hover: #2A2834;
+  --row-selected: #2E2A3D;
+  color-scheme: dark;
+}
+
+:root[data-theme="aurora"][data-mode="dark"] {
+  --bg: #18171C;
+  --surface: #24232A;
+  --sidebar: #1C1B21;
+  --border: #34323B;
+  --text: #F5F4F7;
+  --muted: #8B8894;
+  --accent: #C084FC;
+  --accent-hover: #C084FC;
+  --accent-soft: #2A2236;
+  --row-hover: #26252C;
+  --row-selected: #2C2238;
+  color-scheme: dark;
+}
+
+:root[data-theme="twilight"][data-mode="dark"] {
+  --bg: #13101B;
+  --surface: #211A30;
+  --sidebar: #161220;
+  --border: #31284A;
+  --text: #F5F1FF;
+  --muted: #9086AB;
+  --accent: #9333EA;
+  --accent-hover: #6D28D9;
+  --accent-soft: #2D2147;
+  --row-hover: #231B33;
+  --row-selected: #2D2147;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="quietviolet"][data-mode="system"] {
+    --bg: #1B1A21;
+    --surface: #26242E;
+    --sidebar: #1F1D26;
+    --border: #34313E;
+    --text: #F4F2FA;
+    --muted: #8C869B;
+    --accent: #A78BFA;
+    --accent-hover: #A78BFA;
+    --accent-soft: #2A2540;
+    --row-hover: #2A2834;
+    --row-selected: #2E2A3D;
+    color-scheme: dark;
+  }
+  :root[data-theme="aurora"][data-mode="system"] {
+    --bg: #18171C;
+    --surface: #24232A;
+    --sidebar: #1C1B21;
+    --border: #34323B;
+    --text: #F5F4F7;
+    --muted: #8B8894;
+    --accent: #C084FC;
+    --accent-hover: #C084FC;
+    --accent-soft: #2A2236;
+    --row-hover: #26252C;
+    --row-selected: #2C2238;
+    color-scheme: dark;
+  }
+  :root[data-theme="twilight"][data-mode="system"] {
+    --bg: #13101B;
+    --surface: #211A30;
+    --sidebar: #161220;
+    --border: #31284A;
+    --text: #F5F1FF;
+    --muted: #9086AB;
+    --accent: #9333EA;
+    --accent-hover: #6D28D9;
+    --accent-soft: #2D2147;
+    --row-hover: #231B33;
+    --row-selected: #2D2147;
+    color-scheme: dark;
+  }
+}

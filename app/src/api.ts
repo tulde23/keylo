@@ -120,6 +120,7 @@ export interface AwsChoices {
   initial: number;
   initialRegion: string | null;
   cliInstalled: boolean;
+  installHint: string;
 }
 
 export interface LinkProposal {
@@ -319,6 +320,7 @@ export interface ClaudeStatus {
   pointsAt: boolean;
   summary: string;
   cliInstalled: boolean;
+  installHint: string;
 }
 
 /** The error the backend returns when the session has ended. */

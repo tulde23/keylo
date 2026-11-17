@@ -101,6 +101,8 @@ fn main() {
             commands::answer_approval,
             transfer::pick_import,
             commands::claude_status,
+            commands::ui_theme,
+            commands::set_ui_theme,
             commands::add_to_claude,
             vaults::vault_providers,
             vaults::save_vault_provider,

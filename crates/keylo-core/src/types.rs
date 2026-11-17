@@ -147,6 +147,10 @@ pub fn built_in() -> Vec<SecretTypeDefinition> {
     let f = FieldDefinition::new;
     let mut engine = f("engine", "Engine", Text);
     engine.options = Some(["postgres", "mysql", "sqlserver", "mongodb", "redis", "other"].map(String::from).to_vec());
+    let mut security = f("security", "Security", Text);
+    security.options = Some(["WPA3", "WPA2", "WPA", "WEP", "Open"].map(String::from).to_vec());
+    let mut brand = f("brand", "Brand", Text);
+    brand.options = Some(["Visa", "Mastercard", "American Express", "Discover", "Other"].map(String::from).to_vec());
     vec![
         t("login", "Login", "Person24", vec![f("username", "Username", Username), f("password", "Password", Password), f("url", "Website", Url)]),
         t("api_key", "API key", "Key24", vec![f("key_id", "Key ID", Username), f("secret", "Secret", Password), f("endpoint", "Endpoint", Url)]),
@@ -177,6 +181,96 @@ pub fn built_in() -> Vec<SecretTypeDefinition> {
             ],
         ),
         t("note", "Secure note", "Note24", vec![f("note", "Note", SecretText)]),
+        // Added in the Rust build, after 1Password's categories. The C# Keylo 1.2.0 doesn't know
+        // them and shows such secrets as plain values.
+        t("password", "Password", "LockClosed24", vec![f("password", "Password", Password), f("url", "Website", Url)]),
+        t(
+            "server",
+            "Server",
+            "Cloud24",
+            vec![
+                f("url", "URL", Url),
+                f("username", "Username", Username),
+                f("password", "Password", Password),
+                f("admin_url", "Admin console", Url),
+            ],
+        ),
+        t(
+            "email_account",
+            "Email account",
+            "Mail24",
+            vec![
+                f("email", "Email address", Username),
+                f("password", "Password", Password),
+                f("imap_server", "IMAP server", Text),
+                f("imap_port", "IMAP port", Number),
+                f("smtp_server", "SMTP server", Text),
+                f("smtp_port", "SMTP port", Number),
+            ],
+        ),
+        t(
+            "software_license",
+            "Software license",
+            "Apps24",
+            vec![
+                f("license_key", "License key", SecretText),
+                f("licensed_to", "Licensed to", Username),
+                f("product", "Product", Text),
+                f("version", "Version", Text),
+                f("download_url", "Download page", Url),
+            ],
+        ),
+        t(
+            "wireless_router",
+            "Wireless router",
+            "Wifi24",
+            vec![
+                f("network_name", "Network name", Username),
+                f("password", "Wi-Fi password", Password),
+                security,
+                f("admin_url", "Router admin page", Url),
+                f("admin_password", "Router admin password", Password),
+            ],
+        ),
+        t(
+            "crypto_wallet",
+            "Crypto wallet",
+            "Wallet24",
+            vec![
+                f("recovery_phrase", "Recovery phrase", SecretText),
+                f("password", "Password", Password),
+                f("address", "Wallet address", Text),
+                f("network", "Network", Text),
+            ],
+        ),
+        t("document", "Document", "Document24", vec![f("contents", "Contents", SecretText), f("file_name", "File name", Text)]),
+        t(
+            "credit_card",
+            "Credit card",
+            "Payment24",
+            vec![
+                f("number", "Card number", Password),
+                f("cardholder", "Cardholder", Username),
+                f("expiry", "Expiry (MM/YY)", Text),
+                f("cvv", "Security code", Password),
+                f("pin", "PIN", Password),
+                brand,
+            ],
+        ),
+        t(
+            "bank_account",
+            "Bank account",
+            "Building24",
+            vec![
+                f("account_number", "Account number", Password),
+                f("account_holder", "Account holder", Username),
+                f("bank", "Bank", Text),
+                f("routing_number", "Routing number / sort code", Text),
+                f("iban", "IBAN", Password),
+                f("swift", "SWIFT / BIC", Text),
+                f("pin", "PIN", Password),
+            ],
+        ),
     ]
 }
 
@@ -241,9 +335,13 @@ impl SecretTypeCatalog {
             .collect())
     }
 
+    /// Built-in types, then the user's. A custom type with a built-in's id (made before that
+    /// built-in existed, in either build) takes its place: its secrets use its fields.
     pub fn all(&self) -> Result<Vec<SecretTypeDefinition>> {
-        let mut all = self.built_in_styled()?;
-        all.extend(self.custom()?);
+        let custom = self.custom()?;
+        let mut all: Vec<SecretTypeDefinition> =
+            self.built_in_styled()?.into_iter().filter(|b| !custom.iter().any(|c| eq_ic(&c.id, &b.id))).collect();
+        all.extend(custom);
         Ok(all)
     }
 
@@ -274,6 +372,8 @@ impl SecretTypeCatalog {
     /// Replaces the custom types. Ids are derived from names and must not clash with built-ins.
     pub fn save_custom(&self, mut types: Vec<SecretTypeDefinition>) -> Result<()> {
         let defaults = built_in();
+        // Custom types that already had a built-in's id keep it (see `all`); new ones can't take one.
+        let existing: Vec<String> = self.custom()?.into_iter().map(|t| t.id).collect();
         for t in types.iter_mut() {
             t.name = t.name.trim().to_string();
             if t.id.is_empty() {
@@ -295,7 +395,7 @@ impl SecretTypeCatalog {
             if t.id.is_empty() {
                 bail!("'{}' needs letters or digits in its name.", t.name);
             }
-            if let Some(b) = defaults.iter().find(|b| b.id == t.id) {
+            if let Some(b) = defaults.iter().find(|b| b.id == t.id && !existing.iter().any(|e| eq_ic(e, &t.id))) {
                 bail!("'{}' clashes with the built-in type '{}'.", t.name, b.name);
             }
         }
@@ -439,5 +539,42 @@ pub fn connection_string(f: &BTreeMap<String, String>) -> Option<String> {
             pass.map(String::as_str).unwrap_or("")
         )),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn built_in_types_are_valid() {
+        let all = built_in();
+        for (i, t) in all.iter().enumerate() {
+            assert!(t.problem().is_none(), "{}: {:?}", t.id, t.problem());
+            assert!(t.primary().is_some_and(|p| p.is_secret()), "{} needs a secret main field", t.id);
+            assert!(t.fields.iter().filter(|f| f.kind == FieldKind::Username).count() <= 1, "{}", t.id);
+            assert!(!all[..i].iter().any(|u| u.id == t.id), "duplicate {}", t.id);
+        }
+        assert!(all.iter().any(|t| t.id == "credit_card") && all.len() == 14);
+    }
+
+    #[test]
+    fn an_older_custom_type_keeps_a_new_built_in_id() {
+        let dir = std::env::temp_dir().join(format!("keylo-types-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        // A custom "Credit card" made before the built-in existed (as the C# build could).
+        let mine = r#"{"custom":[{"id":"credit_card","name":"Credit card","fields":[{"id":"card","label":"Card","kind":"Password"}]}]}"#;
+        fs::write(dir.join("types.json"), mine).unwrap();
+        let catalog = SecretTypeCatalog::in_dir(&dir);
+        let found = catalog.find(Some("credit_card")).unwrap().unwrap();
+        assert!(!found.is_built_in && found.fields[0].id == "card");
+        assert_eq!(catalog.all().unwrap().iter().filter(|t| t.id == "credit_card").count(), 1);
+        // Saving it again is allowed; a new custom type can't take a built-in's id.
+        catalog.save_custom(catalog.custom().unwrap()).unwrap();
+        let mut more = catalog.custom().unwrap();
+        more.push(SecretTypeDefinition { id: String::new(), name: "Server".into(), fields: vec![FieldDefinition::new("k", "Key", FieldKind::Password)], ..Default::default() });
+        assert!(catalog.save_custom(more).is_err());
+        let _ = fs::remove_dir_all(&dir);
     }
 }

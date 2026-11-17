@@ -158,7 +158,7 @@ impl AccessGate {
 
 /// "Windows Hello", "Touch ID"… capitalized, to start a message with.
 pub fn verifier_name() -> String {
-    let name = if platform::is_installed() { platform::current().verifier_name() } else { "Windows Hello".into() };
+    let name = if platform::is_installed() { platform::current().verifier_name() } else { "device sign-in".into() };
     let mut c = name.chars();
     match c.next() {
         Some(f) => f.to_uppercase().chain(c).collect(),

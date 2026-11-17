@@ -1,18 +1,26 @@
 import { useMemo, useState } from "react";
 import { Eye, EyeOff, Wand2 } from "lucide-react";
-import { api, type CategorySummary, type Secret, type SecretType } from "../api";
+import { api, type CategorySummary, type Field, type Secret, type SecretType } from "../api";
 import type { Run } from "../App";
-import CategoryPicker from "./CategoryPicker";
-import { ColorPicker, Drawer, IconPicker, iconFor, SecretIcon } from "./ui";
+import CategoryDropdown from "./CategoryDropdown";
+import TypeDropdown from "./TypeDropdown";
+import { ColorPicker, Drawer, IconPicker, SecretIcon } from "./ui";
 
 const PLAIN = "";
+
+
+
+const PLAIN_FIELDS: Field[] = [
+  { id: "username", label: "Username", kind: "Username", secret: false, main: false, options: null },
+  { id: "value", label: "Value", kind: "SecretText", secret: true, main: true, options: null },
+];
 
 /** Adds or edits a secret. `values` are the revealed fields of the secret being edited. */
 export default function SecretEditor(props: {
   secret: Secret | null;
   values: Record<string, string> | null;
   types: SecretType[];
-  categories: string[];
+  categories: CategorySummary[];
   categoryOf: (s: Secret) => CategorySummary | undefined;
   run: Run;
   onClose: () => void;
@@ -32,14 +40,40 @@ export default function SecretEditor(props: {
 
   const linked = !!editing?.linked;
   const type = props.types.find((t) => t.id === typeId);
+  const fieldsOf = (id: string): Field[] => props.types.find((t) => t.id === id)?.fields ?? PLAIN_FIELDS;
   const formFields = useMemo(
     // A link's values live in its vault: only its name and details are edited here.
-    () => linked ? [] : type?.fields ?? [
-      { id: "username", label: "Username", kind: "Username" as const, secret: false, main: false, options: null },
-      { id: "value", label: "Value", kind: "SecretText" as const, secret: true, main: true, options: null },
-    ],
+    () => linked ? [] : type?.fields ?? PLAIN_FIELDS,
     [type, linked],
   );
+
+  // Changing an existing secret's type: values move to the new type's fields with the same id, or
+  // the same role (main value, username, website). What has no place there is listed before saving.
+  const originalType = editing ? editing.type ?? PLAIN : null;
+  const [dropped, setDropped] = useState<string[]>([]);
+  const changeType = (id: string) => {
+    if (!editing) return setTypeId(id);
+    const from = fieldsOf(originalType ?? PLAIN);
+    const to = fieldsOf(id);
+    const original = props.values ?? {};
+    const next: Record<string, string> = {};
+    const used = new Set<string>();
+    const move = (dest: Field | undefined, src: Field | undefined) => {
+      if (!dest || !src || next[dest.id] || used.has(src.id) || !original[src.id]) return;
+      next[dest.id] = original[src.id];
+      used.add(src.id);
+    };
+    for (const d of to) move(d, from.find((f) => f.id === d.id));
+    move(to.find((f) => f.main), from.find((f) => f.main));
+    move(to.find((f) => f.kind === "Username"), from.find((f) => f.kind === "Username"));
+    move(to.find((f) => f.kind === "Url"), from.find((f) => f.kind === "Url"));
+    // Edits made in this panel to fields the new type also has stay.
+    for (const d of to) if (fields[d.id] && fields[d.id] !== original[d.id]) next[d.id] = fields[d.id];
+    setFields(next);
+    setDropped(id === originalType ? [] : from.filter((f) => original[f.id] && !used.has(f.id)).map((f) => f.label));
+    setTypeId(id);
+  };
+  const typeChanged = !!editing && typeId !== originalType;
 
   const set = (id: string, value: string) => setFields((f) => ({ ...f, [id]: value }));
   const generate = async (id: string) => {
@@ -55,9 +89,10 @@ export default function SecretEditor(props: {
   const nonEmpty = (f: Record<string, string>) => Object.fromEntries(Object.entries(f).filter(([, v]) => v !== ""));
   const dirty = editing
     ? (JSON.stringify([nonEmpty(fields), name, category, notes]) !== JSON.stringify([nonEmpty(JSON.parse(initial)[0]), ...JSON.parse(initial).slice(1)])
-       || icon !== (editing.icon ?? null) || color !== (editing.color ?? null))
+       || icon !== (editing.icon ?? null) || color !== (editing.color ?? null) || typeChanged)
     : Object.values(fields).some((v) => v !== "") || name !== "" || category !== "" || notes !== "";
-  const canSave = name.trim() !== "" && (!mainField || (fields[mainField.id] ?? "") !== "" || !!editing);
+  // A new secret, or one changing type, needs its main value; otherwise an empty secret field keeps the stored one.
+  const canSave = name.trim() !== "" && (!mainField || (fields[mainField.id] ?? "") !== "" || (!!editing && !typeChanged));
 
   const save = async () => {
     setBusy(true);
@@ -91,22 +126,16 @@ export default function SecretEditor(props: {
       }
     >
       <form className="form" onSubmit={(e) => { e.preventDefault(); if (canSave) save(); }}>
-        {!editing && (
-          <div className="type-picker" role="radiogroup" aria-label="Type">
-            {props.types.map((t) => {
-              const Icon = iconFor(t.icon);
-              return (
-                <button type="button" key={t.id} role="radio" aria-checked={typeId === t.id}
-                  className={`type-option${typeId === t.id ? " active" : ""}`} onClick={() => setTypeId(t.id)}>
-                  <Icon size={18} /> {t.name}
-                </button>
-              );
-            })}
-            <button type="button" role="radio" aria-checked={typeId === PLAIN}
-              className={`type-option${typeId === PLAIN ? " active" : ""}`} onClick={() => setTypeId(PLAIN)}>
-              {(() => { const Icon = iconFor(null); return <Icon size={18} />; })()} Plain value
-            </button>
+        {!linked && (
+          <div className="form-row">
+            <span>Type</span>
+            <TypeDropdown types={props.types} value={typeId} onChange={changeType} />
           </div>
+        )}
+        {typeChanged && dropped.length > 0 && (
+          <p className="warning small-text">
+            {dropped.join(", ")} {dropped.length === 1 ? "has" : "have"} no place in {type?.name ?? "a plain value"} and won't be kept when you save.
+          </p>
         )}
 
         {editing?.link && (
@@ -164,7 +193,7 @@ export default function SecretEditor(props: {
 
         <div className="form-row">
           <span>Category</span>
-          <CategoryPicker value={category} onChange={setCategory} categories={props.categories} />
+          <CategoryDropdown value={category} onChange={setCategory} categories={props.categories} />
         </div>
 
         <div className="form-row">

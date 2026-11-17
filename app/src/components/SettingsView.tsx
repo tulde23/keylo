@@ -1,23 +1,43 @@
 import { useEffect, useState } from "react";
-import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
-import { api, timeAgo, type ClaudeStatus, type AccessKey, type AppInfo, type KeyInput, type Secret, type SecretType, type Settings } from "../api";
+import { createPortal } from "react-dom";
+import { Bot, Folder, Search, Copy, Info, KeyRound, Link2, Palette, Plus, Settings2, Shapes, ShieldCheck, Trash2, X, type LucideIcon } from "lucide-react";
+import { api, timeAgo, type CategorySummary, type ClaudeStatus, type AccessKey, type AppInfo, type KeyInput, type Secret, type SecretType, type Settings } from "../api";
 import TypesSection from "./TypesSection";
 import BackupSection from "./BackupSection";
 import VaultsSection from "./VaultsSection";
+import AppearanceSection from "./AppearanceSection";
 import type { Run } from "../App";
-import { Drawer, Modal, useToast } from "./ui";
+import { Drawer, IconTile, Modal, SecretIcon, useToast } from "./ui";
 
+type Tab = "general" | "appearance" | "agents" | "types" | "vaults" | "backup" | "about";
+
+const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
+  { id: "general", label: "General", icon: Settings2 },
+  { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "agents", label: "Agents", icon: Bot },
+  { id: "types", label: "Secret types", icon: Shapes },
+  { id: "vaults", label: "Vault providers", icon: Link2 },
+  { id: "backup", label: "Backup", icon: ShieldCheck },
+  { id: "about", label: "About", icon: Info },
+];
+
+/**
+ * Settings, as a dialog with a tab for each area (as in the C# app). Esc or a click outside closes
+ * it; drawers and dialogs opened from it (key editor, new key) sit on top and close first.
+ */
 export default function SettingsView(props: {
   info: AppInfo;
   secrets: Secret[];
   types: SecretType[];
   onTypes: (types: SecretType[]) => void;
-  categories: string[];
+  categories: CategorySummary[];
   run: Run;
   onSettingsSaved: () => Promise<void>;
   onDataChanged: () => void;
+  onClose: () => void;
 }) {
-  const { info, run } = props;
+  const { info, run, onClose } = props;
+  const [tab, setTab] = useState<Tab>("general");
   const toast = useToast();
   const [saved, setSaved] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Settings | null>(null);
@@ -55,13 +75,38 @@ export default function SettingsView(props: {
     }
   };
 
+  // Esc closes Settings, unless a drawer or dialog opened from it is showing (that closes first).
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !document.querySelector(".drawer-backdrop, .modal-backdrop")) onClose();
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose]);
+
   const claudeCommand = (t: string) =>
     `claude mcp add keylo --scope user --env KEYLO_ACCESS_KEY=${t} -- "${info.keyloPath}" mcp`;
 
-  return (
-    <main className="page">
-      <h1>Settings</h1>
+  return createPortal(
+    <div className="settings-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="settings-dialog" role="dialog" aria-modal="true" aria-label="Settings">
+      <nav className="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+        <h2>Settings</h2>
+        {TABS.map((t) => (
+          <button key={t.id} role="tab" aria-selected={tab === t.id} className={`settings-tab${tab === t.id ? " active" : ""}`}
+            onClick={() => setTab(t.id)}>
+            <t.icon size={16} /> {t.label}
+          </button>
+        ))}
+      </nav>
+      <div className="settings-main">
+      <header className="settings-header">
+        <h1>{TABS.find((t) => t.id === tab)?.label}</h1>
+        <button className="icon-button" onClick={onClose} aria-label="Close settings" title="Close (Esc)"><X size={18} /></button>
+      </header>
+      <div className="settings-content" role="tabpanel" aria-label={TABS.find((t) => t.id === tab)?.label}>
 
+      {tab === "general" && (
       <section className="card">
         <h2>Identity check</h2>
         <p className="muted">When Keylo asks for {info.verifierName}. Changing these asks for it too.</p>
@@ -104,7 +149,11 @@ export default function SettingsView(props: {
           </div>
         )}
       </section>
+      )}
 
+      {tab === "appearance" && <AppearanceSection run={run} />}
+
+      {tab === "agents" && (
       <section className="card">
         <div className="card-header">
           <div>
@@ -144,13 +193,15 @@ export default function SettingsView(props: {
           </ul>
         )}
       </section>
+      )}
 
-      <TypesSection types={props.types} secrets={props.secrets} run={run} onTypes={props.onTypes} />
+      {tab === "types" && <TypesSection types={props.types} secrets={props.secrets} run={run} onTypes={props.onTypes} />}
 
-      <VaultsSection run={run} verifierName={info.verifierName} />
+      {tab === "vaults" && <VaultsSection run={run} verifierName={info.verifierName} />}
 
-      <BackupSection run={run} verifierName={info.verifierName} onRestored={props.onDataChanged} />
+      {tab === "backup" && <BackupSection run={run} verifierName={info.verifierName} onRestored={props.onDataChanged} />}
 
+      {tab === "about" && (
       <section className="card">
         <h2>About</h2>
         <dl className="about">
@@ -160,12 +211,17 @@ export default function SettingsView(props: {
           <dt>Data folder</dt><dd className="mono">{info.dataDir}</dd>
         </dl>
       </section>
+      )}
+      </div>
+      </div>
+    </div>
 
       {keyEditor && (
         <KeyEditor
           existing={keyEditor === "new" ? null : keyEditor}
           categories={props.categories}
-          secrets={props.secrets.map((s) => s.name)}
+          secrets={props.secrets}
+          types={props.types}
           run={run}
           onClose={() => setKeyEditor(null)}
           onSaved={(result) => {
@@ -209,7 +265,8 @@ export default function SettingsView(props: {
           <p className="muted">Keep it in your user settings: never put it in a project's .mcp.json, where it could be committed.</p>
         </Modal>
       )}
-    </main>
+    </div>,
+    document.body,
   );
 }
 
@@ -220,8 +277,9 @@ function covers(k: AccessKey): string {
 
 function KeyEditor(props: {
   existing: AccessKey | null;
-  categories: string[];
-  secrets: string[];
+  categories: CategorySummary[];
+  secrets: Secret[];
+  types: SecretType[];
   run: Run;
   onClose: () => void;
   onSaved: (created: { name: string; token: string } | null) => void;
@@ -232,9 +290,20 @@ function KeyEditor(props: {
   const [cats, setCats] = useState<string[]>(e?.categories ?? []);
   const [names, setNames] = useState<string[]>(e?.secrets ?? []);
   const [expires, setExpires] = useState<string>("");
+  const [query, setQuery] = useState("");
 
+  const same = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" }) === 0;
   const toggle = (list: string[], set: (l: string[]) => void, v: string) =>
-    set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+    set(list.some((x) => same(x, v)) ? list.filter((x) => !same(x, v)) : [...list, v]);
+  // What the key covers, as Keylo decides it: a chosen category, or the secret by name.
+  const viaCategory = (s: Secret) => (s.category ? cats.find((c) => same(c, s.category!)) : undefined);
+  const covered = props.secrets.filter((s) => viaCategory(s) || names.some((n) => same(n, s.name)));
+  const shown = props.secrets.filter((s) => {
+    const q = query.trim().toLowerCase();
+    return !q || s.name.toLowerCase().includes(q) || (s.category ?? "").toLowerCase().includes(q);
+  });
+  const typeOf = (s: Secret) => props.types.find((t) => t.id === s.type);
+  const categoryOf = (s: Secret) => props.categories.find((c) => s.category && same(c.name, s.category));
 
   const save = async () => {
     const input: KeyInput = { name, scope, categories: cats, secrets: names, expiresDays: expires ? Number(expires) : null };
@@ -265,31 +334,72 @@ function KeyEditor(props: {
           <legend>It can use, without asking</legend>
           <label className="radio">
             <input type="radio" checked={scope === "selected"} onChange={() => setScope("selected")} />
-            <span><strong>Selected categories and secrets</strong></span>
+            <span><strong>Selected categories and secrets</strong><small className="muted">Anything else asks you first.</small></span>
           </label>
           <label className="radio">
             <input type="radio" checked={scope === "all"} onChange={() => setScope("all")} />
-            <span><strong>Every secret</strong></span>
+            <span><strong>Every secret</strong><small className="muted">Including ones added later.</small></span>
           </label>
         </fieldset>
+
         {scope === "selected" && (
-          <div className="pick-columns">
-            <div>
-              <h4>Categories</h4>
-              {props.categories.length === 0 && <p className="muted">None yet.</p>}
-              {props.categories.map((c) => (
-                <label key={c} className="check"><input type="checkbox" checked={cats.includes(c)} onChange={() => toggle(cats, setCats, c)} /> {c}</label>
-              ))}
-            </div>
-            <div>
-              <h4>Secrets</h4>
-              <div className="pick-scroll">
-                {props.secrets.map((s) => (
-                  <label key={s} className="check"><input type="checkbox" checked={names.includes(s)} onChange={() => toggle(names, setNames, s)} /> {s}</label>
-                ))}
+          <>
+            <p className="scope-summary">
+              Covers <strong>{covered.length}</strong> of {props.secrets.length} secret{props.secrets.length === 1 ? "" : "s"} without asking.
+            </p>
+
+            <div className="scope-section">
+              <div className="scope-head">
+                <h4>Categories</h4>
+                <span className="muted small-text">Every secret in them, including ones added later</span>
               </div>
+              {props.categories.length === 0 ? <p className="muted small-text">No categories yet.</p> : (
+                <ul className="pick-list">
+                  {props.categories.map((c) => {
+                    const on = cats.some((x) => same(x, c.name));
+                    return (
+                      <li key={c.name}>
+                        <label className={`pick-row${on ? " on" : ""}`}>
+                          <input type="checkbox" checked={on} onChange={() => toggle(cats, setCats, c.name)} />
+                          <IconTile icon={c.icon} color={c.color} size={22} fallback={Folder} />
+                          <span className="pick-name">{c.name}</span>
+                          <small className="muted">{c.count} secret{c.count === 1 ? "" : "s"}</small>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
-          </div>
+
+            <div className="scope-section">
+              <div className="scope-head">
+                <h4>Secrets</h4>
+                <span className="muted small-text">One by one</span>
+              </div>
+              <div className="pick-search">
+                <Search size={14} className="muted" />
+                <input value={query} onChange={(ev) => setQuery(ev.target.value)} placeholder="Filter secrets" aria-label="Filter secrets" spellCheck={false} />
+              </div>
+              <ul className="pick-list scroll">
+                {shown.map((s) => {
+                  const via = viaCategory(s);
+                  const on = !!via || names.some((n) => same(n, s.name));
+                  return (
+                    <li key={s.name}>
+                      <label className={`pick-row${on ? " on" : ""}${via ? " via" : ""}`} title={via ? `Included through the ${via} category` : undefined}>
+                        <input type="checkbox" checked={on} disabled={!!via} onChange={() => toggle(names, setNames, s.name)} />
+                        <SecretIcon secret={s} type={typeOf(s)} category={categoryOf(s)} size={22} />
+                        <span className="pick-name">{s.name}</span>
+                        {via ? <small className="pick-via">via {via}</small> : s.category && <small className="muted">{s.category}</small>}
+                      </label>
+                    </li>
+                  );
+                })}
+                {shown.length === 0 && <li className="muted small-text pick-empty">No secrets match.</li>}
+              </ul>
+            </div>
+          </>
         )}
         {!e && (
           <label className="form-row">
