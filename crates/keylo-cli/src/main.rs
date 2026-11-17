@@ -223,6 +223,8 @@ impl Context {
     /// "NAME", "NAME:FIELD", "NAME@ENV" or "NAME@ENV:FIELD", and for a per-environment link the
     /// environment it reads from (the named one, else the default).
     pub fn find_reference(&self, text: &str) -> CliResult<(SecretInfo, SecretReference, Option<VaultEnvironment>)> {
+        // Reach the store first, so a locked vault or a wrong passphrase says so instead of "not found".
+        self.store.exists(text.trim())?;
         let r = SecretReference::parse(text, |n| self.store.exists(n).unwrap_or(false))
             .ok_or_else(|| CliError::Keylo(Error::NotFound(text.to_string())))?;
         let info = self.store.find(&r.name)?.ok_or_else(|| CliError::Keylo(Error::NotFound(r.name.clone())))?;

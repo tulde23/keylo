@@ -613,6 +613,8 @@ impl Server {
     /// "name", "name:field", "name@env" or "name@env:field"; an exact secret name wins (names may
     /// contain ':' and '@').
     fn resolve(&self, source: &str) -> Result<SecretUse, ToolError> {
+        // Reach the store first, so a locked vault says so instead of "not found".
+        self.store.exists(source.trim())?;
         let r = SecretReference::parse(source, |n| self.store.exists(n).unwrap_or(false))
             .ok_or_else(|| ToolError(Error::NotFound(source.into()).to_string()))?;
         let info = self.store.find(&r.name)?.ok_or_else(|| ToolError(Error::NotFound(r.name.clone()).to_string()))?;
