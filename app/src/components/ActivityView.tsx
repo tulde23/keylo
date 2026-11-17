@@ -3,11 +3,15 @@ import { api, type AuditRow } from "../api";
 import type { Run } from "../App";
 
 /** Every use of a secret that skipped the identity check: by access key, or approved by you. */
-export default function ActivityView({ run }: { run: Run }) {
+export default function ActivityView({ run, version }: { run: Run; version: number }) {
   const [rows, setRows] = useState<AuditRow[] | null>(null);
   useEffect(() => {
     run(() => api.audit(500)).then((r) => setRows(r ?? []));
   }, [run]);
+  // New entries written outside the window (an agent's use) appear without a restart.
+  useEffect(() => {
+    if (version > 0) api.audit(500).then(setRows).catch(() => {});
+  }, [version]);
 
   return (
     <main className="page">

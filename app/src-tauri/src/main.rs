@@ -149,6 +149,7 @@ fn main() {
                     .center()
                     .build()?;
                 watch_screen_lock(app.handle().clone());
+                watch_data_files(app.handle().clone());
             }
             Ok(())
         })
@@ -168,6 +169,34 @@ fn import_args(args: &[String]) -> Vec<String> {
         Some(i) => args[i + 1..].iter().take_while(|a| !a.starts_with("--")).cloned().collect(),
         None => vec![],
     }
+}
+
+/// Tells the window when Keylo's files change outside it (the keylo command, another Keylo, an
+/// agent's use), so it can reload: keys and settings, types, categories, pins and recent uses, the
+/// audit log, the session. Checked every 2 seconds by modification time and size; cheap, no I/O
+/// beyond file metadata.
+fn watch_data_files(app: tauri::AppHandle) {
+    const FILES: &[&str] = &[
+        "config.json", "types.json", "categories.json", "pins.json", "recent.json", "audit.log", "session.bin", "vault.json",
+    ];
+    std::thread::spawn(move || {
+        let stamp = || -> Vec<Option<(std::time::SystemTime, u64)>> {
+            let dir = keylo_core::paths::data_dir();
+            FILES
+                .iter()
+                .map(|f| std::fs::metadata(dir.join(f)).ok().and_then(|m| Some((m.modified().ok()?, m.len()))))
+                .collect()
+        };
+        let mut last = stamp();
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let now = stamp();
+            if now != last {
+                last = now;
+                let _ = app.emit("keylo://data-changed", ());
+            }
+        }
+    });
 }
 
 /// Locks Keylo when the screen locks: the session ends (for the keylo command too) and the app shows

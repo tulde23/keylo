@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { api, LOCKED, message, type AppInfo, type CategorySummary, type RecentUse, type Secret, type SecretType, type Status } from "./api";
 import CategoryManager from "./components/CategoryManager";
 import ImportPanel from "./components/ImportPanel";
@@ -67,6 +68,31 @@ function Shell() {
     api.status().then(setStatus);
     api.types().then(setTypes).catch(() => {});
   }, []);
+
+  // Changes made outside the window (the keylo command, an agent, another Keylo) show up when the
+  // window comes back into focus, or when Keylo's files change. Quietly: no toasts if it fails.
+  const [dataVersion, setDataVersion] = useState(0);
+  const reloadTimer = useRef<number | undefined>(undefined);
+  const reloadFromOutside = useCallback(() => {
+    window.clearTimeout(reloadTimer.current);
+    reloadTimer.current = window.setTimeout(async () => {
+      try {
+        const s = await api.status();
+        setStatus(s);
+        if (!s.unlocked) return;
+        await refresh();
+        setTypes(await api.types());
+        setDataVersion((v) => v + 1);
+      } catch {
+        // Locked or busy: the next change or focus tries again.
+      }
+    }, 300);
+  }, [refresh]);
+  useEffect(() => {
+    const focus = getCurrentWindow().onFocusChanged(({ payload: focused }) => { if (focused) reloadFromOutside(); });
+    const files = listen("keylo://data-changed", reloadFromOutside);
+    return () => { focus.then((f) => f()); files.then((f) => f()); };
+  }, [reloadFromOutside]);
 
   // Reload on unlock, and when Settings opens (it counts secrets per type; the CLI may have added some).
   useEffect(() => {
@@ -239,7 +265,7 @@ function Shell() {
           />
         </>
       )}
-      {view === "activity" && <ActivityView run={run} />}
+      {view === "activity" && <ActivityView run={run} version={dataVersion} />}
       {settingsOpen && (
         <SettingsView
           info={info}
@@ -251,6 +277,7 @@ function Shell() {
           onSettingsSaved={async () => setStatus(await api.status())}
           onDataChanged={() => { run(refresh); api.types().then(setTypes).catch(() => {}); }}
           onClose={() => setSettingsOpen(false)}
+          version={dataVersion}
         />
       )}
       {editing && (
