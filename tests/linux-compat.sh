@@ -70,6 +70,7 @@ suite() { # the same checks, in whichever store this environment selects
   suite "encrypted vault"
   # A wrong passphrase is refused; the vault isn't readable without it.
   printf 'x1234' | $rust set probe >/dev/null
+  $rust lock >/dev/null   # forget the cached vault key, so the passphrase is what's checked
   check "vault: wrong passphrase refused" "doesn't unlock" "$(KEYLO_PASSPHRASE='wrong passphrase!!' $rust get probe 2>&1 || true)"
   check "vault: file is sealed" "0" "$(grep -c x1234 "$KEYLO_HOME/vault.json" || true)"
   check "vault: the vault file exists" "keylo-vault" "$(head -c 200 "$KEYLO_HOME/vault.json")"
