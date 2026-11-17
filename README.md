@@ -1,299 +1,617 @@
-# Keylo
+<h1><img src="app/public/keylo.svg" alt="" width="44" align="center">&nbsp;Keylo</h1>
 
 *Agents use them. Never see them.*
+
+[![Latest release](https://img.shields.io/github/v/release/tulde23/keylo?label=release)](https://github.com/tulde23/keylo/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-6D28D9)
 
 Keylo is a secrets manager for developers working with AI agents. Agents use your API keys,
 passwords and tokens without ever seeing their values: secrets go straight into the commands that
 need them and are redacted from the output, so they don't end up in conversation logs or get pasted
 into your code and commit history.
 
-Local secrets for one machine, with a command line (`keylo`) and a desktop app. On Windows they
-live in Credential Manager (app: `keylow`); on macOS in your login keychain (app: Keylo.app); on
-Linux in your desktop keyring, or Keylo's own encrypted vault where there isn't one.
-No server, no account, no sync. Backups move between them.
+It runs on your own machine, with a desktop app (`keylow`), a command line (`keylo`) and an MCP
+server for agents (`keylo mcp`). Secrets live in your operating system's own secure store: Windows
+Credential Manager, the macOS Keychain, or the Linux desktop keyring. No server, no account, no sync.
+
+---
+
+## Contents
+
+- [The problem Keylo solves](#the-problem-keylo-solves)
+- [How it works](#how-it-works)
+- [Features](#features)
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Concepts](#concepts)
+- [The desktop app](#the-desktop-app)
+- [Command line reference](#command-line-reference)
+- [AI agents: the MCP server](#ai-agents-the-mcp-server)
+- [Linked secrets: 1Password and AWS Secrets Manager](#linked-secrets-1password-and-aws-secrets-manager)
+- [Pushing secrets to another vault](#pushing-secrets-to-another-vault)
+- [Import, backup and restore](#import-backup-and-restore)
+- [Security model](#security-model)
+- [Configuration](#configuration)
+- [Platform notes](#platform-notes)
+- [Upgrading from the C# Keylo](#upgrading-from-the-c-keylo)
+- [Troubleshooting](#troubleshooting)
+- [Building from source](#building-from-source)
+- [License](#license)
+
+---
+
+## The problem Keylo solves
+
+AI coding agents (Claude Code, Cursor, Copilot and the like) run commands for you: deploys,
+migrations, API calls, `git push`. Those commands need credentials, and the usual ways of providing
+them all leak:
+
+- **`.env` files and key folders** sit in plain text next to your code. Agents read them, quote them
+  back, and sometimes commit them.
+- **Pasting a key into the chat** puts it in the conversation history, in logs, and wherever that
+  conversation is stored or synced.
+- **Exported environment variables** reach every process you start, and an agent that runs `env` or
+  `printenv` prints them all.
+- **Command output** echoes tokens back (`curl -v`, debug logging, error messages), and that output
+  goes straight into the agent's context.
+- **No record or control.** You can't see which agent used which credential, and you can't say "this
+  one, not that one" or "ask me first for production".
+
+A conventional password manager keeps secrets safe from people, but its job ends when it hands the
+value over. Once a value is in an agent's context it has leaked, however carefully it was stored.
+
+## How it works
+
+Keylo hands the value to the **command**, never to the **agent**:
+
+1. The agent finds secrets by name and description, never value: `search_secrets` returns `prod-db`,
+   its type and fields, and whether the agent may use it.
+2. The agent asks Keylo to run a command, mapping environment variables to secrets:
+   `run_with_secrets` with `{"DATABASE_URL": "prod-db:connection_string"}` and `npm run migrate`.
+3. Keylo checks the agent's **access key**. A secret outside the key's scope opens an **approval
+   window** on your screen, confirmed with Windows Hello, Touch ID or your system password.
+4. Keylo starts the command with the values in its environment, then replaces any value that shows
+   up in the output with `[keylo:prod-db]` before the agent sees it.
+5. Every use is written to an **audit log**, with the key, the secrets and the process that asked.
+
+There is no tool that returns a value. An agent can use a secret, but it can't read it.
+
+## Features
+
+**For agents**
+- MCP server (`keylo mcp`) with tools to search secrets, list categories and types, run commands with
+  secrets, request access, and browse AWS Secrets Manager.
+- Per-agent **access keys** that cover chosen categories and secrets, or everything, with optional
+  expiry. Keys are stored only as SHA-256 hashes.
+- **Approvals** for anything outside a key's scope: Deny, Allow once (for your session) or Always
+  allow (adds it to the key), each confirmed with your identity check.
+- **Output redaction** of every value a command received, including values from earlier commands.
+- **"Always ask" environments**: uses of production secrets need your approval every time, whatever
+  the key covers.
+- **Audit log** of every use by an agent, with the calling process chain.
+- One-step setup for Claude Code (`keylo keys create … --add-to-claude`, or a button in the app).
+
+**For you**
+- Desktop app for Windows, macOS and Linux, with a command line that does everything the app does.
+- **14 built-in secret types** (login, API key, password, database, SSH key, secure note, server,
+  email account, software license, wireless router, crypto wallet, document, credit card, bank
+  account) plus your own **custom types**, each with named fields.
+- **Categories** with icons and colours, pinned and recently used secrets, and search across names,
+  categories, usernames, notes and non-secret fields.
+- **Linked secrets**: point at items in **1Password** or **AWS Secrets Manager** and read them live,
+  with **per-environment links** (`orders-db@uat`, `orders-db@prod`).
+- **Push** secrets into 1Password or AWS Secrets Manager.
+- **Import** files and folders as secrets, with type detection (SSH keys, database URLs, tokens).
+- **Encrypted backups** (AES-256-GCM, password-protected) that restore on any OS.
+- A **secure clipboard**: copied values skip clipboard history and cloud sync, and clear themselves.
+- An identity check (Windows Hello, Touch ID or polkit) once per session, on every use, or never.
+- Locks when your screen locks. Three colour themes, light and dark.
+
+---
 
 ## Install
 
+Download the latest release from **[Releases](https://github.com/tulde23/keylo/releases/latest)**.
+Every release has a `SHA256SUMS.txt`. Check your download against it:
+
 ```powershell
-./rust_csharp/build.ps1 -Install     # publish to dist\Keylo, then install to %LOCALAPPDATA%\Programs\Keylo
+# Windows (PowerShell)
+(Get-FileHash .\keylo-1.2.0-windows-x64.zip -Algorithm SHA256).Hash
+```
+```bash
+# macOS / Linux
+shasum -a 256 keylo-1.2.0-linux-x64.tar.gz
 ```
 
-This adds Keylo to your user PATH and the Start menu. Requires the .NET 10 runtime.
-`./rust_csharp/install.ps1 -Uninstall` removes the program but leaves your secrets.
+### Windows
 
-## macOS
+Windows 10 or 11, x64. The app uses Microsoft Edge WebView2, which Windows 11 includes. On Windows 10,
+install the [WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/) if the app
+doesn't open (the setup `.exe` installs it for you).
 
-Keylo.app (the same app, on Avalonia) plus the `keylo` command and its MCP server, on Apple
-silicon or Intel.
+**Recommended: the zip.** Unzip `keylo-<version>-windows-x64.zip` and run its installer:
 
-```zsh
-./rust_csharp/build.sh --install    # needs the .NET 10 SDK and Xcode command-line tools (swiftc)
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-This builds `rust_csharp/dist/Keylo.app` (self-contained: no .NET install needed to run it), copies it to
-`~/Applications`, and links `~/.local/bin/keylo` to the command inside it. Run `keylo` with no
-arguments to open the app. `./rust_csharp/install.sh --uninstall` removes the program but leaves your secrets.
+This installs to `%LOCALAPPDATA%\Programs\Keylo`, adds that folder to your user PATH (open a new
+terminal for `keylo`), and adds **Keylo** to the Start menu. No admin rights needed.
+`install.ps1 -Uninstall` removes the program and leaves your secrets.
 
-- `keylo` is the app's own executable in command-line mode, so the keychain sees one app. macOS asks
-  once per secret to let Keylo use the keychain (choose **Always Allow**). `build.sh` signs with
-  `KEYLO_SIGN_IDENTITY`, or your "Apple Development" certificate, so that holds across rebuilds;
-  with no certificate it signs ad hoc, and macOS asks again after every rebuild.
-- `./rust_csharp/build.sh --release` signs with your Developer ID certificate (hardened runtime), notarizes, and
-  writes `rust_csharp/dist/keylo-<version>-macos-<arch>.zip`, which opens on other Macs without warnings. Store
-  notarization credentials once with
-  `xcrun notarytool store-credentials keylo-notary --apple-id <you> --team-id <TEAMID>`
-  (or set `KEYLO_NOTARY_PROFILE` to another profile name).
-- Keylo locks when the screen locks.
+**Alternatively, the installer:** `Keylo_<version>_x64-setup.exe` installs the app and `keylo.exe`
+for your account. It doesn't add `keylo` to your PATH, so prefer the zip if you use the command line
+or agents.
 
-- Secrets are generic-password items in your **login keychain** (service `Keylo`, visible in
-  Keychain Access). Large values are AES-256-GCM files sealed with a master key kept in the keychain.
-- **Touch ID** (or Apple Watch, or your password) replaces Windows Hello; access-key approvals show a
-  native alert, then Touch ID.
-- Copied values are marked concealed and transient, so clipboard managers skip them.
-- `keylo-mac` (built from `rust_csharp/src/Keylo.Platform.MacOS/helper`) handles Touch ID, the pasteboard and
-  alerts; it sits inside Keylo.app next to `keylo`.
-- The login keychain is locked in SSH sessions; `KEYLO_KEYCHAIN=/path/to.keychain-db` points Keylo at
-  another keychain (`rust_csharp/tests/macos-smoke.sh` uses a throwaway one).
+### macOS
 
-## Linux
+Apple silicon (M1 or later).
 
-The same app and `keylo` command, on x64 or ARM64, self-contained (no .NET install needed). Unpack
-the release bundle and run its installer:
+1. Unzip `keylo-<version>-macos-arm64.zip` and move **Keylo.app** to Applications.
+2. The release isn't notarized, so the first time, right-click Keylo.app and choose **Open**, then
+   **Open** again. (If macOS says the app is damaged, run `xattr -dr com.apple.quarantine /Applications/Keylo.app`.)
+3. Put the command on your PATH:
+
+   ```bash
+   mkdir -p ~/.local/bin && ln -sf /Applications/Keylo.app/Contents/MacOS/keylo ~/.local/bin/keylo
+   ```
+
+Keylo.app contains `keylow` (the app), `keylo` (the command) and `keylo-mac`, a small helper for
+Touch ID, the pasteboard and approval alerts. If macOS asks whether Keylo may use an item in your
+keychain, choose **Always Allow**. Because the release isn't signed with a Developer ID, it may ask
+again after an update.
+
+### Linux
+
+x64 or ARM64, with a desktop (GNOME, KDE and others) or without one (servers, containers, WSL).
+
+**Debian and Ubuntu:**
+
+```bash
+sudo apt install ./Keylo_1.2.0_amd64.deb      # or _arm64.deb
+```
+
+This installs `keylow` and `keylo` to `/usr/bin`, a menu entry, and Keylo's polkit policy, and pulls in
+the WebKitGTK runtime the app needs.
+
+**Other distributions:** unpack the tarball and run its installer:
 
 ```bash
 tar -xzf keylo-1.2.0-linux-x64.tar.gz && ./keylo-1.2.0-linux-x64/install.sh
 ```
 
 It installs to `~/.local/lib/keylo`, links `~/.local/bin/keylo`, adds a menu entry, and (with sudo,
-once) installs Keylo's polkit policy. `install.sh --uninstall` removes the program but leaves your
-secrets. To build the bundle yourself: `./rust_csharp/build-linux.sh` (needs the .NET 10 SDK; or run it in the
-`mcr.microsoft.com/dotnet/sdk:10.0` container).
+once) installs the polkit policy. It lists anything the system is missing:
 
-- **Where secrets live.** With a desktop keyring (GNOME Keyring, KWallet, KeePassXC: anything that
-  speaks the Secret Service API), secrets are keyring items, encrypted and unlocked with your login.
-  Without one (servers, containers, WSL), Keylo keeps them in its own **encrypted vault**,
-  `~/.local/share/Keylo/vault.json`: AES-256-GCM under a random key, wrapped with your passphrase
-  (PBKDF2-SHA256, 600,000 iterations). Keylo picks one the first time and remembers it
-  (`store.txt`); `KEYLO_STORE=keyring|file` overrides.
-- **The vault's passphrase** is asked for on the terminal (or in the app), then the unlocked key is
-  cached in the kernel keyring for 15 minutes (`KEYLO_VAULT_CACHE_MINUTES`), so `keylo` commands and
-  the MCP server don't ask again. `keylo unlock` / `keylo lock` open and forget it. For unattended
-  use, `KEYLO_PASSPHRASE` or `KEYLO_PASSPHRASE_FILE` supply it. The MCP server never prompts: unlock
-  first.
-- **The identity check** (Windows Hello / Touch ID elsewhere) is polkit: your desktop's password
-  prompt, or a fingerprint where fprintd is set up; over SSH it asks on the terminal. Without
-  polkit or its policy, use `keylo config hello never`. polkit always allows root, so don't run
-  Keylo as root.
-- **Agents' approval dialogs** use zenity or kdialog; **copying** uses wl-clipboard (Wayland) or
-  xclip / xsel (X11). Keylo locks when the screen locks (logind).
-- `rust_csharp/tests/linux-smoke.sh` checks a build end to end, against the vault or (with `KEYLO_STORE=keyring`)
-  a running keyring.
-
-## Use
-
-| | |
+| Needed for | Package (Debian / Ubuntu name) |
 |---|---|
-| `keylo` | Open the app |
-| `keylo set NAME [--category C] [--username U] [--notes N] [--file F]` | Add or update (value is prompted, piped, or read from a file) |
-| `keylo list [search…] [--category C] [--json]` | Search names, categories, usernames and notes (never values) |
-| `keylo get NAME [--clip] [--out FILE] [--field username] [--both]` | Print, copy (auto-clears) or export; `--both` prints key and value |
-| `keylo edit NAME [--rename NEW] [--category C] …` | Change details without touching the value |
-| `keylo rm NAME` | Delete |
-| `keylo import PATH… [--category C] [--overwrite] [--delete-originals]` | One secret per file; subfolders become categories |
-| `keylo run --env VAR=NAME [...] -- CMD ARGS` | Run a command with secrets as environment variables (`NAME:username` maps the key/username) |
-| `keylo push 1password [NAME…] [--category C] [--all]` | Copy secrets into another vault |
-| `keylo backup FILE [--force]` | Password-protected backup of every secret, category and icon |
-| `keylo restore FILE [--overwrite] [--dry-run]` | Restore one (existing secrets are kept unless `--overwrite`) |
-| `keylo keys [create NAME … \| revoke NAME]` | Access keys for agents (see below) |
-| `keylo mcp` | MCP server for Claude Code and other agents |
-| `keylo unlock` / `lock` / `status` / `config` / `version` | Windows Hello session, settings and version |
+| The app (`keylow`) | `libwebkit2gtk-4.1-0` |
+| The identity check | polkit (`pkexec`/`pkcheck`, usually installed) |
+| Copying values | `wl-clipboard` (Wayland) or `xclip` / `xsel` (X11) |
+| Agents' approval dialogs (without the app) | `zenity` or `kdialog` |
 
-Migrating a `.secrets` folder: `keylo import .\.secrets`, check `keylo list`, then re-run with
-`--overwrite --delete-originals` (or delete the folder yourself).
+`install.sh --uninstall` removes the program and leaves your secrets. The `keylo` command works on its
+own on a server, without any of these.
 
-## Secret types
+---
 
-Like 1Password's categories, a secret can have a **type** with named fields:
-
-| Type | Fields (secret ones in bold) |
-|---|---|
-| Login | username, **password**, url |
-| API key | key_id, **secret**, endpoint |
-| Database | engine, host, port, database, username, **password**, **connection_string** |
-| SSH key | username, **private_key**, **passphrase**, host, public_key |
-| Secure note | **note** |
-
-Add your own in Settings → Secret types, each with its own icon and colour (built-ins can change
-theirs). Secret fields are encrypted together as the value; the others are stored as metadata,
-so they're searchable (`keylo list db.local`, `type:database`) and shown to agents whose key covers
-the secret. A database without its own connection string gets one built from its fields
-(postgres, mysql, sqlserver, mongodb, redis). Plain secrets (one value, an optional key) still work as before.
-
-```powershell
-keylo set prod-db --type database --field engine=postgres --field host=db.local --field username=alice   # password is prompted
-keylo get prod-db                       # main value (the password)
-keylo get prod-db --field connection_string
-keylo get prod-db --both                # every field
-keylo run --env DATABASE_URL=prod-db:connection_string -- npm run migrate
-keylo edit prod-db --field host=db2.local
-keylo types                             # all types and fields
-```
-
-## In the app
-
-- **Home** (the default view) shows pinned secrets (pin button on a secret) and recently used ones — by you in the app, or by agents (from the audit log). Search covers everything; categories show their full lists. The top bar has search for everything (Ctrl+K), New ▾ (import, link from 1Password), Settings and Lock.
-- **Search** across name, category, key, notes and non-secret fields; filter by category in the sidebar.
-- **Import** files or folders (button, drag and drop, or `keylow --import PATH`). Each file is listed with its name (from the file name; edit it) and a guessed type: SSH keys, database URLs (split into host, port, user…), tokens and passwords; anything else stays plain. The dialog
-  previews the result and lets you use subfolder names, put everything in one existing or new
-  category, or leave them uncategorized, and choose whether to replace existing secrets.
-- **Multi-select** with Ctrl/Shift+click (Ctrl+A for all) to move secrets to a category or delete
-  them in bulk. Delete on the list deletes the selection, after confirming.
-- **Category manager** (Manage, next to Categories): create empty categories, rename (applies to
-  every secret in it), rename onto another to merge, delete (moving its secrets to another
-  category, to none, or deleting them), and set icons.
-- **Icons and colours** for secrets and categories: a built-in icon set, colour swatches, or an
-  uploaded image (resampled to fit its box, never cropped, stored in `%LOCALAPPDATA%\Keylo\icons`).
-  A secret without its own icon uses its category's.
-- **Resizable panels**: drag the dividers; widths are remembered.
-
-## How it stores things
-
-- **Values up to 2,559 bytes** live in the Credential Manager entry `Keylo:<name>` (visible in
-  Control Panel → Credential Manager). Username and notes use the entry's own fields; the category
-  is a credential attribute.
-- **Larger values** (certificates, key files) are DPAPI-encrypted into
-  `%LOCALAPPDATA%\Keylo\blobs\`, referenced from the Credential Manager entry.
-- Both are tied to your Windows account on this machine. Nothing roams.
-- `%LOCALAPPDATA%\Keylo\config.json` holds settings; `audit.log` records access that skipped Windows Hello.
-- Icon and colour choices are credential attributes on each secret; category icons, colours and
-  empty categories are in `categories.json`; window layout is in `ui.json`. None of these hold values.
-
-## Backups
-
-Keylo's normal storage only opens for your account on this machine. A backup (Settings →
-Backup & restore, or `keylo backup`) is what gets your secrets onto a new machine or survives a lost
-account. The format is the same on Windows and macOS, so a backup made on one restores on the other
-(linked secrets need that vault's CLI signed in there too).
-
-- One `.keylo` file: every secret's value and details, categories (including empty ones and their
-  styles) and uploaded icons.
-- Encrypted with **AES-256-GCM**; the key comes from your password via **PBKDF2-SHA256, 600,000
-  iterations** and a random salt. The header is authenticated too, and nothing — not even secret
-  names — is readable without the password. A wrong password or any change to the file is rejected.
-- Creating one always asks for Windows Hello / Touch ID (it exports everything). Passwords must be at least
-  10 characters; the CLI prompts for them (or reads `--password-stdin`) and never accepts one as an argument.
-- **There is no recovery.** Keep the password somewhere other than Keylo.
-
-## Windows Hello
-
-`keylo config hello session|always|never` (or Settings in the app):
-
-- **session** (default): verify once, then the app and CLI share an unlock that lasts 15 minutes after your last activity in the app (keyboard or mouse); agents' use doesn't extend it.
-- **always**: verify every time a value is revealed, copied, exported or run.
-- **never**: rely on your Windows sign-in only.
-
-Changing these settings, or access keys, always asks for Windows Hello.
-
-**What this protects against:** other Windows users, a stolen or copied disk, backups, and
-plaintext files getting committed or synced. **What it doesn't:** malware running as you — it can
-read DPAPI-protected data directly. Windows Hello here is a presence check, not encryption.
-
-## Claude Code and other agents (MCP server + access keys)
-
-`keylo mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server. Agents identify
-themselves with an **access key**; create one in the app (Settings → Access keys → New key → Save),
-which shows the key once with a button and the command that registers the server:
+## Quick start
 
 ```bash
-claude mcp add keylo --scope user --env KEYLO_ACCESS_KEY=kyl_… -- "%LOCALAPPDATA%\Programs\Keylo\keylo.exe" mcp
+# 1. Add a secret (the value is asked for, so it never appears on screen or in shell history)
+keylo set github-token --category dev
+
+# 2. Use it in a command, as an environment variable
+keylo run --env GITHUB_TOKEN=github-token -- gh repo list
+
+# 3. Give Claude Code its own access key, covering the "dev" category, and register Keylo with it
+keylo keys create "Claude Code" --category dev --add-to-claude
 ```
 
-or from a terminal: `keylo keys create "Claude Code" --all --add-to-claude` (or `--category dev`).
+Restart Claude Code (or run `/mcp`). Claude can now find `github-token` and run commands with it,
+and it never sees the value. Ask it to use a secret outside `dev` and Keylo asks you first.
 
-| Tool | Does |
+In the app: **+** in the top bar adds a secret, and **Settings → Agents → New key** creates a key with
+an **Add to Claude Code** button.
+
+---
+
+## Concepts
+
+### Secrets and names
+
+A secret has a **name** (`prod-db`, `stripe/live-key`), a **value**, and optional details: a
+**category**, a **username**, **notes**, an icon and a colour. Names are up to 128 characters and can
+contain `/`, `:`, `@` and spaces. Values can be up to 4 MB, text or binary.
+
+Commands and agents refer to secrets by **reference**:
+
+| Reference | Means |
 |---|---|
-| `search_secrets` / `list_categories` | Find secrets (never values), with each one's type, field schema and whether the key covers it. |
-| `list_types` | Secret types and their fields. |
-| `run_with_secrets` | Runs a command with secrets (or single fields, `name:field`) as environment variables; values in its output become `[keylo:name]`. |
-| `request_access` | Asks you to add secrets to the key permanently. |
-| `list_aws_secrets` | Secrets in AWS Secrets Manager for a profile and region (names, ARNs, descriptions, tags; never values), grouped by the first part of the name, with which are already linked in Keylo. |
-| `list_aws_profiles` | AWS profiles from `~/.aws` (name, region, how each signs in; never keys), every region, and whether the `aws` CLI is installed. |
+| `prod-db` | the secret's main value |
+| `prod-db:password` | one field of a typed secret (`:username` works for any secret) |
+| `orders-db@uat` | a per-environment link, read from the `uat` environment |
+| `orders-db@prod:password` | one field, from one environment |
 
-- **What a key can use without asking**: *Everything*, *Only these categories*, or *Nothing — ask
-  me each time*. Keys only pass values to commands: no MCP tool returns a secret's value, and
-  `keylo get` with an access key still asks you.
-- **Outside the scope**, Keylo opens an approval window showing the secrets, the command and the
-  agent's stated reason: Deny, Allow for 15 min (your session length), or Always allow (adds them
-  to the key). Allowing needs Windows Hello; unanswered requests are denied after 5 minutes.
-- **Keys are stored as SHA-256 hashes**, can expire, and are revoked by deleting them. The key
-  lives in Claude Code's user config (`~/.claude.json`) — never put it in a project's `.mcp.json`.
-  Commands run by the server don't receive it.
-- `KEYLO_ACCESS_KEY` works for the plain CLI too (`keylo run`, `keylo get`).
-- Every use without Windows Hello is in the audit log (Settings → Open log), with the key and the
-  process chain. Entries older than 90 days are pruned (Settings → Keep audit log, or
-  `keylo config audit-days 365|forever`).
-- Redaction catches accidental leaks, not deliberate ones (a command could encode a value first).
-  Neither keys nor Hello stop malware already running as you.
+An exact name always wins, so a secret named `a:b` is still found as `a:b`.
 
-## Linked secrets (1Password, AWS Secrets Manager and other vaults)
+### Secret types
 
-A linked secret points at an item in another vault. Keylo stores only the reference (vault, item,
-account); the value is read from the vault each time it's used and never copied, so changes there
-apply at once. To Claude it's an ordinary secret: same search, `name:field` access, approvals,
-redaction and audit log.
+A **type** gives a secret named fields, like 1Password's item categories. **Secret** fields (shown in
+bold) are encrypted together as the value. The others are stored alongside it as metadata, so they
+can be searched and shown without unlocking, and agents whose key covers the secret can see them.
+The **main** field (the first secret field) is what `prod-db` means without a field.
 
-- **App:** the Link tile in the top bar: choose the vault, search, pick an item, keep all its fields or just one.
-- **CLI:** `keylo link --search github`, then `keylo link gh --item "GitHub" [--field password] [--category dev]`
-  (`--provider aws` for AWS Secrets Manager).
-- 1Password is read through its CLI (`op`), signed in via the 1Password app (Settings → Developer →
-  Integrate with 1Password CLI). Every signed-in account is searched; 1Password may ask you to unlock it.
+| Type | Id | Fields |
+|---|---|---|
+| Login | `login` | username, **password**, url |
+| API key | `api_key` | key_id, **secret**, endpoint |
+| Password | `password` | **password**, url |
+| Database | `database` | engine, host, port, database, username, **password**, **connection_string** |
+| SSH key | `ssh_key` | username, **private_key**, **passphrase**, host, public_key |
+| Secure note | `note` | **note** |
+| Server | `server` | url, username, **password**, admin_url |
+| Email account | `email_account` | email, **password**, imap_server, imap_port, smtp_server, smtp_port |
+| Software license | `software_license` | **license_key**, licensed_to, product, version, download_url |
+| Wireless router | `wireless_router` | network_name, **password**, security, admin_url, **admin_password** |
+| Crypto wallet | `crypto_wallet` | **recovery_phrase**, **password**, address, network |
+| Document | `document` | **contents**, file_name |
+| Credit card | `credit_card` | **number**, cardholder, expiry, **cvv**, **pin**, brand |
+| Bank account | `bank_account` | **account_number**, account_holder, bank, routing_number, **iban**, swift, **pin** |
+
+- A **database** without its own connection string gets one built from its fields for postgres,
+  mysql, sqlserver, mongodb and redis, so `prod-db:connection_string` always works.
+- **Plain** secrets have no type: one value and an optional username.
+- **Custom types**: Settings → Secret types → New type. Give it a name, icon, colour and fields, each
+  text, username, URL, number, password or multi-line secret, with optional suggested values. Field ids
+  are fixed once saved, because secrets store their data under them.
+- Built-in types can take your own icon and colour, but their fields are fixed.
+- A secret's **type can be changed** when editing it. Values move to fields with the same id or role
+  (main value, username, website), and anything that has no place in the new type is listed before
+  you save.
+
+### Categories
+
+One category per secret, with an optional icon and colour that its secrets show unless they have
+their own. The categories manager (**Manage**, next to *Categories* in the sidebar) creates empty
+categories, renames (rename onto an existing one to merge), sets icons and colours, and deletes,
+either moving the secrets elsewhere or deleting them too.
+
+### The identity check
+
+Before showing, copying or exporting a value, Keylo confirms it's you, using the operating system's
+own check:
+
+| | Windows | macOS | Linux |
+|---|---|---|---|
+| Check | Windows Hello (face, fingerprint or PIN) | Touch ID, Apple Watch or password | polkit: your password, or fingerprint with fprintd |
+
+When it asks is your choice (Settings → General, or `keylo config hello`):
+
+- **Once per session** (the default): verify once, then Keylo stays unlocked for the session length (15
+  minutes by default). Activity in the app extends it; agents' use doesn't. The app and the `keylo`
+  command share the session.
+- **Every time**: verify each time a value is shown, copied, exported or used. Browsing stays
+  unlocked after the first check.
+- **Never**: rely on your operating-system sign-in alone.
+
+Changing these settings, access keys or environments always asks for the check, whatever the mode.
+
+### Access keys
+
+An **access key** identifies an agent (`kyl_…`) and sets what it may use **without asking**:
+
+- **Selected categories and secrets**: everything in the chosen categories (including secrets added
+  to them later), plus individually chosen secrets. With nothing chosen, every use asks.
+- **Every secret**: including ones added later.
+
+Keys are **run-only**: they let an agent run commands with secrets, never read a value. `keylo get`
+always needs the identity check, even with a key. Keys can expire (`--expires-days`), are revoked by
+deleting them, and are stored only as SHA-256 hashes, so `config.json` can't be used to recover them.
+The key is shown once, when it's created.
+
+### Approvals
+
+When an agent uses a secret its key doesn't cover, Keylo opens an approval window showing:
+- the agent's key name;
+- the secrets, with environments;
+- the exact command;
+- the reason the agent gave.
+
+The choices:
+
+- **Deny**: the agent is told no, and asked not to retry.
+- **Allow once**: allowed for the rest of your session (the session length).
+- **Always allow**: the secrets are added to the key's scope.
+
+Allowing needs your identity check. The buttons only respond after a moment, so a stray click can't
+answer, and a request nobody answers is denied after 5 minutes. With the Keylo app installed the
+window is the app's own; without it, it's a system dialog (a message box on Windows, an alert from
+`keylo-mac` on macOS, zenity or kdialog on Linux).
+
+### The audit log
+
+Every use of a secret by an agent, through its access key or an approval, is recorded in `audit.log`
+in Keylo's data folder: when, which secrets (with environments), which key, how it was allowed, and
+the chain of processes that asked. View it in the app's **Activity** page. Entries older than 90 days
+are removed (`keylo config audit-days 365`, or `forever`).
+
+---
+
+## The desktop app
+
+Open **Keylo** from the Start menu, Applications or your desktop's menu. Only one copy runs at a
+time: starting it again brings the open window forward.
+
+- **Lock screen**: unlock with your identity check. Keylo locks itself when your screen locks and
+  when the session ends.
+- **Top bar**: search everything (**Ctrl+K**, **Ctrl+F** or **/**), **+** new secret (**Ctrl+N**),
+  **Import files**, **Import folder**, **Link from a vault**, **Settings** and **Lock** (**Ctrl+L**).
+- **Sidebar**: *Home* (pinned secrets, recently used ones by you or your agents, then the rest),
+  *All secrets*, your *categories* (with **Manage**), the *types* in use, *Activity* (the audit log),
+  and the version and build.
+- **Secret details**: copy the main value or any field to the secure clipboard, show the values,
+  edit, pin to Home, push to a vault, or delete. A ready-made `keylo run` command shows how to use the
+  secret in a terminal. For a linked secret: where it points, its fields, and for a per-environment
+  link an environment picker.
+- **Editor**: a panel that slides in from the right, for new secrets and changes, with a type picker,
+  a category picker (pick, filter or create by typing), a password generator for password fields, and
+  icon and colour choices.
+- **Import panel**: drop files or folders on the window, or use the Import tiles. Each file is listed
+  with its proposed name, detected type and category, all editable, before anything is imported.
+- **Link panel**: search 1Password or AWS Secrets Manager, choose one item or several, and link them.
+- **Settings** (a dialog with tabs):
+  - **General**: the identity check, session length, clipboard timeout and audit-log retention.
+  - **Appearance**: Twilight, Quiet violet or Aurora; match system, light or dark.
+  - **Agents**: access keys and whether Claude Code is connected.
+  - **Secret types**: your custom types, and built-in types' icons and colours.
+  - **Vault providers**: 1Password and AWS settings, and AWS environments.
+  - **Backup**: create and restore encrypted backups.
+  - **About**: version, where secrets are stored, the data folder.
+- **Keyboard**: **Esc** closes panels and dialogs, and with nothing open clears the selection.
+
+`keylow --import PATH…` opens the Import panel with those files and folders, in the running window if
+Keylo is already open.
+
+---
+
+## Command line reference
+
+`keylo help` lists everything. Values are never accepted as arguments, where other processes could
+see them: they're asked for on the terminal (without echo), piped in, or read from a file.
+
+### Secrets
+
+```bash
+keylo list [SEARCH…] [--category C] [--json]   # names, categories, usernames, notes (never values)
+keylo list type:database cat:prod              # narrow by type and category
+keylo categories                               # categories and counts
+keylo types                                    # types and their fields
+
+keylo set NAME [--category C] [--username U] [--notes N] [--file FILE]
+keylo set NAME --type T [--field F=V]… [--category C] [--notes N]   # main secret field is asked for
+printf %s "$TOKEN" | keylo set NAME            # from a pipe
+keylo set cert --file ./server.pfx             # binary values from a file
+
+keylo get NAME                                 # the main value
+keylo get NAME --field host                    # one field (or NAME:host)
+keylo get NAME --both                          # every field
+keylo get NAME --clip                          # to the secure clipboard; it clears itself
+keylo get NAME --out FILE                      # to a file
+
+keylo edit NAME [--rename NEW] [--category C] [--username U] [--notes N] [--field F=V]…
+keylo rm NAME [--yes]
+```
+
+`keylo get` always needs the identity check (an access key isn't enough).
+
+### Running commands with secrets
+
+```bash
+keylo run --env VAR=REFERENCE [--env …] -- COMMAND [ARGS…]
+
+keylo run --env GITHUB_TOKEN=github-token -- gh repo list
+keylo run --env DATABASE_URL=prod-db:connection_string --env PGUSER=prod-db:username -- npm run migrate
+keylo run --env DB_PASSWORD=orders-db@uat:password -- ./deploy.sh
+```
+
+The values exist only in that command's environment. With `KEYLO_ACCESS_KEY` set, a covered secret
+needs no identity check, and the use is audited; anything else asks.
+
+### Access keys and agents
+
+```bash
+keylo keys                                     # list keys (names, scope, expiry; never the keys)
+keylo keys create NAME [--all | --category C… --secret S…] [--expires-days N] [--add-to-claude]
+keylo keys revoke NAME
+keylo mcp                                      # the MCP server (started by agents; in a terminal it explains itself)
+```
+
+### Linked secrets and vaults
+
+```bash
+keylo link --search QUERY [--provider 1password|aws] [--account A] [--profile P --region R]
+keylo link NAME --item ITEM [--provider P] [--vault V] [--account A] [--field F] [--category C]
+keylo link NAME --provider aws --item SECRET --environment ENV [--env-name ENV=OTHER-NAME]…
+
+keylo push PROVIDER [NAME…] [--category C] [--all] [--yes]
+
+keylo provider list | status ID | set ID KEY VALUE
+keylo provider env aws [list | set ENV PROFILE REGION [--ask|--no-ask] | remove ENV | default ENV]
+```
+
+### Import, backup, restore
+
+```bash
+keylo import PATH… [--category C | --flat] [--overwrite] [--delete-originals] [--plain]
+keylo backup FILE [--force] [--password-stdin]
+keylo restore FILE [--overwrite] [--dry-run] [--password-stdin]
+```
+
+### Session and settings
+
+```bash
+keylo unlock            # verify now and start a session (and unlock Linux's vault file)
+keylo lock              # end the session (and forget Linux's vault key)
+keylo status            # version, session, data folder, store
+keylo config            # show settings
+keylo config hello session|always|never
+keylo config session-minutes 30           # 1–1440
+keylo config clipboard-seconds 45         # 5–600
+keylo config audit-days 365|forever       # 7–3650, or forever
+keylo version
+```
+
+Exit codes: `0` success, `1` an error (the message says why), `2` a usage mistake. `keylo run` returns
+the command's own exit code.
+
+---
+
+## AI agents: the MCP server
+
+`keylo mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. Any
+MCP-capable agent can use it; it identifies itself with an access key in `KEYLO_ACCESS_KEY`.
+
+### Connecting Claude Code
+
+The quickest way:
+
+```bash
+keylo keys create "Claude Code" --category dev --add-to-claude      # or --all
+```
+
+or in the app, **Settings → Agents → New key**, then **Add to Claude Code**. Both register Keylo in
+Claude Code's **user** settings (`~/.claude.json`), replacing any earlier Keylo entry. To do it by
+hand:
+
+```bash
+claude mcp add keylo --scope user --env KEYLO_ACCESS_KEY=kyl_… -- "/path/to/keylo" mcp
+```
+
+Keep the key in your user settings. Never put it in a project's `.mcp.json`, where it could be
+committed. Restart Claude Code or run `/mcp` to load the tools. **Settings → Agents** and `keylo mcp`
+(run in a terminal) both show whether Claude Code is connected, and with which key.
+
+Other MCP clients: run `keylo mcp` with `KEYLO_ACCESS_KEY` in its environment.
+
+### Tools
+
+| Tool | What it does |
+|---|---|
+| `search_secrets` | Finds secrets by name, category, username, notes or non-secret fields (`type:database`, `cat:prod`). Each result has its type, its field schema (which fields are secret, which is the main one), whether the key covers it (`run` or `needs approval`), and for a per-environment link its environments. Non-secret details and notes only appear for covered secrets. |
+| `list_categories` | Categories, how many secrets each holds, and how many the key covers. |
+| `list_types` | Every type and its fields. |
+| `run_with_secrets` | Runs a shell command with secrets as environment variables (`{"VAR": "reference"}`) and returns the exit code and output, with values replaced by `[keylo:name]`. Optional: `shell`, `working_directory`, `timeout_seconds` (default 120, at most 600; the process tree is killed on timeout), and `reason`, which the approval window shows you. |
+| `request_access` | Asks you to add secrets to the key permanently, with a reason. |
+| `list_aws_profiles` | AWS environments, the profiles in `~/.aws` (name, region, how each signs in; never keys), every region, and whether the `aws` CLI is installed. |
+| `list_aws_secrets` | The secrets in AWS Secrets Manager for a profile and region, or an environment: names, ARNs, descriptions and tags (never values), grouped by name prefix, with any Keylo secrets already linked to them. |
+
+Shells for `run_with_secrets`:
+- **Windows:** `powershell` (the default; `pwsh` when installed), `cmd`, or `bash` (Git Bash).
+- **macOS:** `zsh` (the default), `bash` or `sh`.
+- **Linux:** `bash` (the default), `zsh` or `sh`.
+
+Output over 30,000 characters is shortened in the middle.
+
+### What agents can't do
+
+- Read a value: no tool returns one, and keys are run-only.
+- Use a secret outside their key without your approval, or a secret in an "always ask" environment
+  without approving it every time.
+- See the access key from inside a command: commands run by the server don't receive
+  `KEYLO_ACCESS_KEY`.
+- Change keys, settings or environments, which need your identity check.
+
+**Redaction catches accidental leaks, not deliberate ones.** A command that transforms a value (base64,
+reversing it, hashing it) can get it past the redactor, and values shorter than 4 characters aren't
+redacted. Keys and approvals decide which secrets a command gets; redaction keeps them out of the
+conversation by accident. Don't approve commands you don't understand.
+
+---
+
+## Linked secrets: 1Password and AWS Secrets Manager
+
+A **linked secret** points at an item in another vault. Keylo stores only the reference (provider,
+item, vault or account, and the field names); the values are read from the vault each time the secret
+is used and never stored in Keylo. Changes and rotations in the vault apply at once.
+
+To you and to agents a link behaves like any other secret: the same references (`name:field`), search,
+approvals, redaction and audit log. Fields are treated as secret unless they're plainly not (usernames,
+emails, URLs).
+
+- **App:** **Link from a vault** in the top bar. Choose the vault, search, then pick one item (name it,
+  keep all its fields or just one) or several (each named after its title).
+- **CLI:** `keylo link --search github`, then `keylo link gh --item "GitHub" [--field password]`.
+
+Keylo talks to both vaults through their own command-line tools. It never handles their credentials,
+and values never appear on a command line.
+
+### 1Password
+
+1. Install the 1Password CLI:
+   - **Windows:** `winget install AgileBits.1Password.CLI`
+   - **macOS:** `brew install 1password-cli`
+   - **Linux:** see [1Password's instructions](https://developer.1password.com/docs/cli/get-started/)
+2. In the 1Password app: **Settings → Developer → Integrate with 1Password CLI**.
+
+Keylo searches every account you're signed in to. 1Password asks you to approve Keylo's access, once
+per account, and again after a few minutes idle. To search one account only, set it in **Settings → Vault
+providers → 1Password → Account** (or `keylo provider set 1password account my.1password.com`).
 
 ### AWS Secrets Manager
 
-Keylo uses the AWS SDK with your usual credentials: a profile from `~/.aws` (SSO and assumed roles
-included), environment variables, or the default profile. It keeps no AWS credentials itself.
-
-- **Link:** `keylo link --provider aws --search prod [--profile work] [--region eu-west-2]`, then
-  `keylo link prod-db --provider aws --item prod/db`. A JSON secret becomes one field per key, so an
-  RDS-managed secret gives `prod-db:password`, `prod-db:host` and so on; any other secret is one
-  `value` field. Each link remembers the profile and region it was made with. Values are read on
-  every use, so rotated secrets are always current, and CloudTrail logs each read.
-- **Push:** `keylo provider set aws region eu-west-2` (and optionally `profile`, `prefix`,
-  `kms_key_id`), then `keylo push aws NAME`. Secrets are stored as `keylo/NAME` (the prefix is
-  configurable): typed secrets as JSON of their fields, a secret with a username as
-  `{"username","password"}`, anything else as text. They're tagged `keylo:managed`, and pushing again
-  updates them. A secret Keylo didn't create is never overwritten.
-- **SSO session expired?** Run `aws sso login --profile NAME`; Keylo's error says so.
-
-#### Environments (dev / uat / prod)
-
-When the same secret lives in several accounts, define environments once per computer, each an AWS
-profile and region (Settings → Vault providers → Environments, or the CLI):
+1. Install the **AWS CLI v2**:
+   - **Windows:** `winget install Amazon.AWSCLI`
+   - **macOS:** `brew install awscli`
+   - **Linux:** see [AWS's instructions](https://aws.amazon.com/cli/)
+2. Sign in as you normally would: a profile in `~/.aws` (SSO, assumed roles and access keys all work),
+   or environment variables.
 
 ```bash
-keylo provider env aws set dev  acme-dev  eu-west-2
-keylo provider env aws set uat  acme-uat  eu-west-2
-keylo provider env aws set prod acme-prod-readonly eu-west-2    # "prod" starts as always ask
+keylo link --provider aws --search prod --profile work --region eu-west-2
+keylo link prod-db --provider aws --item prod/db --profile work --region eu-west-2
+keylo run --env PGPASSWORD=prod-db:password -- psql -h db.internal
+```
+
+- A secret holding a **JSON object** becomes one field per key, so an RDS-managed secret gives
+  `prod-db:username`, `prod-db:password`, `prod-db:host` and so on. Any other value is one `value` field.
+- Each link remembers the profile and region it was made with.
+- **Expired SSO session?** Keylo's error says so: run `aws sso login --profile NAME`.
+- Secrets Manager charges per secret per month and per 10,000 API calls; a linked secret makes one call
+  each time it's used.
+
+#### Environments (dev, uat, prod)
+
+When the same secret lives in several AWS accounts, define **environments** once on each computer, each
+an AWS profile and region (Settings → Vault providers → AWS → Environments, or the CLI):
+
+```bash
+keylo provider env aws set dev  acme-dev           eu-west-2
+keylo provider env aws set uat  acme-uat           eu-west-2
+keylo provider env aws set prod acme-prod-readonly eu-west-2    # starts as "always ask"
 keylo provider env aws default dev
 ```
 
-Then link the secret once, by name, per environment, and pick the environment when you use it:
+Link the secret once, **per environment**, then choose the environment when you use it:
 
 ```bash
 keylo link orders-db --provider aws --item orders/db --environment dev [--env-name prod=orders/db-prod]
-keylo run --env DB=orders-db@uat:password -- ./migrate     # orders-db alone uses the default (dev)
+keylo run --env DB=orders-db@uat:password -- ./migrate          # plain orders-db uses the default (dev)
 ```
 
-- The link stores only the secret's name, so each computer maps `prod` to its own profile; a profile
-  rename doesn't break links. `--env-name` covers an environment where the secret has another name.
-- **Always ask** (on by default for prod): every use from that environment opens an approval window
-  (Windows Hello / Touch ID) whatever the access key covers, and can't be allowed permanently.
-  Changing environments asks for Windows Hello / Touch ID too.
-- In the app, the Link dialog lists environments first: pick one to link per environment.
-- Agents see each link's environments in `search_secrets` and use `name@env` the same way; the audit
-  log records the environment of every use.
+- The link stores only the secret's name, so each computer can map `prod` to its own profile.
+  `--env-name` covers an environment where the secret has a different name.
+- **Always ask** (on by default for environments named like production): every use from that
+  environment opens an approval, whatever the agent's key covers, and can't be allowed permanently.
+- In the app, the Link panel lists your environments first. Choose one to link per environment, then
+  switch environments in the secret's details.
+- Agents see each link's environments in `search_secrets` and use `name@env` the same way, and the
+  audit log records the environment of every use.
 
-Least-privilege IAM policy (drop the second statement if you only link):
+#### IAM permissions
+
+Least privilege (drop the second statement if you only link):
 
 ```json
 {
@@ -318,52 +636,309 @@ Least-privilege IAM policy (drop the second statement if you only link):
 Secrets encrypted with a customer-managed KMS key also need `kms:Decrypt` (to link) and
 `kms:GenerateDataKey` (to push) on that key.
 
-Secrets Manager charges per secret per month and per 10,000 API calls; a linked secret makes one
-call each time it's used.
+---
 
-## Vault providers
+## Pushing secrets to another vault
 
-Two plugin interfaces in `Keylo.Core.Providers`:
+Push copies Keylo secrets into 1Password or AWS Secrets Manager, for sharing with a team or a server.
+The copy is separate: later changes in Keylo need another push.
 
-- **`ILinkedVaultProvider`**: search a vault, describe an item's fields, and read their values —
-  for linked secrets. Bitwarden, KeePass or Azure Key Vault could implement this.
-- **`IVaultProvider`**: push Keylo secrets into another vault.
-
-1Password and AWS Secrets Manager (above) implement both. For 1Password:
-
-- **Push**: `keylo provider set 1password vault Private`, then `keylo push 1password --category cloud`.
-  Items are tagged `keylo`; pushing again updates them. Values go over stdin, never the command line.
-
-Add others by building a class library that references `Keylo.Core`, implementing either interface
-(or both) with a parameterless constructor, and dropping the DLL into `%LOCALAPPDATA%\Keylo\plugins`.
-Plugins run as you with full trust.
-
-## Develop
-
-| Project | |
-|---|---|
-| `Keylo.Core` | Everything OS-neutral (`net10.0`): secrets, types, search, links, access keys, backups, MCP-facing logic |
-| `Keylo.Platform.Windows` | Credential Manager, DPAPI, Windows Hello, clipboard, process ancestry — an `IKeyloPlatform` |
-| `Keylo.Platform.MacOS` | Keychain, Touch ID (via the `keylo-mac` Swift helper), pasteboard, `ps` ancestry |
-| `Keylo.UI` | View models and services shared by both apps; toolkit bits (icons, brushes, timers, pickers) come from an `IUiHost` |
-| `Keylo.App` | `keylow`, the Windows app (WPF + WPF-UI) |
-| `Keylo.Desktop` | Keylo.app, the macOS app (Avalonia); `KeyloApp --cli` is the macOS `keylo` |
-| `Keylo.Cli` | `keylo` and the MCP server; builds for Windows and macOS |
-
-Another OS means implementing `IKeyloPlatform` in a new `Keylo.Platform.*` project; Core needs no
-changes. The tests include an in-memory platform for this.
-
-On a Mac, `rust_csharp/tests/macos-smoke.sh` checks the command line and MCP server against a throwaway
-keychain, and `rust_csharp/tests/macos-ui-snapshots.sh` (after `./rust_csharp/build.sh --debug`) renders the app's screens
-to PNGs, which works without a display (e.g. over SSH).
-
-```powershell
-dotnet build
-dotnet test     # uses a separate Credential Manager prefix and cleans up after itself
+```bash
+keylo provider set 1password vault Private      # 1Password: the vault to push into
+keylo provider set aws region eu-west-2         # AWS: a region (or profile), optionally prefix and kms_key_id
+keylo provider status aws                       # check it's reachable
+keylo push 1password github-token
+keylo push aws --category prod --yes
 ```
 
-`KEYLO_HOME` and `KEYLO_PREFIX` point the CLI and app at a scratch data folder and credential
-prefix, which keeps experiments away from your real secrets.
+In the app: **Push to …** on a secret, once a vault is set up in **Settings → Vault providers**. Before
+anything is sent, it shows where the secret will go and whether it creates an item or updates one.
+
+| | 1Password | AWS Secrets Manager |
+|---|---|---|
+| Becomes | a Login item (with a username) or a Password item, tagged `keylo` and its category | the secret `keylo/NAME` (the prefix is configurable), tagged `keylo:managed` |
+| Typed secrets | the main field as the password, other fields as labelled fields | a JSON object of all fields |
+| Pushing again | updates the item Keylo created | updates the secret Keylo created; never touches one it didn't create |
+| Values travel | on `op`'s standard input | in a temporary file, zeroed and deleted straight after |
+
+---
+
+## Import, backup and restore
+
+### Import
+
+Turn files into secrets, one per file, named after the file:
+
+```bash
+keylo import ./.secrets                         # a folder: its subfolders become categories
+keylo import id_ed25519 prod.env --category ops # files, into one category
+```
+
+- **Type detection:** SSH private keys, database URLs (split into engine, host, port, database, user and
+  password), API tokens and passwords are recognized; anything else is a plain secret. `--plain`
+  turns detection off.
+- Existing secrets are skipped unless you pass `--overwrite`. Files over 4 MB are skipped.
+- `--delete-originals` overwrites the imported files with zeros, then deletes them. Files that fail
+  to import are kept.
+- In the app, the Import panel shows everything first, and lets you rename, retype and recategorize
+  before importing.
+
+Migrating a `.secrets` folder: import it, check with `keylo list`, then delete the folder (or re-run with
+`--overwrite --delete-originals`).
+
+### Backup and restore
+
+Keylo's normal storage only opens for your account on your machine. A **backup** is how your secrets
+reach a new computer, another operating system, or survive a lost account.
+
+```bash
+keylo backup ~/keylo-2026-11-17.keylo           # asks for a password, twice
+keylo restore ~/keylo-2026-11-17.keylo --dry-run # what it would do
+keylo restore ~/keylo-2026-11-17.keylo [--overwrite]
+```
+
+- One `.keylo` file with every secret's value and details, categories (with their icons and colours,
+  and empty ones), custom types and uploaded icons.
+- Encrypted with **AES-256-GCM** under a key derived from your password with **PBKDF2-SHA256** (600,000
+  iterations, random salt). The header is authenticated too. Nothing, not even the secret names, is
+  readable without the password, and a wrong password or any change to the file is rejected.
+- Passwords need at least 10 characters. They're asked for on the terminal, or read with
+  `--password-stdin`, never taken as an argument.
+- Creating a backup always asks for your identity check, because it exports every value.
+- Restoring skips secrets you already have, unless you choose to replace them (`--overwrite`, or the
+  checkbox in the app's preview).
+- Backups work across Windows, macOS and Linux, and between this and the earlier C# Keylo. Linked
+  secrets need that vault's CLI signed in on the new machine.
+- **There is no recovery.** Keep the password somewhere other than Keylo.
+
+In the app: **Settings → Backup**.
+
+---
+
+## Security model
+
+### Where secrets are stored
+
+| | Windows | macOS | Linux |
+|---|---|---|---|
+| Secrets | Windows Credential Manager, entries `Keylo:NAME` | the login keychain, generic passwords with service `Keylo` | the desktop keyring (Secret Service: GNOME Keyring, KWallet, KeePassXC…), or Keylo's own encrypted vault file |
+| Values kept in the store | up to 2,559 bytes | up to 16 KB | up to 16 KB |
+| Larger values | DPAPI-encrypted files in `blobs\` | AES-256-GCM files, key in the keychain | AES-256-GCM files, key in the keyring or derived from the vault key |
+| Tied to | your Windows account on this PC | your macOS account and its keychain | your keyring, or the vault's passphrase |
+
+**On Linux,** Keylo uses the desktop keyring when there is one that can store items. Otherwise (servers,
+containers, WSL) it keeps `vault.json`:
+- **Encryption:** AES-256-GCM under a random key, wrapped with your passphrase (PBKDF2-SHA256,
+  600,000 iterations).
+- **Unlocking:** the passphrase is asked for on the terminal, or read from `KEYLO_PASSPHRASE` or
+  `KEYLO_PASSPHRASE_FILE`. The unlocked key is then cached in the kernel keyring for 15 minutes, so
+  later commands don't ask.
+- **Choice:** made once and remembered in `store.txt`; `KEYLO_STORE=keyring|file` overrides it.
+
+**Details** (category, username, notes, non-secret fields, icons) are stored with each secret. On
+Windows and macOS they're item attributes, readable by programs running as you without unlocking; in
+the Linux keyring and vault they're inside the encrypted item. Never put a secret in a non-secret field.
+
+### What it protects against
+
+- Other users on the same computer.
+- A stolen or copied disk, or a backup of your files, without your account password.
+- Secrets in plain-text files getting committed, synced or shared.
+- **Agents seeing values**: they get commands' output, redacted, never the values.
+- **Agents using secrets they shouldn't**: access keys, approvals and "always ask" environments.
+- Values in shell history or the process list: values are never taken as arguments, and Keylo
+  passes them to other tools on standard input or in temporary files it zeroes.
+- Clipboard leaks: copied values are kept out of clipboard history and cloud sync and clear
+  themselves (30 seconds by default).
+
+### What it doesn't
+
+- **Malware running as you.** It can read the same store and protected files Keylo can. The identity
+  check is a presence check, not encryption.
+- **A command you approve.** It receives the real value and can do anything with it, including
+  sending it somewhere or encoding it past the redactor.
+- **The other vault's security** for linked secrets: Keylo is only as strong as your 1Password or AWS
+  setup.
+
+Keylo has no server and sends nothing anywhere. Its only network traffic is downloading an icon when
+you paste an image address, and what the `op` and `aws` CLIs do for linked secrets and pushes.
+
+---
+
+## Configuration
+
+### Settings
+
+Stored in `config.json` in the data folder; change them in **Settings → General** or with `keylo config`.
+
+| Setting | Default | Range | |
+|---|---|---|---|
+| Identity check (`hello`) | `session` | `session`, `always`, `never` | When to verify you |
+| Session length | 15 minutes | 1–1440 | How long one check lasts in `session` mode |
+| Clipboard | 30 seconds | 5–600 | When copied values are cleared |
+| Audit log | 90 days | 7–3650, or forever | How long agent activity is kept |
+
+Vault providers' settings (1Password vault and account; AWS profile, region, prefix and KMS key; AWS
+environments) are in the same file, under `providers`.
+
+### Environment variables
+
+| Variable | Used for |
+|---|---|
+| `KEYLO_ACCESS_KEY` | The access key for `keylo mcp` and `keylo run` (set by your agent's MCP configuration) |
+| `KEYLO_HOME` | A different data folder (tests, experiments) |
+| `KEYLO_PREFIX` | A different prefix for items in the secure store (default `Keylo:`), to keep test secrets apart |
+| `KEYLO_STORE` | Linux: `keyring` or `file`, overriding the remembered choice |
+| `KEYLO_PASSPHRASE` / `KEYLO_PASSPHRASE_FILE` | Linux vault file: the passphrase, for unattended use |
+| `KEYLO_VAULT_CACHE_MINUTES` | Linux vault file: how long the unlocked key is cached (default 15; 0 turns caching off) |
+| `KEYLO_KEYCHAIN` | macOS: use this keychain file instead of the login keychain (tests, SSH sessions) |
+
+`KEYLO_HOME` with `KEYLO_PREFIX` gives you a completely separate, throwaway Keylo for experiments.
+
+### Data folder
+
+- **Windows:** `%LOCALAPPDATA%\Keylo`
+- **macOS:** `~/Library/Application Support/Keylo`
+- **Linux:** `~/.local/share/Keylo`
+
+| File | Holds |
+|---|---|
+| `config.json` | Settings, access keys (as hashes) and vault provider settings |
+| `types.json` | Custom types, and icons and colours for built-in types |
+| `categories.json` | Category icons and colours, and empty categories |
+| `audit.log` | Agents' use of secrets, one JSON line each |
+| `session.bin` | When the current session ends (encrypted) |
+| `pins.json`, `recent.json` | Pinned and recently used secrets in the app |
+| `ui.json` | Theme and window layout |
+| `blobs/` | Encrypted files for large values |
+| `icons/` | Uploaded icon images |
+| `vault.json`, `store.txt` | Linux: the vault file, and which store is in use |
+
+None of these files hold secret values in readable form.
+
+---
+
+## Platform notes
+
+**Windows**
+- Credential Manager entries are visible in **Control Panel → Credential Manager → Windows Credentials**
+  as `Keylo:NAME`. Edit them through Keylo, not there.
+- Copied values are excluded from clipboard history and cloud clipboard.
+- If Windows Hello isn't set up, set up a PIN in **Settings → Accounts → Sign-in options**, or use
+  `keylo config hello never`.
+
+**macOS**
+- Secrets appear in Keychain Access under the name `Keylo`. Keylo's file-sealing key is stored
+  separately, under `Keylo.Internal`.
+- The login keychain is locked in SSH sessions. Use `KEYLO_KEYCHAIN=/path/to.keychain-db` for a
+  keychain you can unlock there.
+- Copied values are marked concealed and transient, so clipboard managers and Universal Clipboard
+  skip them.
+
+**Linux**
+- polkit always allows root, so don't run Keylo as root.
+- Over SSH, the identity check asks for your password on the terminal (through `pkttyagent`).
+- The MCP server never prompts: with the vault file, run `keylo unlock` first, or set
+  `KEYLO_PASSPHRASE_FILE`.
+- Keylo locks when the screen locks, through logind (GNOME, KDE and most desktops).
+
+---
+
+## Upgrading from the C# Keylo
+
+This Keylo replaces the earlier C# version (kept in [`rust_csharp/`](rust_csharp/)). Both read and write
+the same data, so nothing needs migrating: secrets, settings, access keys, types, categories, links,
+the audit log and backups all carry over.
+
+On Windows:
+
+1. Uninstall the C# Keylo: `rust_csharp/install.ps1 -Uninstall` from this repository, or delete
+   `%LOCALAPPDATA%\Programs\Keylo` (close Keylo and any Claude Code sessions first).
+2. Install this one with the zip's `install.ps1`. It goes to the same folder, so Claude Code's existing
+   Keylo registration keeps working with the same access key.
+3. Restart Claude Code sessions, or run `/mcp`.
+
+The 9 newer secret types (password, server and the rest) are unknown to the C# Keylo, which shows
+those secrets as plain values.
+
+---
+
+## Troubleshooting
+
+| Symptom | What to do |
+|---|---|
+| "Windows Hello isn't available" | Set up a PIN or fingerprint in Windows sign-in options, or `keylo config hello never`. |
+| Agents' Keylo tools don't appear | Restart Claude Code or run `/mcp`. Check **Settings → Agents** or `keylo mcp` for the connection status. |
+| "The access key … isn't valid" | The key was revoked, expired or replaced. Create a new one and choose **Add to Claude Code**. |
+| An approval window never appeared | It may be behind other windows. Without the app installed next to `keylo`, it's a system dialog; on Linux that needs zenity or kdialog and a desktop session. |
+| "1Password CLI (op) isn't installed" / "isn't signed in" | Install `op`, then turn on **Integrate with 1Password CLI** in the 1Password app. |
+| 1Password asks to approve several times | Once per signed-in account; set **Account** in Settings → Vault providers to search one. |
+| AWS: "no region chosen" | Pass `--region`, set one (`keylo provider set aws region …`), or give your profile a region. |
+| AWS: credentials expired | `aws sso login --profile NAME`. |
+| Linux: "Keylo's vault is locked" | `keylo unlock` in a terminal, or set `KEYLO_PASSPHRASE_FILE`. |
+| Linux: the keyring isn't available | Use Keylo from your desktop session, unlock the keyring, or switch to the vault file with `KEYLO_STORE=file`. |
+| macOS: "keylo-mac isn't installed" | Run `keylo` from inside Keylo.app (or the link to it), not a copy elsewhere. |
+| macOS keeps asking for keychain access | Choose **Always Allow**. Unsigned builds may ask again after an update. |
+| Copying fails on Linux | Install `wl-clipboard` (Wayland) or `xclip` (X11). Without a desktop there's no clipboard: use `keylo get`. |
+
+`keylo status` shows the version, session, data folder and (on Linux) which store is in use.
+
+---
+
+## Building from source
+
+**Requirements**
+- **Rust:** stable.
+- **Node.js:** 22 or later.
+- **Tauri's prerequisites** for your OS:
+  - **Windows:** the Microsoft C++ Build Tools (with the x64 libraries).
+  - **macOS:** the Xcode command-line tools.
+  - **Linux:** `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev` and `patchelf`.
+
+```bash
+cargo build --release -p keylo-cli          # target/release/keylo
+cd app && npm ci && npx tauri build         # the app, and an installer for your OS
+```
+
+`npx tauri dev` (in `app/`) runs the app with live reload. On macOS, build `keylo-mac` too:
+`swiftc -O rust_csharp/src/Keylo.Platform.MacOS/helper/keylo-mac.swift -o target/release/keylo-mac`.
+
+### Layout
+
+| Path | |
+|---|---|
+| `crates/keylo-core` | Everything OS-neutral: the store format, types, access keys, the identity gate, the audit log, redaction, search, import, backups, linked vaults |
+| `crates/keylo-platform` | The OS layer: Windows (Credential Manager, DPAPI, Windows Hello), macOS (Keychain, Touch ID) and Linux (Secret Service or the vault file, polkit) |
+| `crates/keylo-cli` | `keylo` and the MCP server |
+| `app/` | The desktop app, `keylow`: Tauri 2, with a React and TypeScript front end in `app/src` |
+| `packaging/` | The install scripts and the polkit policy shipped in releases |
+| `tests/` | Integration tests and the fake `op`, `aws` and `claude` used by them |
+| `rust_csharp/` | The earlier C# Keylo |
+
+### Tests
+
+```bash
+cargo test -p keylo-core -p keylo-platform -p keylo-cli
+```
+
+| Script | Checks |
+|---|---|
+| `tests/windows-compat.sh` | The Rust and C# builds read each other's secrets, keys, backups, imports and links, and the MCP server, in a throwaway store |
+| `tests/links.sh` | Linked secrets, push, environments and `--add-to-claude`, against fake `op`, `aws` and `claude` (build `tests/fakevault`) |
+| `tests/linux-compat.sh` | The Linux vault file and desktop keyring (in a container, or in CI) |
+| `tests/macos-ci.sh` | The macOS Keychain store, against a throwaway keychain |
+
+They use `KEYLO_HOME` and `KEYLO_PREFIX` so they never touch your real secrets.
+
+### Releases
+
+Every merge to `main` that changes shipped code (the crates, the app, packaging) builds, tests and
+publishes a release through `.github/workflows/release.yml`:
+- **Platforms:** Windows, Linux (x64 and ARM64) and macOS (Apple silicon, ad-hoc signed).
+- **Tag:** `v<version>.<build>`, with the version taken from `Cargo.toml`.
+- **Docs and tests:** changes to these alone don't trigger a release.
+
+---
 
 ## License
 
