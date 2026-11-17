@@ -1,0 +1,62 @@
+# Builds and tests the Rust port (rust/) on macOS, unsigned: the core, platform layer and keylo
+# command with unit tests and keychain checks (in a throwaway keychain), the keylo-mac helper, and
+# the Tauri app. Signing and notarizing stay on the Mac. Touch ID can't run on CI machines.
+name: rust
+
+on:
+  push:
+    branches: ['port/rust-tauri']
+    paths: ['rust/**', 'src/Keylo.Platform.MacOS/helper/**', '.github/workflows/rust.yml']
+  pull_request:
+    paths: ['rust/**', 'src/Keylo.Platform.MacOS/helper/**', '.github/workflows/rust.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Unit tests
+        run: cargo test -p keylo-core -p keylo-platform -p keylo-cli
+
+      - name: Build keylo
+        run: cargo build -p keylo-cli
+
+      - name: Build keylo-mac (Touch ID, pasteboard and alerts)
+        run: swiftc -O ../src/Keylo.Platform.MacOS/helper/keylo-mac.swift -o target/debug/keylo-mac
+
+      - name: Keychain checks
+        run: bash tests/macos-ci.sh target/debug/keylo
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: rust/app/package-lock.json
+
+      - name: Front end
+        working-directory: rust/app
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build the app
+        run: cargo build -p keylo-app

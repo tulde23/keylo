@@ -85,6 +85,10 @@ keylo config [hello session|always|never | session-minutes N | clipboard-seconds
 fn main() -> ExitCode {
     keylo_platform::install();
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    // A store that needs a passphrase (Linux's vault file) may ask on the terminal, except from the
+    // MCP server (its stdin and stdout are the agent's) and the clipboard clearer.
+    let command = argv.first().map(|a| a.to_lowercase()).unwrap_or_default();
+    keylo_platform::set_terminal_prompts(!matches!(command.as_str(), "mcp" | "__clip-clear"));
     match run(&argv) {
         Ok(code) => ExitCode::from(code as u8),
         Err(CliError::Usage(m)) => {
@@ -138,6 +142,7 @@ fn run(argv: &[String]) -> CliResult<i32> {
         "lock" => {
             args.throw_on_unknown(None)?;
             c.gate.lock();
+            keylo_platform::lock_store();
             info("Locked.");
             Ok(0)
         }
@@ -906,6 +911,10 @@ pub fn self_path() -> String {
 
 fn unlock(c: &mut Context, args: &Args) -> CliResult<i32> {
     args.throw_on_unknown(None)?;
+    // A store with its own passphrase (Linux's vault file) first.
+    if let Some(message) = keylo_platform::unlock_store()? {
+        info(&message);
+    }
     if c.gate.mode() == HelloMode::Never {
         info(&format!("{} is off (hello = never); nothing to unlock.", verifier_name()));
         return Ok(0);
@@ -932,6 +941,9 @@ fn status(c: &Context, args: &Args) -> CliResult<i32> {
     };
     println!("Keylo {}: {state}", keylo_core::build_version!());
     println!("Data:  {}", paths::data_dir().display());
+    if let Some(store) = keylo_platform::store_status() {
+        println!("Store: {store}");
+    }
     Ok(0)
 }
 

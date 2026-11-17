@@ -1078,9 +1078,18 @@ fn approval_dialog(title: &str, message: &str, can_always: bool) -> Approval {
     }
 }
 
+/// zenity / kdialog on Linux, an alert from keylo-mac on macOS.
 #[cfg(not(windows))]
-fn approval_dialog(_title: &str, _message: &str, _can_always: bool) -> Approval {
-    Approval::Denied
+fn approval_dialog(title: &str, message: &str, can_always: bool) -> Approval {
+    match keylo_platform::approval_dialog(title, message, can_always) {
+        Ok(approval::ALLOWED_ALWAYS) => Approval::Always,
+        Ok(approval::ALLOWED_ONCE) => Approval::Once,
+        Ok(_) => Approval::Denied,
+        Err(e) => {
+            eprintln!("keylo: {e}");
+            Approval::Denied
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------- tool schemas
