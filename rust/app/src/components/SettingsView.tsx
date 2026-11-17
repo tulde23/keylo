@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
-import { api, timeAgo, type AccessKey, type AppInfo, type KeyInput, type Secret, type SecretType, type Settings } from "../api";
+import { api, timeAgo, type ClaudeStatus, type AccessKey, type AppInfo, type KeyInput, type Secret, type SecretType, type Settings } from "../api";
 import TypesSection from "./TypesSection";
 import BackupSection from "./BackupSection";
 import VaultsSection from "./VaultsSection";
@@ -24,11 +24,15 @@ export default function SettingsView(props: {
   const [keys, setKeys] = useState<AccessKey[]>([]);
   const [keyEditor, setKeyEditor] = useState<AccessKey | "new" | null>(null);
   const [token, setToken] = useState<{ name: string; token: string } | null>(null);
+  const [claude, setClaude] = useState<ClaudeStatus | null>(null);
+  const [adding, setAdding] = useState(false);
+  const loadClaude = () => api.claudeStatus().then(setClaude).catch(() => {});
 
   const loadKeys = () => run(api.keys).then((k) => k && setKeys(k));
   useEffect(() => {
     run(api.settings).then((s) => { if (s) { setSaved(s); setDraft(s); } });
     loadKeys();
+    loadClaude();
   }, []);
 
   const dirty = saved && draft && JSON.stringify(saved) !== JSON.stringify(draft);
@@ -112,6 +116,13 @@ export default function SettingsView(props: {
           </div>
           <button className="button primary" onClick={() => setKeyEditor("new")}><Plus size={16} /> New key</button>
         </div>
+        {claude && (
+          <p className={`claude-status ${claude.registered && claude.keyName && claude.pointsAt ? "ok" : "muted"}`}>
+            <strong>Claude Code:</strong> {claude.summary}
+            {claude.keyCovers && ` (${claude.keyCovers}, run only)`}.
+            {!(claude.registered && claude.keyName) && " Create a key below and choose Add to Claude Code."}
+          </p>
+        )}
         {keys.length === 0 ? (
           <p className="muted empty-inline">No access keys yet.</p>
         ) : (
@@ -169,7 +180,25 @@ export default function SettingsView(props: {
       {token && (
         <Modal title={`Key '${token.name}' created`} onClose={() => setToken(null)} wide
           footer={<button className="button primary" onClick={() => setToken(null)}>Done</button>}>
-          <p>This is the only time the key is shown. To connect Claude Code, run this in a terminal:</p>
+          <p>This is the only time the key is shown.</p>
+          <div className="form-actions start">
+            <button className="button primary" disabled={adding || claude?.cliInstalled === false}
+              title={claude?.cliInstalled === false ? "Claude Code ('claude') wasn't found on PATH." : undefined}
+              onClick={async () => {
+                setAdding(true);
+                const done = await run(async () => { await api.addToClaude(token.token); return true; });
+                setAdding(false);
+                if (done) {
+                  toast("Added. Restart Claude Code (or run /mcp) to load the Keylo tools.");
+                  loadClaude();
+                  setToken(null);
+                }
+              }}>
+              {adding ? "Adding…" : "Add to Claude Code"}
+            </button>
+            <span className="muted small-text">Replaces any Keylo server Claude Code has (user scope).</span>
+          </div>
+          <p>Or run this in a terminal:</p>
           <div className="code-line">
             <code>{claudeCommand(token.token)}</code>
             <button className="icon-button small" aria-label="Copy command"

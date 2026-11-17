@@ -77,6 +77,11 @@ out=$(mcp '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_
 check "mcp aws secrets linked" 'linkedInKeyloAs\":[\"web\",\"orders-db\"]' "$out"
 check "audit has env label" "orders-db@uat" "$(cat "$T/audit.log" 2>/dev/null)"
 
+# keys create --add-to-claude registers the server through (the fake) claude.
+check "add to claude" "added Keylo to Claude Code" "$(k keys create claude-test --all --add-to-claude)"
+check "claude mcp add args" "claude mcp add keylo --scope user --env KEYLO_ACCESS_KEY=kyl_" "$(cat "$FAKE_LOG")"
+check "claude mcp remove first" "claude mcp remove keylo --scope user" "$(cat "$FAKE_LOG")"
+
 # Clean up the throwaway credentials.
 for n in gh orders-db web plain-x; do k rm "$n" --yes >/dev/null; done
 echo "left: $(cmdkey //list | grep -c "$KEYLO_PREFIX")"

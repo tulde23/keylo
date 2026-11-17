@@ -7,6 +7,7 @@ use keylo_core::access::{self, KeyScope};
 use keylo_core::activity::{Activity, RecentUse};
 use keylo_core::approval;
 use keylo_core::categories::{CategoryCatalog, CategorySummary};
+use keylo_core::claude_code;
 use keylo_core::config::{HelloMode, KeyloConfig};
 use keylo_core::gate::AccessGate;
 use keylo_core::links;
@@ -74,16 +75,21 @@ pub struct AppInfo {
     keylo_path: String,
 }
 
-#[tauri::command]
-pub fn app_info() -> AppInfo {
-    let p = platform::current();
-    let exe = std::env::current_exe().ok();
-    let keylo = exe
+/// The keylo command installed next to the app.
+fn keylo_path() -> String {
+    std::env::current_exe()
+        .ok()
         .as_ref()
         .and_then(|e| e.parent())
         .map(|d| d.join(if cfg!(windows) { "keylo.exe" } else { "keylo" }))
         .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "keylo".into());
+        .unwrap_or_else(|| "keylo".into())
+}
+
+#[tauri::command]
+pub fn app_info() -> AppInfo {
+    let p = platform::current();
+    let keylo = keylo_path();
     AppInfo {
         platform: p.name().into(),
         verifier_name: p.verifier_name(),
@@ -716,6 +722,33 @@ pub async fn update_key(window: WebviewWindow, id: String, input: KeyInput) -> R
     key.categories = input.categories;
     key.secrets = input.secrets;
     c.save().map_err(err)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeStatus {
+    #[serde(flatten)]
+    registration: claude_code::Registration,
+    summary: String,
+    cli_installed: bool,
+}
+
+/// Whether Claude Code has Keylo's MCP server, and with which access key (never the key itself).
+#[tauri::command]
+pub fn claude_status(state: State<'_, AppState>) -> Res<ClaudeStatus> {
+    require_unlocked(&state)?;
+    let registration = claude_code::inspect(&KeyloConfig::load().map_err(err)?, &keylo_path());
+    Ok(ClaudeStatus { summary: registration.describe(), registration, cli_installed: claude_code::find_cli().is_some() })
+}
+
+/// Registers Keylo's MCP server with Claude Code (user scope) using a key just created.
+#[tauri::command]
+pub async fn add_to_claude(state: State<'_, AppState>, token: String) -> Res<()> {
+    require_unlocked(&state)?;
+    let token = Zeroizing::new(token);
+    tauri::async_runtime::spawn_blocking(move || claude_code::register(&keylo_path(), &token).map_err(err))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

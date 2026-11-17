@@ -392,3 +392,4 @@ select {
   .detail-pane { padding: 20px; }
   .field-row { grid-template-columns: 110px 1fr; }
 }
+.claude-status { margin: 0 0 12px; font-size: 13px; }

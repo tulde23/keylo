@@ -65,7 +65,7 @@ keylo provider list | status ID | set ID KEY VALUE
 keylo provider env aws [list | set ENV PROFILE REGION [--ask|--no-ask] | remove ENV | default ENV]
                                         Environments (dev, uat, prod…) for per-environment links
 keylo keys                              List access keys (let tools use secrets without {verifier})
-keylo keys create NAME [--all | --category C... --secret S...] [--expires-days N]
+keylo keys create NAME [--all | --category C... --secret S...] [--expires-days N] [--add-to-claude]
 keylo keys revoke NAME
 keylo import PATH... [--category C | --flat] [--overwrite] [--delete-originals] [--plain]
                                         Import files as secrets (a folder's subfolders become
@@ -835,9 +835,7 @@ fn keys(c: &mut Context, args: &Args) -> CliResult<i32> {
             let secrets = args.options("secret");
             let all = args.flag("all");
             let expires = args.option("expires-days");
-            if args.flag("add-to-claude") {
-                fail!("--add-to-claude isn't in the Rust build yet; register the key with 'claude mcp add' as shown below.");
-            }
+            let add_to_claude = args.flag("add-to-claude");
             args.throw_on_unknown(Some(2))?;
             if name.is_empty() {
                 usage!("Give the key a name, e.g. 'Claude Code'.");
@@ -859,14 +857,17 @@ fn keys(c: &mut Context, args: &Args) -> CliResult<i32> {
             key.scope = if all { KeyScope::All } else { KeyScope::Selected };
             c.config.access_keys.push(key);
             c.config.save()?;
+            if add_to_claude {
+                keylo_core::claude_code::register(&self_path(), &token)?;
+                info(&format!(
+                    "Created '{name}' and added Keylo to Claude Code (user scope) with it. Restart Claude Code, or run /mcp, to load it."
+                ));
+                return Ok(0);
+            }
             info(&format!("Created '{name}'. This is the only time the key is shown:"));
             println!("{token}");
             info("Register it with Claude Code (user scope; never put it in a project's .mcp.json):");
-            info(&format!(
-                "  claude mcp add keylo --scope user --env {}={token} -- \"{}\" mcp",
-                access::ENVIRONMENT_VARIABLE,
-                self_path()
-            ));
+            info(&format!("  {}", keylo_core::claude_code::add_command(&self_path(), &token)));
             Ok(0)
         }
         "revoke" | "rm" | "delete" => {

@@ -100,6 +100,8 @@ fn main() {
             commands::approval_request,
             commands::answer_approval,
             transfer::pick_import,
+            commands::claude_status,
+            commands::add_to_claude,
             vaults::vault_providers,
             vaults::save_vault_provider,
             vaults::vault_status,

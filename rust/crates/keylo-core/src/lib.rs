@@ -7,6 +7,7 @@ pub mod activity;
 pub mod approval;
 pub mod backup;
 pub mod categories;
+pub mod claude_code;
 pub mod config;
 pub mod error;
 pub mod gate;

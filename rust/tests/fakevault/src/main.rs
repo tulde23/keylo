@@ -1,6 +1,6 @@
-// Stands in for `op` and `aws` in tests (it acts as whichever its file name says), with made-up data.
+// Stands in for `op`, `aws` and `claude` in tests (it acts as whichever its file name says), with made-up data.
 // Build: cargo build --release --manifest-path tests/fakevault/Cargo.toml, then copy
-// tests/fakevault/target/release/fakevault.exe to op.exe and aws.exe in a folder of their own.
+// tests/fakevault/target/release/fakevault.exe to op.exe, aws.exe and claude.exe in a folder of their own.
 use std::io::{Read, Write};
 
 fn log(line: &str) {
@@ -20,6 +20,11 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     log(&format!("{me} {}", args.join(" ")));
     let has = |s: &str| args.iter().any(|a| a == s);
+
+    if me == "claude" {
+        // Records `claude mcp add/remove` (the key is a throwaway test key).
+        return;
+    }
 
     if me == "op" {
         let out = match (args.first().map(String::as_str), args.get(1).map(String::as_str)) {

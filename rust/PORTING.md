@@ -38,7 +38,7 @@ and `aws.exe` in one folder, and pass that folder; set `FAKEVAULT` to it for the
 | MCP server: search_secrets, list_categories, list_types, run_with_secrets, request_access | Done; approvals use a message box until the app exists |
 | CLI: import (type guessing, subfolder categories), backup, restore (C# KEYLOBK1 format, both directions) | Done |
 | CLI: link, push, provider (settings, per-environment `provider env`) | Done |
-| CLI: keys create --add-to-claude | To do |
+| Claude Code registration: `keys create --add-to-claude`, status in `keylo mcp` and Settings → Access keys, Add to Claude Code in the app | Done |
 | Linked secrets (1Password, AWS Secrets Manager, per-environment links, "always ask" environments), push, list_aws_* tools | Done in core, CLI and MCP: through the `op` and `aws` CLIs, not SDKs. `tests/links.sh` runs them against fake CLIs (`tests/fakevault`) |
 | Tauri + React app: lock screen, top bar (ported from the WPF app, system window buttons), sidebar, list, detail, slide-in editor, settings, access keys, activity, approval window (`keylow --approve`) | Done (first version) |
 | App: custom secret types editor (Settings → Secret types; built-ins: icon and colour) | Done |

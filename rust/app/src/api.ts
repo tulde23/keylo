@@ -310,6 +310,17 @@ export interface RestoreResult {
   errors: string[];
 }
 
+export interface ClaudeStatus {
+  registered: boolean;
+  command: string | null;
+  keyName: string | null;
+  keyCovers: string | null;
+  hasToken: boolean;
+  pointsAt: boolean;
+  summary: string;
+  cliInstalled: boolean;
+}
+
 /** The error the backend returns when the session has ended. */
 export const LOCKED = "locked";
 
@@ -358,6 +369,8 @@ export const api = {
   openBackup: (path: string, password: string) => invoke<BackupPreview>("open_backup", { path, password }),
   restoreBackup: (overwrite: boolean) => invoke<RestoreResult>("restore_backup", { overwrite }),
   cancelRestore: () => invoke<void>("cancel_restore"),
+  claudeStatus: () => invoke<ClaudeStatus>("claude_status"),
+  addToClaude: (token: string) => invoke<void>("add_to_claude", { token }),
   vaultProviders: () => invoke<VaultProvider[]>("vault_providers"),
   saveVaultProvider: (id: string, input: ProviderInput) => invoke<VaultProvider[]>("save_vault_provider", { id, input }),
   vaultStatus: (id: string) => invoke<ProviderStatus>("vault_status", { id }),

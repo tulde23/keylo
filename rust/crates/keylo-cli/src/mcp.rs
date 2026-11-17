@@ -81,10 +81,12 @@ It lets agents use your secrets without seeing them: Keylo passes them to the ag
 environment variables and redacts them from the output. Each agent has an access key that sets what
 it may use without asking; anything else needs your approval with {verifier}, and every use is logged.
 
+Claude Code: {claude}.
 Access keys: {keys}.
 
 Set it up:
-  keylo keys create \"Claude Code\" --category dev      (or --all for every secret)
+  keylo keys create \"Claude Code\" --category dev --add-to-claude     (or --all for every secret)
+or register a key yourself:
   claude mcp add keylo --scope user --env {var}=<the key> -- \"{exe}\" mcp
 
 Tools it gives agents:
@@ -94,7 +96,8 @@ Testing? keylo mcp --stdio runs the server in this terminal anyway (JSON-RPC, on
         verifier = platform::current().verifier_name(),
         var = access::ENVIRONMENT_VARIABLE,
         exe = crate::self_path(),
-        tools = tools.join("\n")
+        tools = tools.join("\n"),
+        claude = keylo_core::claude_code::inspect(config, &crate::self_path()).describe()
     );
 }
 
