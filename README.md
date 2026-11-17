@@ -364,3 +364,7 @@ dotnet test     # uses a separate Credential Manager prefix and cleans up after 
 
 `KEYLO_HOME` and `KEYLO_PREFIX` point the CLI and app at a scratch data folder and credential
 prefix, which keeps experiments away from your real secrets.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
