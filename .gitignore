@@ -4,3 +4,6 @@ dist/
 *.user
 .vs/
 TestResults/
+/target/
+tests/fakevault/target/
+app/src-tauri/binaries/

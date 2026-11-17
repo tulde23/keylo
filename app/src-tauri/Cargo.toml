@@ -1,0 +1,24 @@
+[package]
+name = "keylo-app"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "keylow"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-dialog = "2"
+keylo-core.workspace = true
+keylo-platform.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+zeroize.workspace = true
+base64.workspace = true
+ureq = "3"

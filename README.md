@@ -15,11 +15,11 @@ No server, no account, no sync. Backups move between them.
 ## Install
 
 ```powershell
-./build.ps1 -Install     # publish to dist\Keylo, then install to %LOCALAPPDATA%\Programs\Keylo
+./rust_csharp/build.ps1 -Install     # publish to dist\Keylo, then install to %LOCALAPPDATA%\Programs\Keylo
 ```
 
 This adds Keylo to your user PATH and the Start menu. Requires the .NET 10 runtime.
-`./install.ps1 -Uninstall` removes the program but leaves your secrets.
+`./rust_csharp/install.ps1 -Uninstall` removes the program but leaves your secrets.
 
 ## macOS
 
@@ -27,19 +27,19 @@ Keylo.app (the same app, on Avalonia) plus the `keylo` command and its MCP serve
 silicon or Intel.
 
 ```zsh
-./build.sh --install    # needs the .NET 10 SDK and Xcode command-line tools (swiftc)
+./rust_csharp/build.sh --install    # needs the .NET 10 SDK and Xcode command-line tools (swiftc)
 ```
 
-This builds `dist/Keylo.app` (self-contained: no .NET install needed to run it), copies it to
+This builds `rust_csharp/dist/Keylo.app` (self-contained: no .NET install needed to run it), copies it to
 `~/Applications`, and links `~/.local/bin/keylo` to the command inside it. Run `keylo` with no
-arguments to open the app. `./install.sh --uninstall` removes the program but leaves your secrets.
+arguments to open the app. `./rust_csharp/install.sh --uninstall` removes the program but leaves your secrets.
 
 - `keylo` is the app's own executable in command-line mode, so the keychain sees one app. macOS asks
   once per secret to let Keylo use the keychain (choose **Always Allow**). `build.sh` signs with
   `KEYLO_SIGN_IDENTITY`, or your "Apple Development" certificate, so that holds across rebuilds;
   with no certificate it signs ad hoc, and macOS asks again after every rebuild.
-- `./build.sh --release` signs with your Developer ID certificate (hardened runtime), notarizes, and
-  writes `dist/keylo-<version>-macos-<arch>.zip`, which opens on other Macs without warnings. Store
+- `./rust_csharp/build.sh --release` signs with your Developer ID certificate (hardened runtime), notarizes, and
+  writes `rust_csharp/dist/keylo-<version>-macos-<arch>.zip`, which opens on other Macs without warnings. Store
   notarization credentials once with
   `xcrun notarytool store-credentials keylo-notary --apple-id <you> --team-id <TEAMID>`
   (or set `KEYLO_NOTARY_PROFILE` to another profile name).
@@ -50,10 +50,10 @@ arguments to open the app. `./install.sh --uninstall` removes the program but le
 - **Touch ID** (or Apple Watch, or your password) replaces Windows Hello; access-key approvals show a
   native alert, then Touch ID.
 - Copied values are marked concealed and transient, so clipboard managers skip them.
-- `keylo-mac` (built from `src/Keylo.Platform.MacOS/helper`) handles Touch ID, the pasteboard and
+- `keylo-mac` (built from `rust_csharp/src/Keylo.Platform.MacOS/helper`) handles Touch ID, the pasteboard and
   alerts; it sits inside Keylo.app next to `keylo`.
 - The login keychain is locked in SSH sessions; `KEYLO_KEYCHAIN=/path/to.keychain-db` points Keylo at
-  another keychain (`tests/macos-smoke.sh` uses a throwaway one).
+  another keychain (`rust_csharp/tests/macos-smoke.sh` uses a throwaway one).
 
 ## Linux
 
@@ -66,7 +66,7 @@ tar -xzf keylo-1.2.0-linux-x64.tar.gz && ./keylo-1.2.0-linux-x64/install.sh
 
 It installs to `~/.local/lib/keylo`, links `~/.local/bin/keylo`, adds a menu entry, and (with sudo,
 once) installs Keylo's polkit policy. `install.sh --uninstall` removes the program but leaves your
-secrets. To build the bundle yourself: `./build-linux.sh` (needs the .NET 10 SDK; or run it in the
+secrets. To build the bundle yourself: `./rust_csharp/build-linux.sh` (needs the .NET 10 SDK; or run it in the
 `mcr.microsoft.com/dotnet/sdk:10.0` container).
 
 - **Where secrets live.** With a desktop keyring (GNOME Keyring, KWallet, KeePassXC: anything that
@@ -86,7 +86,7 @@ secrets. To build the bundle yourself: `./build-linux.sh` (needs the .NET 10 SDK
   Keylo as root.
 - **Agents' approval dialogs** use zenity or kdialog; **copying** uses wl-clipboard (Wayland) or
   xclip / xsel (X11). Keylo locks when the screen locks (logind).
-- `tests/linux-smoke.sh` checks a build end to end, against the vault or (with `KEYLO_STORE=keyring`)
+- `rust_csharp/tests/linux-smoke.sh` checks a build end to end, against the vault or (with `KEYLO_STORE=keyring`)
   a running keyring.
 
 ## Use
@@ -353,8 +353,8 @@ Plugins run as you with full trust.
 Another OS means implementing `IKeyloPlatform` in a new `Keylo.Platform.*` project; Core needs no
 changes. The tests include an in-memory platform for this.
 
-On a Mac, `tests/macos-smoke.sh` checks the command line and MCP server against a throwaway
-keychain, and `tests/macos-ui-snapshots.sh` (after `./build.sh --debug`) renders the app's screens
+On a Mac, `rust_csharp/tests/macos-smoke.sh` checks the command line and MCP server against a throwaway
+keychain, and `rust_csharp/tests/macos-ui-snapshots.sh` (after `./rust_csharp/build.sh --debug`) renders the app's screens
 to PNGs, which works without a display (e.g. over SSH).
 
 ```powershell

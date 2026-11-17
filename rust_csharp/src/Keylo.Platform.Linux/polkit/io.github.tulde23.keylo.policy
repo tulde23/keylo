@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- Keylo's presence check on Linux (its Windows Hello / Touch ID): the user authenticates as
+     themselves (password, or fingerprint where fprintd is set up). Never kept: Keylo has its own
+     session setting. -->
+<policyconfig>
+  <vendor>Keylo</vendor>
+  <action id="io.github.tulde23.keylo.verify">
+    <description>Confirm it's you to use your Keylo secrets</description>
+    <message>Keylo needs to confirm it's you</message>
+    <icon_name>dialog-password</icon_name>
+    <defaults>
+      <allow_any>auth_self</allow_any>
+      <allow_inactive>auth_self</allow_inactive>
+      <allow_active>auth_self</allow_active>
+    </defaults>
+  </action>
+</policyconfig>
