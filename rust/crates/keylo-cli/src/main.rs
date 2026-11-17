@@ -4,6 +4,7 @@ mod args;
 mod mcp;
 mod runner;
 mod terminal;
+mod vaults;
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;
@@ -13,7 +14,8 @@ use keylo_core::access::{self, AccessKey, KeyScope, SecretOperation};
 use keylo_core::config::{HelloMode, KeyloConfig};
 use keylo_core::gate::{verifier_name, AccessGate};
 use keylo_core::platform;
-use keylo_core::refs::{is_linked, SecretReference};
+use keylo_core::links::{self, VaultEnvironment};
+use keylo_core::refs::SecretReference;
 use keylo_core::secrets::{SecretDraft, SecretInfo};
 use keylo_core::store::{normalize_name, SecretStore};
 use keylo_core::types::{self, SecretTypeCatalog, SecretTypeDefinition};
@@ -48,7 +50,20 @@ keylo edit NAME [--rename NEW] [--category C] [--username U] [--notes N] [--fiel
 keylo rm NAME [--yes]                   Delete a secret
 keylo run --env VAR=NAME [...] -- CMD [ARGS]
                                         Run CMD with secrets as environment variables
-                                        (NAME:FIELD maps one field, e.g. prod-db:password)
+                                        (NAME:FIELD maps one field, e.g. prod-db:password;
+                                        NAME@ENV picks an environment of a per-environment link)
+keylo link NAME --item ITEM [--provider 1password|aws] [--vault V] [--account A] [--field F] [--category C]
+                                        Link to an item in another vault (read live, never copied)
+keylo link --search QUERY [--provider P] [--account A]   Find items to link
+                                        (aws: --profile P --region R, else the provider settings)
+keylo link NAME --provider aws --item SECRET --environment ENV [--env-name ENV=OTHER-NAME]...
+                                        Link per environment: NAME@dev, NAME@prod… read SECRET from
+                                        each environment's account (see keylo provider env)
+keylo push PROVIDER [NAME...] [--category C] [--all] [--yes]
+                                        Copy secrets into 1Password or AWS Secrets Manager
+keylo provider list | status ID | set ID KEY VALUE
+keylo provider env aws [list | set ENV PROFILE REGION [--ask|--no-ask] | remove ENV | default ENV]
+                                        Environments (dev, uat, prod…) for per-environment links
 keylo keys                              List access keys (let tools use secrets without {verifier})
 keylo keys create NAME [--all | --category C... --secret S...] [--expires-days N]
 keylo keys revoke NAME
@@ -61,9 +76,7 @@ keylo restore FILE [--overwrite] [--dry-run] [--password-stdin]
                                         Restore a backup (existing secrets are skipped unless --overwrite)
 keylo mcp                               The MCP server for AI agents
 keylo unlock | lock | status | version
-keylo config [hello session|always|never | session-minutes N | clipboard-seconds N | audit-days N|forever]
-
-Not in the Rust build yet: link, push, provider (use the C# keylo).",
+keylo config [hello session|always|never | session-minutes N | clipboard-seconds N | audit-days N|forever]",
         store = p.store_name(),
         verifier = p.verifier_name()
     )
@@ -134,9 +147,9 @@ fn run(argv: &[String]) -> CliResult<i32> {
         "import" => import_cmd(&mut c, &args),
         "backup" | "export" => backup_cmd(&mut c, &args),
         "restore" => restore_cmd(&mut c, &args),
-        "link" | "push" | "provider" | "providers" => {
-            fail!("'{first}' isn't in the Rust build of keylo yet; use the C# keylo for it.")
-        }
+        "link" => vaults::link(&mut c, &args),
+        "push" => vaults::push(&mut c, &args),
+        "provider" | "providers" => vaults::provider_cmd(&mut c, &args),
         _ => usage!("Unknown command '{first}'. Run 'keylo help'."),
     }
 }
@@ -179,10 +192,17 @@ impl Context {
 
     /// Allows a value operation via the access key (audited) or the identity check.
     pub fn authorize(&mut self, op: SecretOperation, secrets: &[SecretInfo], what: &str) -> CliResult<()> {
+        let names: Vec<String> = secrets.iter().map(|s| s.name.clone()).collect();
+        self.authorize_uses(op, secrets, what, false, &names)
+    }
+
+    /// As [`authorize`], for uses that may be in an environment: with `always_ask` (an "always ask"
+    /// environment such as prod) the key doesn't count. `logged` names them for the audit log
+    /// ("orders-db@prod").
+    pub fn authorize_uses(&mut self, op: SecretOperation, secrets: &[SecretInfo], what: &str, always_ask: bool, logged: &[String]) -> CliResult<()> {
         if let Some(key) = self.key() {
-            if key.allows(op, secrets) {
-                let names: Vec<String> = secrets.iter().map(|s| s.name.clone()).collect();
-                access::audit(op.as_str(), &names, Some(&key), "access key")?;
+            if !always_ask && key.allows(op, secrets) {
+                access::audit(op.as_str(), logged, Some(&key), "access key")?;
                 return Ok(());
             }
         } else if access::is_present_in_environment() {
@@ -195,21 +215,23 @@ impl Context {
         Ok(self.gate.ensure(0, &format!("Keylo: {what}"), true)?)
     }
 
-    pub fn find_reference(&self, text: &str) -> CliResult<(SecretInfo, SecretReference)> {
+    /// "NAME", "NAME:FIELD", "NAME@ENV" or "NAME@ENV:FIELD", and for a per-environment link the
+    /// environment it reads from (the named one, else the default).
+    pub fn find_reference(&self, text: &str) -> CliResult<(SecretInfo, SecretReference, Option<VaultEnvironment>)> {
         let r = SecretReference::parse(text, |n| self.store.exists(n).unwrap_or(false))
             .ok_or_else(|| CliError::Keylo(Error::NotFound(text.to_string())))?;
         let info = self.store.find(&r.name)?.ok_or_else(|| CliError::Keylo(Error::NotFound(r.name.clone())))?;
-        if is_linked(&info) {
-            fail!("'{}' is linked to another vault; linked secrets aren't in the Rust build yet.", info.name);
-        }
-        if r.environment.is_some() {
-            fail!("'{}' isn't a per-environment link, so '@{}' doesn't apply.", info.name, r.environment.unwrap());
-        }
-        Ok((info, r))
+        let env = links::environment_for(&info, &self.config, r.environment.as_deref())?;
+        Ok((info, r, env))
     }
 
-    /// A secret's main value, or one field, as text.
-    pub fn field_value(&self, info: &SecretInfo, field: Option<&str>) -> CliResult<Zeroizing<String>> {
+    /// A secret's main value, or one field, as text (a linked secret's read from its vault, in
+    /// `environment` for a per-environment link).
+    pub fn field_value(&self, info: &SecretInfo, field: Option<&str>, environment: Option<&str>) -> CliResult<Zeroizing<String>> {
+        if let Some(link) = links::read(info) {
+            let values = links::resolve(info, &self.config, environment)?;
+            return Ok(Zeroizing::new(links::pick(info, &link, &values, field)?));
+        }
         let field = field.map(str::to_lowercase);
         if matches!(field.as_deref(), Some("username" | "key")) {
             return match &info.username {
@@ -336,9 +358,37 @@ fn get(c: &mut Context, args: &Args) -> CliResult<i32> {
         usage!("--both prints to the terminal; it can't be combined with --clip, --out or --field.");
     }
 
-    let (info, reference) = c.find_reference(&name)?;
+    let (info, reference, env) = c.find_reference(&name)?;
     if field.is_none() {
         field = reference.field.map(|f| f.to_lowercase());
+    }
+    if let Some(link) = links::read(&info) {
+        let label = match &env {
+            Some(e) => format!("{}@{}", info.name, e.name),
+            None => info.name.clone(),
+        };
+        let always_ask = env.as_ref().is_some_and(|e| e.always_ask);
+        c.authorize_uses(SecretOperation::Get, std::slice::from_ref(&info), &format!("read '{label}'"), always_ask, std::slice::from_ref(&label))?;
+        let values = links::resolve(&info, &c.config, env.as_ref().map(|e| e.name.as_str()))?;
+        if both {
+            let in_env = env.as_ref().map(|e| format!(", environment {}", e.name)).unwrap_or_default();
+            println!("type: link ({}: {}{in_env})", link.target.provider, link.title);
+            for (id, v) in &values {
+                println!("{id}: {v}");
+            }
+            return Ok(0);
+        }
+        let value = Zeroizing::new(links::pick(&info, &link, &values, field.as_deref())?);
+        if let Some(path) = out_file {
+            std::fs::write(&path, value.as_bytes())?;
+            terminal::info(&format!("Wrote it to {}", absolute(&path)));
+            return Ok(0);
+        }
+        if clip {
+            return copy_with_timeout(c, &value, "Value");
+        }
+        println!("{}", *value);
+        return Ok(0);
     }
     let t = c.types.find(info.type_id.as_deref())?;
 
@@ -709,21 +759,29 @@ fn run_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
     let mut pairs = Vec::new();
     for m in &mappings {
         let Some(eq) = m.find('=').filter(|&e| e > 0 && e < m.len() - 1) else { usage!("--env expects VAR=NAME, got '{m}'.") };
-        let (info, r) = c.find_reference(&m[eq + 1..])?;
-        pairs.push((m[..eq].to_string(), info, r.field));
+        let (info, r, environment) = c.find_reference(&m[eq + 1..])?;
+        pairs.push((m[..eq].to_string(), info, r.field, environment));
     }
     let mut infos: Vec<SecretInfo> = Vec::new();
-    for (_, i, _) in &pairs {
+    let mut labels: Vec<String> = Vec::new();
+    for (_, i, _, e) in &pairs {
         if !infos.iter().any(|x| eq_ic(&x.name, &i.name)) {
             infos.push(i.clone());
         }
+        let label = match e {
+            Some(e) => format!("{}@{}", i.name, e.name),
+            None => i.name.clone(),
+        };
+        if !labels.iter().any(|l| eq_ic(l, &label)) {
+            labels.push(label);
+        }
     }
-    let labels: Vec<String> = infos.iter().map(|i| i.name.clone()).collect();
-    c.authorize(SecretOperation::Run, &infos, &format!("run with {}", labels.join(", ")))?;
+    let always_ask = pairs.iter().any(|(_, _, _, e)| e.as_ref().is_some_and(|e| e.always_ask));
+    c.authorize_uses(SecretOperation::Run, &infos, &format!("run with {}", labels.join(", ")), always_ask, &labels)?;
 
     let mut env = BTreeMap::new();
-    for (var, info, field) in &pairs {
-        env.insert(var.clone(), c.field_value(info, field.as_deref())?.to_string());
+    for (var, info, field, environment) in &pairs {
+        env.insert(var.clone(), c.field_value(info, field.as_deref(), environment.as_ref().map(|e| e.name.as_str()))?.to_string());
     }
     let code = runner::run(&args.rest, &env);
     for v in env.values_mut() {

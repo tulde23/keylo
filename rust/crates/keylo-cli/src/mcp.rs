@@ -16,7 +16,8 @@ use keylo_core::config::KeyloConfig;
 use keylo_core::gate::AccessGate;
 use keylo_core::platform;
 use keylo_core::redactor::OutputRedactor;
-use keylo_core::refs::{is_linked, SecretReference};
+use keylo_core::links::{self, aws, environments, VaultEnvironment};
+use keylo_core::refs::SecretReference;
 use keylo_core::secrets::SecretInfo;
 use keylo_core::store::SecretStore;
 use keylo_core::types::{self, SecretTypeCatalog, SecretTypeDefinition};
@@ -47,6 +48,11 @@ fn instructions() -> String {
 - Find secrets with search_secrets. Each result says what your access key allows: \"run\" or \"needs approval\".
 - Secrets have types (login, api_key, database, ssh_key, note, custom) with named fields; search results include each
   secret's field schema. Address one field as \"name:field\" (e.g. \"prod-db:connection_string\"); a bare name means its main value.
+- Some secrets are links (type \"link\") to items in another vault such as 1Password or AWS Secrets Manager; they work the same way and are read
+  live from that vault, which may ask the user to unlock it.
+- Some links are per environment (search_secrets lists their \"environments\"): add \"@env\" to choose one, e.g.
+  \"orders-db@uat\" or \"orders-db@prod:password\"; without it the default environment is used. Environments marked
+  \"always ask\" (usually prod) open an approval window every time, whatever your key covers.
 - Prefer run_with_secrets: values reach the command as environment variables and are redacted from its output, so they never enter this conversation.
 - Keylo never returns secret values to agents. To use one, run a command with run_with_secrets.
 - Using a secret outside your key's scope asks the user to approve it (with {}); an approval
@@ -197,6 +203,8 @@ impl Server {
             "list_types" => self.list_types(),
             "run_with_secrets" => self.run(args),
             "request_access" => self.request_access(args),
+            "list_aws_profiles" => self.list_aws_profiles(),
+            "list_aws_secrets" => self.list_aws_secrets(args),
             _ => return Err((-32602, format!("Unknown tool: {name}"))),
         };
         // Tool failures go back to the agent as results it can act on.
@@ -238,6 +246,9 @@ impl Server {
                     }
                 }
                 r.insert("access".into(), json!(if covered { "run" } else { "needs approval" }));
+                if let Some(e) = environments_of(s) {
+                    r.insert("environments".into(), e);
+                }
                 Value::Object(r)
             })
             .collect();
@@ -249,8 +260,98 @@ impl Server {
         Ok(header + &serde_json::to_string(&results).unwrap())
     }
 
+    /// A secret's type: its catalog type, a schema built from a link's fields, or None for plain.
     fn type_of(&self, s: &SecretInfo) -> Option<SecretTypeDefinition> {
+        if let Some(link) = links::read(s) {
+            return Some(links::as_type(&link, &links::provider_name(&link.target.provider)));
+        }
         self.types.find(s.type_id.as_deref()).ok().flatten()
+    }
+
+    /// AWS profiles (names, regions, how they sign in; never keys), the regions, and what Keylo's AWS provider uses.
+    fn list_aws_profiles(&self) -> ToolResult {
+        let (config, _) = load_key()?;
+        let settings = links::provider_settings(&config, "aws");
+        let envs: Vec<Value> = environments::read(&settings)
+            .into_iter()
+            .map(|e| json!({ "name": e.name, "profile": e.profile, "region": e.region, "alwaysAsk": e.always_ask }))
+            .collect();
+        let result = json!({
+            "awsCli": if aws::cli_installed() { "installed" } else { "not found on PATH (Keylo reads AWS secrets through it: winget install Amazon.AWSCLI)" },
+            "keylo": {
+                "profile": links::setting(&settings, "profile"),
+                "region": links::setting(&settings, "region"),
+                "note": "Linked AWS secrets each keep the profile and region they were linked with.",
+            },
+            "environmentRegion": aws::environment_region(),
+            "environments": envs,
+            "defaultEnvironment": environments::default(&settings),
+            "profiles": aws::profiles(),
+            "regions": aws::REGIONS,
+        });
+        Ok(serde_json::to_string(&result).unwrap())
+    }
+
+    /// The secrets in AWS Secrets Manager for a profile and region: names, ARNs, descriptions and
+    /// tags, never values, grouped by their first path segment, and which are already linked in Keylo.
+    fn list_aws_secrets(&self, args: &Map<String, Value>) -> ToolResult {
+        let (config, _) = load_key()?;
+        let settings = links::provider_settings(&config, "aws");
+        let mut profile = opt_str(args, "profile").or_else(|| links::setting(&settings, "profile").map(str::to_string));
+        let mut region = opt_str(args, "region").or_else(|| links::setting(&settings, "region").map(str::to_string));
+        let environment = opt_str(args, "environment");
+        if let Some(name) = &environment {
+            let Some(e) = environments::find(&settings, name) else {
+                let names: Vec<String> = environments::read(&settings).into_iter().map(|e| e.name).collect();
+                tool_fail!("There's no AWS environment '{name}'. Environments: {}.", names.join(", "))
+            };
+            (profile, region) = (e.profile, e.region);
+        }
+        let provider = aws::Aws::new(std::sync::Arc::new(links::process::SystemRunner::default()));
+        let query = opt_str(args, "query");
+        let (used_region, secrets) = provider.list_secrets(profile.as_deref(), region.as_deref(), query.as_deref())?;
+
+        // Keylo secrets linked to AWS, by ARN (or by name, for per-environment links).
+        let mut linked: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for s in self.store.list()? {
+            if let Some(l) = links::read(&s).filter(|l| l.target.provider == "aws") {
+                linked.entry(l.target.item_id).or_default().push(s.name);
+            }
+        }
+        let mut projects: Vec<(String, usize)> = Vec::new();
+        for s in &secrets {
+            let p = s.name.split_once('/').map(|(p, _)| p.to_string()).unwrap_or_else(|| "(no prefix)".into());
+            match projects.iter_mut().find(|x| x.0 == p) {
+                Some(x) => x.1 += 1,
+                None => projects.push((p, 1)),
+            }
+        }
+        let list: Vec<Value> = secrets
+            .iter()
+            .map(|s| {
+                let mut o = json!({ "name": s.name, "arn": s.arn });
+                if let Some(d) = &s.description {
+                    o["description"] = json!(d);
+                }
+                if !s.tags.is_empty() {
+                    o["tags"] = json!(s.tags);
+                }
+                let names: Vec<&String> = linked.get(&s.arn).into_iter().chain(linked.get(&s.name)).flatten().collect();
+                if !names.is_empty() {
+                    o["linkedInKeyloAs"] = json!(names);
+                }
+                o
+            })
+            .collect();
+        let result = json!({
+            "environment": environment,
+            "profile": profile.unwrap_or_else(|| "(default credentials)".into()),
+            "region": used_region,
+            "count": secrets.len(),
+            "projects": projects.into_iter().map(|(p, n)| json!({ "project": p, "secrets": n })).collect::<Vec<_>>(),
+            "secrets": list,
+        });
+        Ok(serde_json::to_string(&result).unwrap())
     }
 
     fn list_types(&self) -> ToolResult {
@@ -318,18 +419,24 @@ impl Server {
             let Some(source) = source.as_str() else { tool_fail!("env.{var} must be a secret name.") };
             mappings.push((var.clone(), self.resolve(source)?));
         }
-        let mut uses: Vec<(SecretInfo, Option<String>)> = Vec::new();
-        for (_, u) in &mappings {
-            if !uses.iter().any(|x| eq_ic(&x.0.name, &u.0.name)) {
-                uses.push(u.clone());
-            }
-        }
+        let uses: Vec<SecretUse> = mappings.iter().map(|(_, u)| u.clone()).collect();
         self.authorize(&key, SecretOperation::Run, &uses, reason.as_deref(), Some(&format!("[{shell}] {command}")))?;
 
+        // Each secret (and environment) is read once, however many variables use it.
+        let mut read: HashMap<String, BTreeMap<String, String>> = HashMap::new();
         let mut environment = BTreeMap::new();
-        for (var, (info, field)) in &mappings {
-            let all = self.read_all(info)?;
-            environment.insert(var.clone(), self.pick(info, &all, field.as_deref())?);
+        for (var, u) in &mappings {
+            let label = u.label().to_lowercase();
+            if !read.contains_key(&label) {
+                let values = self.read_all(u)?;
+                read.insert(label.clone(), values);
+            }
+            environment.insert(var.clone(), self.pick(&u.info, &read[&label], u.field.as_deref())?);
+        }
+        for values in read.values_mut() {
+            for v in values.values_mut() {
+                zeroize::Zeroize::zeroize(v);
+            }
         }
         let result = run_shell(&shell, &command, dir.as_deref(), &environment, timeout);
         for v in environment.values_mut() {
@@ -357,7 +464,7 @@ impl Server {
         let mut secrets: Vec<SecretInfo> = Vec::new();
         for n in names {
             let Some(n) = n.as_str() else { tool_fail!("names must be strings.") };
-            let (info, _) = self.resolve(n)?;
+            let info = self.resolve(n)?.info;
             if !secrets.iter().any(|s| eq_ic(&s.name, &info.name)) {
                 secrets.push(info);
             }
@@ -375,19 +482,36 @@ impl Server {
         }
     }
 
-    /// The key's own scope, a recent approval, or else ask the user.
+    /// The key's own scope, a recent approval, or else ask the user. A use in an "always ask"
+    /// environment (prod) skips the key's scope and can't be allowed for good.
     fn authorize(
         &self,
         key: &AccessKey,
         op: SecretOperation,
-        uses: &[(SecretInfo, Option<String>)],
+        uses: &[SecretUse],
         reason: Option<&str>,
         command: Option<&str>,
     ) -> Result<(), ToolError> {
-        let secrets: Vec<SecretInfo> = uses.iter().map(|u| u.0.clone()).collect();
-        let names: Vec<String> = secrets.iter().map(|s| s.name.clone()).collect();
-        if key.allows(op, &secrets) {
-            access::audit(op.as_str(), &names, Some(key), "access key")?;
+        let mut secrets: Vec<SecretInfo> = Vec::new();
+        // Approvals and grants are per secret, except in "always ask" environments ("orders-db@prod");
+        // the audit log always records the environment.
+        let mut names: Vec<String> = Vec::new();
+        let mut logged: Vec<String> = Vec::new();
+        for u in uses {
+            if !secrets.iter().any(|s| eq_ic(&s.name, &u.info.name)) {
+                secrets.push(u.info.clone());
+            }
+            let name = if u.always_ask() { u.label() } else { u.info.name.clone() };
+            if !names.iter().any(|n| eq_ic(n, &name)) {
+                names.push(name);
+            }
+            if !logged.iter().any(|n| eq_ic(n, &u.label())) {
+                logged.push(u.label());
+            }
+        }
+        let always_ask = uses.iter().any(SecretUse::always_ask);
+        if !always_ask && key.allows(op, &secrets) {
+            access::audit(op.as_str(), &logged, Some(key), "access key")?;
             return Ok(());
         }
         let now = Local::now();
@@ -396,10 +520,10 @@ impl Server {
             names.iter().all(|n| approved.get(&(op, n.to_lowercase())).is_some_and(|until| *until > now))
         };
         if recent {
-            access::audit(op.as_str(), &names, Some(key), "approved earlier this session")?;
+            access::audit(op.as_str(), &logged, Some(key), "approved earlier this session")?;
             return Ok(());
         }
-        let choice = self.ask(key, "use", &names, reason, command, true, false);
+        let choice = self.ask(key, "use", &names, reason, command, !always_ask, false);
         if choice == Approval::Denied {
             tool_fail!("The user denied access to {}. Don't retry; ask them if it's needed.", names.join(", "));
         }
@@ -412,7 +536,7 @@ impl Server {
             }
         }
         let via = if choice == Approval::Always { "approved (added to key)" } else { "approved for the session" };
-        access::audit(op.as_str(), &names, Some(key), via)?;
+        access::audit(op.as_str(), &logged, Some(key), via)?;
         Ok(())
     }
 
@@ -483,23 +607,32 @@ impl Server {
 
     // ------------------------------------------------------------------------ helpers
 
-    /// "name" or "name:field"; an exact secret name wins.
-    fn resolve(&self, source: &str) -> Result<(SecretInfo, Option<String>), ToolError> {
+    /// "name", "name:field", "name@env" or "name@env:field"; an exact secret name wins (names may
+    /// contain ':' and '@').
+    fn resolve(&self, source: &str) -> Result<SecretUse, ToolError> {
         let r = SecretReference::parse(source, |n| self.store.exists(n).unwrap_or(false))
             .ok_or_else(|| ToolError(Error::NotFound(source.into()).to_string()))?;
         let info = self.store.find(&r.name)?.ok_or_else(|| ToolError(Error::NotFound(r.name.clone()).to_string()))?;
-        if is_linked(&info) {
-            tool_fail!("'{}' is linked to another vault; linked secrets aren't in the Rust build of Keylo yet.", info.name);
-        }
-        if let Some(e) = r.environment {
-            tool_fail!("'{}' isn't a per-environment link, so '@{e}' doesn't apply.", info.name);
-        }
-        Ok((info, r.field))
+        let env = links::environment_for(&info, &KeyloConfig::load()?, r.environment.as_deref())?;
+        Ok(SecretUse { info, field: r.field, env })
     }
 
-    /// Every field of a secret: plain ones as username/value, typed ones by field id. Each secret
-    /// value is registered for redaction.
-    fn read_all(&self, info: &SecretInfo) -> Result<BTreeMap<String, String>, ToolError> {
+    /// Every field of a secret: plain ones as username/value, typed ones by field id, linked ones
+    /// read live from their vault. Each secret value is registered for redaction.
+    fn read_all(&self, u: &SecretUse) -> Result<BTreeMap<String, String>, ToolError> {
+        let info = &u.info;
+        if let Some(link) = links::read(info) {
+            // Everything except known non-secret fields is redacted.
+            let values = links::resolve(info, &KeyloConfig::load()?, u.env.as_ref().map(|e| e.name.as_str()))?;
+            let mut redactor = self.redactor.lock().unwrap();
+            for (id, v) in &values {
+                let plain = link.fields.iter().any(|f| !f.secret && eq_ic(&f.id, id));
+                if !plain || !links::looks_public(id) {
+                    redactor.add(&format!("{}:{id}", info.name), v);
+                }
+            }
+            return Ok(values);
+        }
         let secret = self.store.get(&info.name)?;
         let mut all = BTreeMap::new();
         let mut redactor = self.redactor.lock().unwrap();
@@ -529,6 +662,9 @@ impl Server {
 
     /// One field: the main value when `field` is None or "value".
     fn pick(&self, info: &SecretInfo, all: &BTreeMap<String, String>, field: Option<&str>) -> Result<String, ToolError> {
+        if let Some(link) = links::read(info) {
+            return Ok(links::pick(info, &link, all, field)?);
+        }
         let t = self.type_of(info);
         let lower = field.map(str::to_lowercase);
         if matches!(lower.as_deref(), Some("username" | "key")) {
@@ -594,7 +730,49 @@ fn schema(t: Option<&SecretTypeDefinition>, s: &SecretInfo) -> Value {
     }
 }
 
+/// One use of a secret: which field, and for a per-environment link which environment.
+#[derive(Clone)]
+struct SecretUse {
+    info: SecretInfo,
+    field: Option<String>,
+    env: Option<VaultEnvironment>,
+}
+
+impl SecretUse {
+    /// "orders-db", or "orders-db@prod" for a per-environment link.
+    fn label(&self) -> String {
+        match &self.env {
+            Some(e) => format!("{}@{}", self.info.name, e.name),
+            None => self.info.name.clone(),
+        }
+    }
+
+    fn always_ask(&self) -> bool {
+        self.env.as_ref().is_some_and(|e| e.always_ask)
+    }
+}
+
+/// For a per-environment link: its environments ("name@env" picks one), the default, and which always ask.
+fn environments_of(s: &SecretInfo) -> Option<Value> {
+    let link = links::read(s).filter(|l| l.is_per_environment())?;
+    let settings = links::provider_settings(&KeyloConfig::load().ok()?, &link.target.provider);
+    let all = environments::read(&settings);
+    Some(json!({
+        "names": all.iter().map(|e| e.name.clone()).collect::<Vec<_>>(),
+        "default": environments::default(&settings),
+        "alwaysAsk": all.iter().filter(|e| e.always_ask).map(|e| e.name.clone()).collect::<Vec<_>>(),
+        "usage": format!("Use \"{0}@ENV\" or \"{0}@ENV:field\"; without @ENV the default environment is used.", s.name),
+    }))
+}
+
 fn details(t: Option<&SecretTypeDefinition>, s: &SecretInfo) -> Option<Value> {
+    if let Some(link) = links::read(s) {
+        let vault = match &link.r#where {
+            Some(w) => format!("{} ({w})", link.target.provider),
+            None => link.target.provider.clone(),
+        };
+        return Some(json!({ "linked_to": link.title, "vault": vault }));
+    }
     let mut d = Map::new();
     if let Some(u) = &s.username {
         let id = t.and_then(|t| t.username_field()).map(|f| f.id.clone()).unwrap_or_else(|| "username".into());
@@ -935,6 +1113,28 @@ pub fn definitions() -> Value {
         "annotations": { "readOnlyHint": true, "openWorldHint": false }
       },
       {
+        "name": "list_aws_profiles",
+        "title": "List AWS profiles and regions",
+        "description": "Keylo's AWS environments (dev, uat, prod…: each a profile and region; secrets linked per environment are used as name@env), the AWS profiles set up on this computer (~/.aws/config and ~/.aws/credentials: name, region, and how each signs in, e.g. sso or access keys; never any keys), every AWS region, whether the aws CLI is installed, and the profile and region Keylo's AWS Secrets Manager provider uses. Useful before running aws commands with run_with_secrets, or to tell the user which profile to link secrets from.",
+        "inputSchema": { "type": "object", "properties": {} },
+        "annotations": { "readOnlyHint": true, "openWorldHint": false }
+      },
+      {
+        "name": "list_aws_secrets",
+        "title": "List secrets in AWS Secrets Manager",
+        "description": "The secrets in AWS Secrets Manager for one profile and region (from list_aws_profiles; Keylo's configured ones by default): names, ARNs, descriptions and tags, never values. Also groups them by the first part of their name (\"project/db\" → \"project\") and says which are already linked in Keylo, under what name. To use one in a command it must first be linked in Keylo (ask the user: Link in the Keylo app, or keylo link --provider aws).",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "environment": { "type": "string", "description": "An environment from list_aws_profiles (dev, uat, prod…); overrides profile and region." },
+            "profile": { "type": "string", "description": "AWS profile name (see list_aws_profiles)." },
+            "region": { "type": "string", "description": "AWS region, e.g. us-east-1." },
+            "query": { "type": "string", "description": "Only secrets whose name, description or tags contain every word." }
+          }
+        },
+        "annotations": { "readOnlyHint": true, "openWorldHint": true }
+      },
+      {
         "name": "run_with_secrets",
         "title": "Run a command with secrets",
         "description": "Run a shell command with secrets as environment variables. This is the only way to use a secret: Keylo never returns values, and any that appear in the output are replaced with [keylo:name]. Returns the exit code, stdout and stderr. Secrets your key doesn't cover ask the user first.",
@@ -943,7 +1143,7 @@ pub fn definitions() -> Value {
           "properties": {
             "env": {
               "type": "object",
-              "description": "Environment variable -> secret name, which maps its main value, or 'name:field' for one field (see the fields from search_secrets), e.g. {\"GITHUB_TOKEN\": \"github-token\", \"DB_URL\": \"prod-db:connection_string\", \"DB_USER\": \"prod-db:username\"}.",
+              "description": "Environment variable -> secret name, which maps its main value, or 'name:field' for one field (see the fields from search_secrets), or 'name@env' / 'name@env:field' for an environment of a per-environment link, e.g. {\"GITHUB_TOKEN\": \"github-token\", \"DB_URL\": \"prod-db:connection_string\", \"DB_USER\": \"prod-db:username\"}.",
               "additionalProperties": { "type": "string" }
             },
             "command": { "type": "string", "description": "The command line. Reference variables in the shell's syntax: $env:VAR (powershell), %VAR% (cmd), $VAR (bash, zsh, sh)." },

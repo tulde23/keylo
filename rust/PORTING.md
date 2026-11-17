@@ -24,19 +24,22 @@ cargo build --release
 ```
 
 `tests/windows-compat.sh` checks the Rust and C# builds read each other's secrets and keys, and
-exercises the MCP server, in a throwaway data folder and credential prefix.
+exercises the MCP server, in a throwaway data folder and credential prefix. `tests/links.sh` tests
+linked secrets against fake `op` and `aws` programs (build `tests/fakevault`, copy it to `op.exe`
+and `aws.exe` in one folder, and pass that folder; set `FAKEVAULT` to it for the compat link checks).
 
 ## Status
 
 | Area | State |
 |---|---|
-| Store format, types, config, keys, gate, audit, redaction | Done; compatible with C# (34 checks with backups and import) |
+| Store format, types, config, keys, gate, audit, redaction | Done; compatible with C# (38 checks with backups, import and links) |
 | Windows platform | Done (Credential Manager, DPAPI, Hello, clipboard, ancestry) |
 | CLI: list, categories, types, get, set, edit, rm, run, keys, unlock, lock, status, config, version | Done |
 | MCP server: search_secrets, list_categories, list_types, run_with_secrets, request_access | Done; approvals use a message box until the app exists |
 | CLI: import (type guessing, subfolder categories), backup, restore (C# KEYLOBK1 format, both directions) | Done |
-| CLI: link, push, provider, keys --add-to-claude | To do |
-| Linked secrets (1Password, AWS Secrets Manager, per-environment links), list_aws_* tools | To do: through the `op` and `aws` CLIs, not SDKs |
+| CLI: link, push, provider (settings, per-environment `provider env`) | Done |
+| CLI: keys create --add-to-claude | To do |
+| Linked secrets (1Password, AWS Secrets Manager, per-environment links, "always ask" environments), push, list_aws_* tools | Done in core, CLI and MCP: through the `op` and `aws` CLIs, not SDKs. `tests/links.sh` runs them against fake CLIs (`tests/fakevault`) |
 | Tauri + React app: lock screen, top bar (ported from the WPF app, system window buttons), sidebar, list, detail, slide-in editor, settings, access keys, activity, approval window (`keylow --approve`) | Done (first version) |
 | App: custom secret types editor (Settings → Secret types; built-ins: icon and colour) | Done |
 | App: lock on screen lock, single instance | Done |

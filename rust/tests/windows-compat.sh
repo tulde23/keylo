@@ -3,6 +3,8 @@
 # wrote (plain, typed, large file-backed values, access keys), and the Rust MCP server works.
 # Uses a throwaway data folder and credential prefix, so real secrets are never touched.
 #   rust/tests/windows-compat.sh [path/to/rust/keylo.exe] [path/to/csharp/keylo.exe]
+# With FAKEVAULT set to a folder holding the fake op.exe and aws.exe (tests/fakevault), it also
+# checks links made by either build work in the other.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -122,5 +124,20 @@ printf 'postgres://erin:pw-3@db.prod:5432/orders' > "$KEYLO_HOME/import/prod/ord
 check "imported token, guessed api_key" "ghp_compat" "$("$csharp" get compat-token | tr -d '')"
 check "imported database, split into fields" "db.prod" "$("$csharp" get orders-db --field host | tr -d '')"
 check "subfolder became the category" "1" "$("$csharp" list cat:prod 2>/dev/null | grep -c orders-db || true)"
+
+if [[ -n ${FAKEVAULT:-} ]]; then
+  # Links: either build reads the other's (1Password through the fake op; the C# build reads AWS
+  # with the SDK, so for AWS only the stored link and environments are compared).
+  export PATH="$FAKEVAULT:$PATH"
+  "$rust" link rs-gh --item GitHub --vault Private >/dev/null 2>&1
+  check "C# reads a 1Password link Rust made" "fake-gh-token-456" "$("$csharp" get rs-gh --field api_token 2>&1 | tr -d '')"
+  "$csharp" link cs-gh --item st1 >/dev/null 2>&1
+  check "Rust reads a 1Password link C# made" "fake-gh-password-123" "$("$rust" get cs-gh 2>&1)"
+  "$rust" provider env aws set uat uat-p us-east-1 >/dev/null 2>&1
+  "$rust" provider env aws set prod prod-p us-east-2 >/dev/null 2>&1
+  check "C# reads environments Rust wrote" "1" "$("$csharp" provider env aws list 2>&1 | grep -c 'prod-p.*us-east-2.*yes' || true)"
+  "$rust" link rs-orders --provider aws --item orders/db --environment uat >/dev/null 2>&1
+  check "C# sees a per-environment link Rust made" "1" "$("$csharp" get rs-orders@qa 2>&1 | grep -c "no environment 'qa'" || true)"
+fi
 
 echo "$pass checks passed."

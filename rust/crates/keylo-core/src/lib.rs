@@ -13,6 +13,7 @@ pub mod gate;
 pub mod icons;
 pub mod import;
 pub mod inference;
+pub mod links;
 pub mod password;
 pub mod paths;
 pub mod platform;
