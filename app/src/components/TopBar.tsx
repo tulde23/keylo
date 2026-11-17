@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { FileDown, Link2, Lock, Plus, Search, Settings, X } from "lucide-react";
+import { FileDown, FolderDown, Link2, Lock, Plus, Search, Settings, X } from "lucide-react";
 
 export const TAGLINE = "Agents use them. Never see them.";
 
@@ -12,7 +12,8 @@ export default function TopBar(props: {
   query: string;
   onQuery: (q: string) => void;
   onNew: () => void;
-  onImport: () => void;
+  /** Pick files (or, with `folder`, a folder) and import them. */
+  onImport: (folder: boolean) => void;
   onLink: () => void;
   onSettings: () => void;
   onLock: () => void;
@@ -75,8 +76,11 @@ export default function TopBar(props: {
         <button className="tile accent" onClick={props.onNew} title="New secret (Ctrl+N)" aria-label="New secret">
           <Plus size={18} />
         </button>
-        <button className="tile quiet" onClick={props.onImport} title="Import files as secrets" aria-label="Import">
+        <button className="tile quiet" onClick={() => props.onImport(false)} title="Import files as secrets" aria-label="Import files">
           <FileDown size={18} />
+        </button>
+        <button className="tile quiet" onClick={() => props.onImport(true)} title="Import a folder; subfolders become categories" aria-label="Import folder">
+          <FolderDown size={18} />
         </button>
         <button className="tile quiet" onClick={props.onLink} title="Link from 1Password or AWS Secrets Manager" aria-label="Link from a vault">
           <Link2 size={18} />

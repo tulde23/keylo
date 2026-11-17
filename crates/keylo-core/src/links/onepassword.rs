@@ -17,11 +17,26 @@ use super::process::{Output, Runner};
 use super::*;
 use crate::types::{self, SecretTypeCatalog};
 
+static OP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub struct OnePassword {
     runner: Arc<dyn Runner>,
 }
 
-const NOT_INSTALLED: &str = "1Password CLI (op) isn't installed. Install it with: winget install AgileBits.1Password.CLI";
+/// How to install the 1Password CLI on this OS.
+pub fn install_hint() -> &'static str {
+    if cfg!(windows) {
+        "winget install AgileBits.1Password.CLI"
+    } else if cfg!(target_os = "macos") {
+        "brew install 1password-cli"
+    } else {
+        "see https://developer.1password.com/docs/cli/get-started/"
+    }
+}
+
+fn not_installed() -> String {
+    format!("1Password CLI (op) isn't installed. To install it: {}", install_hint())
+}
 
 impl OnePassword {
     pub fn new(runner: Arc<dyn Runner>) -> Self {
@@ -30,13 +45,16 @@ impl OnePassword {
 
     fn op(&self, args: &[&str], stdin: Option<&str>) -> Result<Output> {
         let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+        // One op at a time: 1Password asks to approve the first call, and calls made while that
+        // prompt is open would each ask again. Waiting lets them reuse the approval.
+        let _one = OP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         self.runner.run("op", &args, stdin)
     }
 
     fn op_or_fail(&self, args: &[&str]) -> Result<String> {
         let out = self.op(args, None)?;
         match out.code {
-            None => bail!("{NOT_INSTALLED}"),
+            None => bail!("{}", not_installed()),
             Some(0) => Ok(out.stdout),
             Some(code) => bail!("1Password: {}", out.first_error_line().unwrap_or_else(|| format!("op exited with {code}."))),
         }
@@ -185,7 +203,7 @@ impl VaultProvider for OnePassword {
         }
         match self.op(&args, None) {
             Err(e) => ProviderStatus { ready: false, message: e.to_string() },
-            Ok(o) if o.code.is_none() => ProviderStatus { ready: false, message: NOT_INSTALLED.into() },
+            Ok(o) if o.code.is_none() => ProviderStatus { ready: false, message: not_installed() },
             Ok(o) if !o.ok() => ProviderStatus {
                 ready: false,
                 message: o.first_error_line().unwrap_or_else(|| "op couldn't open the vault. Is the 1Password app unlocked with CLI integration on?".into()),
@@ -264,7 +282,7 @@ impl VaultProvider for OnePassword {
         args.push("-");
         match self.op(&args, Some(&item)) {
             Err(e) => fail(e.to_string()),
-            Ok(o) if o.code.is_none() => fail(NOT_INSTALLED.into()),
+            Ok(o) if o.code.is_none() => fail(not_installed()),
             Ok(o) if !o.ok() => fail(o.first_error_line().unwrap_or_else(|| format!("op exited with {}.", o.code.unwrap()))),
             Ok(_) => PushResult {
                 name: info.name.clone(),

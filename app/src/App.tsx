@@ -40,6 +40,7 @@ function Shell() {
   const [managingCategories, setManagingCategories] = useState(false);
   const [importing, setImporting] = useState<string[] | null>(null);
   const [linking, setLinking] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [dropping, setDropping] = useState(false);
 
   /** Runs a backend call; a "locked" error shows the lock screen, others a toast. */
@@ -72,8 +73,24 @@ function Shell() {
     if (status?.unlocked) run(refresh);
   }, [status?.unlocked, refresh, run]);
   useEffect(() => {
-    if (view === "settings" && status?.unlocked) run(refresh);
-  }, [view, status?.unlocked, refresh, run]);
+    if (settingsOpen && status?.unlocked) run(refresh);
+  }, [settingsOpen, status?.unlocked, refresh, run]);
+  // Locking closes Settings; unlocking starts back at the secrets.
+  useEffect(() => {
+    if (status && !status.unlocked) setSettingsOpen(false);
+  }, [status]);
+
+  // Esc clears the selection (back to "Select a secret"), unless something else wants it.
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement;
+      if (typing || document.querySelector(".drawer-backdrop, .modal-backdrop, .settings-backdrop")) return;
+      setSelected(null);
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
 
   // The screen locked: Keylo locked with it.
   useEffect(() => {
@@ -136,7 +153,6 @@ function Shell() {
     const map = new Map(categories.map((c) => [c.name.toLowerCase(), c]));
     return (s: Secret) => (s.category ? map.get(s.category.toLowerCase()) : undefined);
   }, [categories]);
-  const categoryNames = categories.map((c) => c.name);
 
   const current = secrets.find((s) => s.name === selected) ?? null;
 
@@ -176,16 +192,19 @@ function Shell() {
           if (q && !isSecretsView) setView("all");
         }}
         onNew={newSecret}
-        onImport={() => setImporting([])}
+        onImport={async (folder) => {
+          const picked = await run(() => api.pickImport(folder));
+          if (picked?.length) addImports(picked);
+        }}
         onLink={() => setLinking(true)}
-        onSettings={() => setView(view === "settings" ? "home" : "settings")}
+        onSettings={() => setSettingsOpen(!settingsOpen)}
         onLock={lock}
-        settingsActive={view === "settings"}
+        settingsActive={settingsOpen}
         lockTitle={lockTitle}
       />
       <Sidebar
         view={view}
-        onView={(v) => { setView(v); setQuery(""); }}
+        onView={(v) => { setView(v); setQuery(""); setSelected(null); }}
         categories={categories}
         types={types}
         secrets={secrets}
@@ -221,16 +240,17 @@ function Shell() {
         </>
       )}
       {view === "activity" && <ActivityView run={run} />}
-      {view === "settings" && (
+      {settingsOpen && (
         <SettingsView
           info={info}
           secrets={secrets}
           types={types}
           onTypes={setTypes}
-          categories={categoryNames}
+          categories={categories}
           run={run}
           onSettingsSaved={async () => setStatus(await api.status())}
           onDataChanged={() => { run(refresh); api.types().then(setTypes).catch(() => {}); }}
+          onClose={() => setSettingsOpen(false)}
         />
       )}
       {editing && (
@@ -238,7 +258,7 @@ function Shell() {
           secret={editing.secret}
           values={editing.values}
           types={types}
-          categories={categoryNames}
+          categories={categories}
           categoryOf={categoryOf}
           run={run}
           onClose={() => setEditing(null)}
@@ -254,7 +274,7 @@ function Shell() {
         <ImportPanel
           initialPaths={importing}
           types={types}
-          categories={categoryNames}
+          categories={categories}
           run={run}
           onClose={() => setImporting(null)}
           onImported={() => run(refresh)}
@@ -262,7 +282,7 @@ function Shell() {
       )}
       {linking && (
         <LinkPanel
-          categories={categoryNames}
+          categories={categories}
           run={run}
           onClose={() => setLinking(false)}
           onLinked={async (name) => {

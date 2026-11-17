@@ -230,6 +230,8 @@ pub struct AwsChoices {
     initial: usize,
     initial_region: Option<String>,
     cli_installed: bool,
+    /// How to install the AWS CLI on this OS.
+    install_hint: &'static str,
 }
 
 /// The Link panel's AWS pickers: the environments, the default credentials, then every profile in ~/.aws.
@@ -271,6 +273,7 @@ pub fn aws_choices(state: State<'_, AppState>) -> Res<AwsChoices> {
         initial,
         initial_region,
         cli_installed: aws::cli_installed(),
+        install_hint: aws::install_hint(),
     })
 }
 

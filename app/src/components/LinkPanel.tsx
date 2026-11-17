@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, Lock, Search } from "lucide-react";
-import { api, type AwsChoices, type LinkedItem, type LinkProposal, type LinkScope, type VaultProvider } from "../api";
+import { api, type CategorySummary, type AwsChoices, type LinkedItem, type LinkProposal, type LinkScope, type VaultProvider } from "../api";
 import type { Run } from "../App";
 import { Drawer, useToast } from "./ui";
+import CategoryDropdown from "./CategoryDropdown";
 
 /**
  * Links secrets to items in another vault (1Password, AWS Secrets Manager): Keylo keeps only a
@@ -10,7 +11,7 @@ import { Drawer, useToast } from "./ui";
  * or an environment to link per environment), search, choose one item or several, and link.
  */
 export default function LinkPanel({ categories, run, onClose, onLinked }: {
-  categories: string[];
+  categories: CategorySummary[];
   run: Run;
   onClose: () => void;
   onLinked: (firstName: string) => void;
@@ -68,12 +69,18 @@ export default function LinkPanel({ categories, run, onClose, onLinked }: {
     }
   }, [providerId, scope]);
 
-  // Search when the vault or where to look changes (typing searches on Enter).
+  // Search when the vault or where to look changes (typing searches on Enter). Only when they
+  // really change: each search can make 1Password ask for approval.
+  const scopeKey = isAws ? JSON.stringify(scope) : "";
+  const lastAuto = useRef<string | null>(null);
   useEffect(() => {
     if (isAws && !aws) return;
+    const key = `${providerId}|${scopeKey}`;
+    if (lastAuto.current === key) return;
+    lastAuto.current = key;
     search(query);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [providerId, scope]);
+  }, [providerId, scopeKey, aws]);
 
   const severalLocations = useMemo(() => new Set((items ?? []).map((i) => i.location)).size > 1, [items]);
   const chosen = (items ?? []).filter((i) => selected.includes(i.itemId));
@@ -155,7 +162,7 @@ export default function LinkPanel({ categories, run, onClose, onLinked }: {
       {isAws && aws && (
         <>
           {!aws.cliInstalled && (
-            <p className="warning small-text"><AlertTriangle size={14} /> The AWS CLI isn't installed; Keylo reads AWS through it (winget install Amazon.AWSCLI).</p>
+            <p className="warning small-text"><AlertTriangle size={14} /> The AWS CLI isn't installed; Keylo reads AWS through it. To install it: {aws.installHint}</p>
           )}
           <div className="form-grid two">
             <label className="form-row">
@@ -242,12 +249,11 @@ export default function LinkPanel({ categories, run, onClose, onLinked }: {
         <p className="muted">{chosen.length} items, each linked with all its fields and named after its title.</p>
       )}
       {chosen.length > 0 && (
-        <label className="form-row">
+        <div className="form-row">
           <span>Category</span>
-          <input list="link-categories" value={category} onChange={(e) => setCategory(e.target.value)} maxLength={64}
-            placeholder={chosen.length > 1 ? "Each item's vault" : ""} aria-label="Category" />
-          <datalist id="link-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
-        </label>
+          <CategoryDropdown value={category} onChange={setCategory} categories={categories}
+            noneLabel={chosen.length > 1 ? "Each item's vault" : "From the vault"} />
+        </div>
       )}
     </Drawer>
   );

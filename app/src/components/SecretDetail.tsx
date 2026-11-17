@@ -68,7 +68,12 @@ export default function SecretDetail(props: {
   if (!secret) {
     return (
       <section className="detail-pane detail-empty">
-        <p className="muted">Select a secret to see its details.</p>
+        <div className="empty-state">
+          <img src="/keylo.svg" alt="" width={72} height={72} />
+          <h2>Select a secret</h2>
+          <p className="muted">Values stay encrypted until you reveal or copy them.</p>
+          <p className="muted">Ctrl+N new · Ctrl+F search · Ctrl+L lock</p>
+        </div>
       </section>
     );
   }

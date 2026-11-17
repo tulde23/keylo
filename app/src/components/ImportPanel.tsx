@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Check, FilePlus, FolderPlus, X } from "lucide-react";
-import { api, type ImportResult, type SecretType } from "../api";
+import { api, type CategorySummary, type ImportResult, type SecretType } from "../api";
+import CategoryDropdown from "./CategoryDropdown";
 import type { Run } from "../App";
 import { Drawer } from "./ui";
 
@@ -11,7 +12,7 @@ import { Drawer } from "./ui";
 export default function ImportPanel({ initialPaths, types, categories, run, onClose, onImported }: {
   initialPaths: string[];
   types: SecretType[];
-  categories: string[];
+  categories: CategorySummary[];
   run: Run;
   onClose: () => void;
   onImported: () => void;
@@ -128,12 +129,11 @@ export default function ImportPanel({ initialPaths, types, categories, run, onCl
           </ul>
 
           <div className="form-grid">
-            <label className="form-row">
+            <div className="form-row">
               <span>Category for everything</span>
-              <input list="import-categories" value={category} onChange={(e) => setCategory(e.target.value)}
-                placeholder={subfolders ? "From subfolders" : "None"} maxLength={64} aria-label="Category for everything" />
-              <datalist id="import-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
-            </label>
+              <CategoryDropdown value={category} onChange={setCategory} categories={categories}
+                noneLabel={subfolders ? "From subfolders" : "None"} />
+            </div>
           </div>
           <label className="check">
             <input type="checkbox" checked={subfolders} disabled={!!category.trim()} onChange={(e) => setSubfolders(e.target.checked)} />

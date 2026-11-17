@@ -2,7 +2,7 @@ import { Activity, Folder, Home, Layers, Pencil } from "lucide-react";
 import type { AppInfo, CategorySummary, Secret, SecretType } from "../api";
 import { IconView } from "./ui";
 
-/** "home", "all", "cat:NAME", "type:ID", "activity" or "settings". */
+/** "home", "all", "cat:NAME", "type:ID", or "activity". */
 export type View = string;
 
 export default function Sidebar(props: {
