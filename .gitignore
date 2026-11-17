@@ -6,3 +6,4 @@ dist/
 TestResults/
 /target/
 tests/fakevault/target/
+app/src-tauri/binaries/

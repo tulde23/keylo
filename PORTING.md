@@ -48,5 +48,5 @@ and `aws.exe` in one folder, and pass that folder; set `FAKEVAULT` to it for the
 | App: import panel (Import tile, drop files on the window, `keylow --import PATH...`), Settings → Backup (back up, restore with preview) | Done |
 | App: linked secrets (detail view with environment picker, Link panel for 1Password and AWS, details-only edit), push to a vault, Settings → Vault providers (settings, AWS environments with always ask and default) | Done |
 | `keylo mcp` opening the app's approval window (message box only without the app) | Done; buttons wake after 0.8 s so a stray click can't answer |
-| macOS platform (Keychain, Touch ID) and Linux (Secret Service / file vault, polkit) | To do |
-| Packaging and CI (release workflow, signing, notarization) | To do |
+| macOS platform (Keychain, Touch ID via keylo-mac) and Linux (Secret Service or the vault file, polkit) | Done; checked in CI (Touch ID needs a real Mac) |
+| Packaging and CI: every merge to main builds and tests Windows, Linux (x64, ARM64) and macOS (unsigned) and publishes the latest release (`.github/workflows/release.yml`; installers in `packaging/`) | Done; macOS signing and notarization not in CI |

@@ -1,0 +1,12 @@
+{
+  "bundle": {
+    "externalBin": ["binaries/keylo"],
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/share/polkit-1/actions/io.github.tulde23.keylo.policy": "../../packaging/linux/io.github.tulde23.keylo.policy"
+        }
+      }
+    }
+  }
+}

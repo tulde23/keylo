@@ -6,19 +6,24 @@
 #   docker run --rm -v "$PWD:/src:ro" -v keylo-rust-target:/target [-v CSHARP_BUNDLE:/csharp:ro] \
 #     rust:trixie bash /src/tests/linux-compat.sh
 #
-# /csharp is the unpacked C# release (keylo-X-linux-x64), optional.
+# /csharp is the unpacked C# release (keylo-X-linux-x64), optional. In CI: KEYLO_BIN=path/to/keylo
+# tests/linux-compat.sh (gnome-keyring and dbus installed; no C# comparison).
 set -euo pipefail
 
-export CARGO_TARGET_DIR=/target DEBIAN_FRONTEND=noninteractive
-echo "== packages"
-apt-get update -qq >/dev/null
-apt-get install -y -qq gnome-keyring dbus libsecret-1-0 libicu-dev >/dev/null 2>&1
-
-echo "== build and unit tests"
-cd /src
-cargo build -q -p keylo-cli
-cargo test -q -p keylo-core -p keylo-platform 2>&1 | grep -E "test result|FAILED|panicked" || true
-rust=$CARGO_TARGET_DIR/debug/keylo
+if [[ -n ${KEYLO_BIN:-} ]]; then
+  # CI: a keylo already built; the runner installed gnome-keyring and dbus.
+  rust=$KEYLO_BIN
+else
+  export CARGO_TARGET_DIR=/target DEBIAN_FRONTEND=noninteractive
+  echo "== packages"
+  apt-get update -qq >/dev/null
+  apt-get install -y -qq gnome-keyring dbus libsecret-1-0 libicu-dev >/dev/null 2>&1
+  echo "== build and unit tests"
+  cd /src
+  cargo build -q -p keylo-cli
+  cargo test -q -p keylo-core -p keylo-platform 2>&1 | grep -E "test result|FAILED|panicked" || true
+  rust=$CARGO_TARGET_DIR/debug/keylo
+fi
 csharp=/csharp/lib/keylo
 [[ -x $csharp ]] || csharp=""
 
