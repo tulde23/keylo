@@ -3,7 +3,7 @@
 # the vault-file store and the desktop keyring (gnome-keyring on a private D-Bus), each written by
 # one build and read by the other when the C# build is given.
 #
-#   docker run --rm -v "$PWD/rust:/src:ro" -v keylo-rust-target:/target [-v CSHARP_BUNDLE:/csharp:ro] \
+#   docker run --rm -v "$PWD:/src:ro" -v keylo-rust-target:/target [-v CSHARP_BUNDLE:/csharp:ro] \
 #     rust:trixie bash /src/tests/linux-compat.sh
 #
 # /csharp is the unpacked C# release (keylo-X-linux-x64), optional.

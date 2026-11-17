@@ -2,7 +2,7 @@
 # macOS checks for the Rust build in CI: the keylo command against a throwaway keychain
 # (KEYLO_KEYCHAIN), never the login keychain. Touch ID can't run on a CI machine, so the identity
 # check is off (hello = never); try it on a real Mac.
-#   rust/tests/macos-ci.sh [path/to/keylo]
+#   tests/macos-ci.sh [path/to/keylo]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 keylo=${1:-target/debug/keylo}

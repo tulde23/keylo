@@ -1,7 +1,7 @@
 //! Keylo on macOS: the login keychain, Touch ID, a concealed pasteboard and ps for process info.
 //! Touch ID, the pasteboard and approval alerts need Apple's Objective-C frameworks, so they go
 //! through keylo-mac, the small Swift helper installed next to keylo
-//! (src/Keylo.Platform.MacOS/helper/keylo-mac.swift, shared with the C# build).
+//! (rust_csharp/src/Keylo.Platform.MacOS/helper/keylo-mac.swift, shared with the C# build).
 
 mod keychain;
 

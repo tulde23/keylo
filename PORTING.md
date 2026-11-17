@@ -1,6 +1,6 @@
 # Keylo in Rust + Tauri
 
-The Rust port lives in `rust/`, next to the C# code it replaces. It shares the C# build's data
+The Rust port is at the repository root; the C# code it replaces is in `rust_csharp/`. It shares the C# build's data
 exactly (secrets in the OS store, `config.json`, `types.json`, `session.bin`, `audit.log`, the
 encrypted `blobs/` files), so both builds can be used on one machine during the move.
 

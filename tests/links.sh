@@ -2,7 +2,7 @@
 # Linked secrets (1Password, AWS Secrets Manager, per-environment links), push and provider
 # commands, and the MCP server's link and AWS tools, against fake `op` and `aws` (tests/fakevault)
 # in a throwaway data folder and credential prefix. Never touches real vaults or secrets.
-#   rust/tests/links.sh FAKEVAULT_DIR [path/to/keylo.exe]
+#   tests/links.sh FAKEVAULT_DIR [path/to/keylo.exe]
 cd "$(dirname "$0")/.."
 FAKE=${1:?Usage: tests/links.sh FAKEVAULT_DIR (a folder with the fake op.exe and aws.exe)}
 K=$(realpath "${2:-target/debug/keylo.exe}")

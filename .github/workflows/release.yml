@@ -3,6 +3,7 @@
 # Mac (./build.sh --release; the Developer ID key stays there): upload its zip, update the sums
 # and publish the draft by hand.
 # Run it from the Actions tab (workflow_dispatch) to build and test without making a release.
+# The C# Keylo it builds lives in rust_csharp/ (the Rust port is at the root).
 name: release
 
 on:
@@ -16,6 +17,9 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: rust_csharp
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -44,7 +48,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: windows-x64
-          path: out/*.zip
+          path: rust_csharp/out/*.zip
           if-no-files-found: error
 
   linux:
@@ -56,6 +60,9 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: rust_csharp
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -71,7 +78,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.arch }}
-          path: dist/keylo-*-linux-*.tar.gz
+          path: rust_csharp/dist/keylo-*-linux-*.tar.gz
           if-no-files-found: error
 
   release:

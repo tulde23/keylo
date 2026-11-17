@@ -2,7 +2,7 @@
 # Checks that the Rust keylo and the C# keylo share one store on Windows: each reads what the other
 # wrote (plain, typed, large file-backed values, access keys), and the Rust MCP server works.
 # Uses a throwaway data folder and credential prefix, so real secrets are never touched.
-#   rust/tests/windows-compat.sh [path/to/rust/keylo.exe] [path/to/csharp/keylo.exe]
+#   tests/windows-compat.sh [path/to/rust/keylo.exe] [path/to/csharp/keylo.exe]
 # With FAKEVAULT set to a folder holding the fake op.exe and aws.exe (tests/fakevault), it also
 # checks links made by either build work in the other.
 set -euo pipefail
