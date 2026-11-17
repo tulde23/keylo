@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Bot, Folder, Search, Copy, Info, KeyRound, Link2, Palette, Plus, Settings2, Shapes, ShieldCheck, Trash2, X, type LucideIcon } from "lucide-react";
 import { api, timeAgo, type CategorySummary, type ClaudeStatus, type AccessKey, type AppInfo, type KeyInput, type Secret, type SecretType, type Settings } from "../api";
@@ -35,6 +35,8 @@ export default function SettingsView(props: {
   onSettingsSaved: () => Promise<void>;
   onDataChanged: () => void;
   onClose: () => void;
+  /** Bumped when Keylo's data changed outside the window: keys, settings and Claude Code's status reload. */
+  version: number;
 }) {
   const { info, run, onClose } = props;
   const [tab, setTab] = useState<Tab>("general");
@@ -56,6 +58,16 @@ export default function SettingsView(props: {
   }, []);
 
   const dirty = saved && draft && JSON.stringify(saved) !== JSON.stringify(draft);
+
+  // Changed outside the window (keylo keys create, keylo config…): reload, keeping unsaved edits.
+  const dirtyNow = useRef(false);
+  dirtyNow.current = !!dirty;
+  useEffect(() => {
+    if (props.version === 0) return;
+    api.keys().then(setKeys).catch(() => {});
+    loadClaude();
+    api.settings().then((s) => { if (!dirtyNow.current) { setSaved(s); setDraft(s); } }).catch(() => {});
+  }, [props.version]); // eslint-disable-line react-hooks/exhaustive-deps
   const saveSettings = async () => {
     if (!draft) return;
     const s = await run(() => api.saveSettings(draft));
