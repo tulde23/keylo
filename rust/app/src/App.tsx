@@ -4,6 +4,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api, LOCKED, message, type AppInfo, type CategorySummary, type RecentUse, type Secret, type SecretType, type Status } from "./api";
 import CategoryManager from "./components/CategoryManager";
 import ImportPanel from "./components/ImportPanel";
+import LinkPanel from "./components/LinkPanel";
 import LockScreen from "./components/LockScreen";
 import Sidebar, { type View } from "./components/Sidebar";
 import SecretList from "./components/SecretList";
@@ -38,6 +39,7 @@ function Shell() {
   const [categories, setCategories] = useState<CategorySummary[]>([]);
   const [managingCategories, setManagingCategories] = useState(false);
   const [importing, setImporting] = useState<string[] | null>(null);
+  const [linking, setLinking] = useState(false);
   const [dropping, setDropping] = useState(false);
 
   /** Runs a backend call; a "locked" error shows the lock screen, others a toast. */
@@ -175,6 +177,7 @@ function Shell() {
         }}
         onNew={newSecret}
         onImport={() => setImporting([])}
+        onLink={() => setLinking(true)}
         onSettings={() => setView(view === "settings" ? "home" : "settings")}
         onLock={lock}
         settingsActive={view === "settings"}
@@ -255,6 +258,18 @@ function Shell() {
           run={run}
           onClose={() => setImporting(null)}
           onImported={() => run(refresh)}
+        />
+      )}
+      {linking && (
+        <LinkPanel
+          categories={categoryNames}
+          run={run}
+          onClose={() => setLinking(false)}
+          onLinked={async (name) => {
+            await run(refresh);
+            if (isSecretsView) setSelected(name);
+            else { setView("all"); setSelected(name); }
+          }}
         />
       )}
       {dropping && <div className="drop-overlay"><div>Drop files or folders to import them</div></div>}

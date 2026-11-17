@@ -46,7 +46,7 @@ and `aws.exe` in one folder, and pass that folder; set `FAKEVAULT` to it for the
 | App: categories manager (create, rename, merge, style, delete with move or delete), per-secret icon and colour | Done |
 | App: icon images (upload, image address, paste; same icons/ files as C#), build number in the sidebar and lock screen | Done |
 | App: import panel (Import tile, drop files on the window, `keylow --import PATH...`), Settings → Backup (back up, restore with preview) | Done |
-| App: link | To do |
+| App: linked secrets (detail view with environment picker, Link panel for 1Password and AWS, details-only edit), push to a vault, Settings → Vault providers (settings, AWS environments with always ask and default) | Done |
 | `keylo mcp` opening the app's approval window (message box only without the app) | Done; buttons wake after 0.8 s so a stray click can't answer |
 | macOS platform (Keychain, Touch ID) and Linux (Secret Service / file vault, polkit) | To do |
 | Packaging and CI (release workflow, signing, notarization) | To do |

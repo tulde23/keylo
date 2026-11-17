@@ -30,13 +30,15 @@ export default function SecretEditor(props: {
   const [shown, setShown] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
 
+  const linked = !!editing?.linked;
   const type = props.types.find((t) => t.id === typeId);
   const formFields = useMemo(
-    () => type?.fields ?? [
+    // A link's values live in its vault: only its name and details are edited here.
+    () => linked ? [] : type?.fields ?? [
       { id: "username", label: "Username", kind: "Username" as const, secret: false, main: false, options: null },
       { id: "value", label: "Value", kind: "SecretText" as const, secret: true, main: true, options: null },
     ],
-    [type],
+    [type, linked],
   );
 
   const set = (id: string, value: string) => setFields((f) => ({ ...f, [id]: value }));
@@ -107,6 +109,13 @@ export default function SecretEditor(props: {
           </div>
         )}
 
+        {editing?.link && (
+          <p className="notice">
+            Linked to <strong>{editing.link.title}</strong> in {editing.link.providerName}. Its values stay there; only the name and
+            details change here.
+          </p>
+        )}
+
         <label className="form-row">
           <span>Name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="github-token" spellCheck={false} />
@@ -163,7 +172,7 @@ export default function SecretEditor(props: {
           <div className="style-preview">
             {/* As it will show: its own choice, else its category's, else its type's. */}
             <SecretIcon
-              secret={{ ...(editing ?? ({} as Secret)), name, category: category || null, icon, color, type: typeId || null, linked: false }}
+              secret={{ ...(editing ?? ({} as Secret)), name, category: category || null, icon, color, type: typeId || null }}
               type={type}
               category={category ? props.categoryOf({ category } as Secret) : undefined}
               size={36}

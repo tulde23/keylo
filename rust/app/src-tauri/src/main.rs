@@ -6,6 +6,7 @@
 
 mod commands;
 mod transfer;
+mod vaults;
 
 use std::sync::Mutex;
 
@@ -99,6 +100,15 @@ fn main() {
             commands::approval_request,
             commands::answer_approval,
             transfer::pick_import,
+            vaults::vault_providers,
+            vaults::save_vault_provider,
+            vaults::vault_status,
+            vaults::aws_choices,
+            vaults::link_search,
+            vaults::link_describe,
+            vaults::create_links,
+            vaults::push_preview,
+            vaults::push_secret,
             transfer::take_startup_import,
             transfer::import_plan,
             transfer::import_files,

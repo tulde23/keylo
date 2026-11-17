@@ -9,7 +9,7 @@ use keylo_core::approval;
 use keylo_core::categories::{CategoryCatalog, CategorySummary};
 use keylo_core::config::{HelloMode, KeyloConfig};
 use keylo_core::gate::AccessGate;
-use keylo_core::refs::is_linked;
+use keylo_core::links;
 use keylo_core::secrets::{SecretDraft, SecretInfo, StorageKind};
 use keylo_core::store::SecretStore;
 use keylo_core::types::{self, FieldKind, SecretTypeCatalog, SecretTypeDefinition};
@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State, WebviewWindow};
 use zeroize::Zeroizing;
 
+use crate::vaults::{self, LinkDto};
 use crate::AppState;
 
 pub type Res<T> = Result<T, String>;
@@ -133,6 +134,8 @@ pub struct SecretRow {
     info: SecretInfo,
     pinned: bool,
     linked: bool,
+    /// For a linked secret: where it points and its fields (no values).
+    link: Option<LinkDto>,
     file_backed: bool,
 }
 
@@ -141,13 +144,15 @@ pub fn secrets(state: State<'_, AppState>) -> Res<Vec<SecretRow>> {
     require_unlocked(&state)?;
     let activity = Activity::default();
     let pins = activity.pins();
+    let config = KeyloConfig::load().map_err(err)?;
     Ok(SecretStore::default()
         .list()
         .map_err(err)?
         .into_iter()
         .map(|info| SecretRow {
             pinned: pins.iter().any(|p| eq_ic(p, &info.name)),
-            linked: is_linked(&info),
+            linked: links::is_linked(&info),
+            link: vaults::link_dto(&info, &config),
             file_backed: info.storage == StorageKind::EncryptedFile,
             info,
         })
@@ -282,20 +287,33 @@ pub fn delete_type(state: State<'_, AppState>, id: String) -> Res<Vec<TypeDto>> 
 
 /// Every field's value (typed) or the value (plain). Needs the identity check.
 #[tauri::command]
-/// `for_edit`: only stored fields (no derived connection string), to save back.
-pub async fn reveal(window: WebviewWindow, state: State<'_, AppState>, name: String, for_edit: bool) -> Res<BTreeMap<String, String>> {
+/// `for_edit`: only stored fields (no derived connection string), to save back. A linked secret's
+/// values are read from its vault (`environment` picks one of a per-environment link).
+pub async fn reveal(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    name: String,
+    for_edit: bool,
+    environment: Option<String>,
+) -> Res<BTreeMap<String, String>> {
     ensure(&window, &state, &format!("Keylo: show '{name}'"), true).await?;
-    let fields = read_fields(&name, !for_edit)?;
+    let fields = tauri::async_runtime::spawn_blocking({
+        let name = name.clone();
+        move || read_fields(&name, !for_edit, environment.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     let _ = Activity::default().record_use(&name, "viewed");
     Ok(fields)
 }
 
-fn read_fields(name: &str, derive: bool) -> Res<BTreeMap<String, String>> {
+fn read_fields(name: &str, derive: bool, environment: Option<&str>) -> Res<BTreeMap<String, String>> {
     let store = SecretStore::default();
-    let secret = store.get(name).map_err(err)?;
-    if is_linked(&secret.info) {
-        return Err("Linked secrets (1Password, AWS) aren't in the Rust build of Keylo yet.".into());
+    let info = store.find(name).map_err(err)?.ok_or_else(|| err(Error::NotFound(name.to_string())))?;
+    if links::is_linked(&info) {
+        return vaults::resolve(&info, environment);
     }
+    let secret = store.get(name).map_err(err)?;
     let mut out = BTreeMap::new();
     match SecretTypeCatalog::default().find(secret.info.type_id.as_deref()).map_err(err)? {
         Some(t) => out = types::read_fields(&t, &secret.info, &secret.value, derive),
@@ -314,21 +332,40 @@ fn read_fields(name: &str, derive: bool) -> Res<BTreeMap<String, String>> {
 
 /// Copies one field (default: the main value) to the secure clipboard; it clears itself later.
 #[tauri::command]
-pub async fn copy_field(window: WebviewWindow, state: State<'_, AppState>, name: String, field: Option<String>) -> Res<i64> {
+pub async fn copy_field(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    name: String,
+    field: Option<String>,
+    environment: Option<String>,
+) -> Res<i64> {
     let info = SecretStore::default().find(&name).map_err(err)?.ok_or_else(|| err(Error::NotFound(name.clone())))?;
-    let t = SecretTypeCatalog::default().find(info.type_id.as_deref()).map_err(err)?;
-    let field = field.unwrap_or_else(|| t.as_ref().and_then(|t| t.primary()).map(|p| p.id.clone()).unwrap_or_else(|| "value".into()));
+    let link = links::read(&info);
+    let t = match &link {
+        Some(_) => None,
+        None => SecretTypeCatalog::default().find(info.type_id.as_deref()).map_err(err)?,
+    };
+    let field = field.unwrap_or_else(|| match &link {
+        Some(l) => l.main_field().unwrap_or_else(|| "value".into()),
+        None => t.as_ref().and_then(|t| t.primary()).map(|p| p.id.clone()).unwrap_or_else(|| "value".into()),
+    });
     // Non-secret fields (host, url, username) copy without the identity check.
-    let is_secret = match &t {
-        Some(t) => t.field(&field).is_some_and(|f| f.is_secret()),
-        None => field != "username",
+    let is_secret = match (&link, &t) {
+        (Some(l), _) => l.fields.iter().find(|f| f.id == field).is_none_or(|f| f.secret),
+        (None, Some(t)) => t.field(&field).is_some_and(|f| f.is_secret()),
+        (None, None) => field != "username",
     };
     if is_secret {
         ensure(&window, &state, &format!("Keylo: copy '{name}'"), true).await?;
     } else {
         require_unlocked(&state)?;
     }
-    let fields = read_fields(&name, true)?;
+    let fields = tauri::async_runtime::spawn_blocking({
+        let name = name.clone();
+        move || read_fields(&name, true, environment.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     let Some(text) = fields.get(&field).map(|v| Zeroizing::new(v.clone())) else {
         return Err(format!("'{name}' has no {field}."));
     };
@@ -366,7 +403,23 @@ pub async fn save_secret(window: WebviewWindow, state: State<'_, AppState>, inpu
     let catalog = SecretTypeCatalog::default();
     let non_empty = |v: &Option<String>| v.clone().filter(|s| !s.trim().is_empty());
 
+    // A linked secret: only its name and details change; the link stays as it is.
+    let original_link = match &input.original_name {
+        Some(o) => store.find(o).map_err(err)?.and_then(|i| links::read(&i)),
+        None => None,
+    };
     let draft = match input.type_id.as_deref().filter(|t| !t.is_empty()) {
+        Some(links::TYPE_ID) => {
+            let link = original_link.ok_or("Link secrets with Link, not Add.")?;
+            links::draft(
+                &input.name,
+                &link,
+                non_empty(&input.category).as_deref(),
+                non_empty(&input.notes).as_deref(),
+                non_empty(&input.icon).as_deref(),
+                non_empty(&input.color).as_deref(),
+            )
+        }
         Some(type_id) => {
             let t = catalog.find(Some(type_id)).map_err(err)?.ok_or_else(|| format!("No type '{type_id}'."))?;
             let fields: BTreeMap<String, String> = input.fields.into_iter().filter(|(_, v)| !v.is_empty()).collect();

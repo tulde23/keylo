@@ -3,6 +3,7 @@ import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 import { api, timeAgo, type AccessKey, type AppInfo, type KeyInput, type Secret, type SecretType, type Settings } from "../api";
 import TypesSection from "./TypesSection";
 import BackupSection from "./BackupSection";
+import VaultsSection from "./VaultsSection";
 import type { Run } from "../App";
 import { Drawer, Modal, useToast } from "./ui";
 
@@ -134,6 +135,8 @@ export default function SettingsView(props: {
       </section>
 
       <TypesSection types={props.types} secrets={props.secrets} run={run} onTypes={props.onTypes} />
+
+      <VaultsSection run={run} verifierName={info.verifierName} />
 
       <BackupSection run={run} verifierName={info.verifierName} onRestored={props.onDataChanged} />
 

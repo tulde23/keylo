@@ -12,7 +12,7 @@ pub mod process;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::config::KeyloConfig;
 use crate::secrets::{Secret, SecretDraft, SecretInfo};
@@ -56,7 +56,7 @@ pub fn setting<'a>(settings: &'a Settings, key: &str) -> Option<&'a str> {
 // ---------------------------------------------------------------------------- items and fields
 
 /// An item found in a linked vault (no values).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LinkedItemSummary {
     pub item_id: String,
@@ -69,7 +69,7 @@ pub struct LinkedItemSummary {
 }
 
 /// A field of a linked item. `id` is stable between describing and resolving an item.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinkedField {
     pub id: String,
     pub label: String,
@@ -134,7 +134,7 @@ pub(crate) fn matches_words(query: Option<&str>, texts: &[&str]) -> bool {
 
 /// A named environment of a vault (dev, uat, prod…): which profile and region to read it with on
 /// this computer. `always_ask` makes every use from it ask the user, whatever an access key covers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultEnvironment {
     pub name: String,

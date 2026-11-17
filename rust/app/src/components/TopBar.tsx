@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { FileDown, Lock, Plus, Search, Settings, X } from "lucide-react";
+import { FileDown, Link2, Lock, Plus, Search, Settings, X } from "lucide-react";
 
 export const TAGLINE = "Agents use them. Never see them.";
 
@@ -13,6 +13,7 @@ export default function TopBar(props: {
   onQuery: (q: string) => void;
   onNew: () => void;
   onImport: () => void;
+  onLink: () => void;
   onSettings: () => void;
   onLock: () => void;
   settingsActive: boolean;
@@ -76,6 +77,9 @@ export default function TopBar(props: {
         </button>
         <button className="tile quiet" onClick={props.onImport} title="Import files as secrets" aria-label="Import">
           <FileDown size={18} />
+        </button>
+        <button className="tile quiet" onClick={props.onLink} title="Link from 1Password or AWS Secrets Manager" aria-label="Link from a vault">
+          <Link2 size={18} />
         </button>
         <span className="toolbar-gap" />
         <button className={`tile quiet${props.settingsActive ? " active" : ""}`} onClick={props.onSettings} title="Settings" aria-label="Settings">

@@ -33,7 +33,120 @@ export interface Secret {
   fields: Record<string, string>;
   pinned: boolean;
   linked: boolean;
+  /** For a linked secret: where it points and its fields (no values). */
+  link: Link | null;
   fileBacked: boolean;
+}
+
+export interface LinkedField {
+  id: string;
+  label: string;
+  secret: boolean;
+}
+
+export interface VaultEnvironment {
+  name: string;
+  profile: string | null;
+  region: string | null;
+  alwaysAsk: boolean;
+}
+
+export interface Link {
+  provider: string;
+  providerName: string;
+  title: string;
+  where: string | null;
+  perEnvironment: boolean;
+  fields: LinkedField[];
+  mainField: string | null;
+  environments: VaultEnvironment[];
+  defaultEnvironment: string | null;
+}
+
+export interface ProviderSetting {
+  key: string;
+  description: string;
+  value: string | null;
+  options: string[] | null;
+}
+
+export interface VaultProvider {
+  id: string;
+  name: string;
+  hasEnvironments: boolean;
+  pushConfigured: boolean;
+  settings: ProviderSetting[];
+  environments: VaultEnvironment[];
+  defaultEnvironment: string | null;
+}
+
+export interface ProviderInput {
+  settings: Record<string, string>;
+  environments: VaultEnvironment[];
+  defaultEnvironment: string | null;
+}
+
+export interface ProviderStatus {
+  ready: boolean;
+  message: string;
+}
+
+export interface LinkedItem {
+  itemId: string;
+  title: string;
+  vaultId: string | null;
+  vaultName: string | null;
+  location: string | null;
+  category: string | null;
+}
+
+/** Where to search: an AWS environment, or a profile and region (ignored for 1Password). */
+export interface LinkScope {
+  environment: string | null;
+  profile: string | null;
+  region: string | null;
+}
+
+export interface AwsChoice {
+  label: string;
+  profile: string | null;
+  region: string | null;
+  environment: string | null;
+}
+
+export interface AwsChoices {
+  choices: AwsChoice[];
+  regions: string[];
+  initial: number;
+  initialRegion: string | null;
+  cliInstalled: boolean;
+}
+
+export interface LinkProposal {
+  fields: LinkedField[];
+  name: string;
+  category: string;
+}
+
+export interface LinkInput {
+  providerId: string;
+  scope: LinkScope;
+  items: LinkedItem[];
+  name: string | null;
+  onlyField: string | null;
+  category: string | null;
+  severalLocations: boolean;
+}
+
+export interface PushPreview {
+  target: string;
+  exists: boolean | null;
+}
+
+export interface PushResult {
+  name: string;
+  succeeded: boolean;
+  message: string;
 }
 
 export interface Field {
@@ -210,8 +323,10 @@ export const api = {
   types: () => invoke<SecretType[]>("secret_types"),
   saveType: (id: string | null, input: TypeInput) => invoke<SecretType[]>("save_type", { id, input }),
   deleteType: (id: string) => invoke<SecretType[]>("delete_type", { id }),
-  reveal: (name: string, forEdit = false) => invoke<Record<string, string>>("reveal", { name, forEdit }),
-  copy: (name: string, field?: string) => invoke<number>("copy_field", { name, field: field ?? null }),
+  reveal: (name: string, forEdit = false, environment: string | null = null) =>
+    invoke<Record<string, string>>("reveal", { name, forEdit, environment }),
+  copy: (name: string, field?: string, environment: string | null = null) =>
+    invoke<number>("copy_field", { name, field: field ?? null, environment }),
   save: (input: SaveInput) => invoke<Secret>("save_secret", { input }),
   remove: (name: string) => invoke<void>("delete_secret", { name }),
   setPinned: (name: string, pinned: boolean) => invoke<void>("set_pinned", { name, pinned }),
@@ -243,6 +358,16 @@ export const api = {
   openBackup: (path: string, password: string) => invoke<BackupPreview>("open_backup", { path, password }),
   restoreBackup: (overwrite: boolean) => invoke<RestoreResult>("restore_backup", { overwrite }),
   cancelRestore: () => invoke<void>("cancel_restore"),
+  vaultProviders: () => invoke<VaultProvider[]>("vault_providers"),
+  saveVaultProvider: (id: string, input: ProviderInput) => invoke<VaultProvider[]>("save_vault_provider", { id, input }),
+  vaultStatus: (id: string) => invoke<ProviderStatus>("vault_status", { id }),
+  awsChoices: () => invoke<AwsChoices>("aws_choices"),
+  linkSearch: (providerId: string, query: string, scope: LinkScope) => invoke<LinkedItem[]>("link_search", { providerId, query, scope }),
+  linkDescribe: (providerId: string, item: LinkedItem, scope: LinkScope, severalLocations: boolean) =>
+    invoke<LinkProposal>("link_describe", { providerId, item, scope, severalLocations }),
+  createLinks: (input: LinkInput) => invoke<{ created: string[]; failed: string[] }>("create_links", { input }),
+  pushPreview: (providerId: string, name: string) => invoke<PushPreview>("push_preview", { providerId, name }),
+  pushSecret: (providerId: string, name: string) => invoke<PushResult>("push_secret", { providerId, name }),
   approval: () => invoke<Approval | null>("approval_request"),
   answerApproval: (choice: "deny" | "once" | "always") => invoke<void>("answer_approval", { choice }),
 };

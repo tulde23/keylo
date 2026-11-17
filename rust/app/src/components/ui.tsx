@@ -5,6 +5,7 @@ import {
   Shield, Smartphone, StickyNote, Terminal, User, Wallet, Wifi, X, type LucideIcon,
 } from "lucide-react";
 import type { CategorySummary, Secret, SecretType } from "../api";
+import { createPortal } from "react-dom";
 import { importImageFile, importImageUrl, isImageIcon, useIconImage } from "../iconImages";
 
 // Secrets store Fluent icon names ("Person24") from the C# app; these are the lucide equivalents.
@@ -33,7 +34,7 @@ export function iconFor(name: string | null | undefined): LucideIcon {
 export function SecretIcon({ secret, type, category, size = 36 }: {
   secret: Secret; type?: SecretType; category?: CategorySummary; size?: number;
 }) {
-  const icon = secret.linked ? "Link24" : secret.icon ?? category?.icon ?? type?.icon ?? null;
+  const icon = secret.icon ?? (secret.linked ? "Link24" : category?.icon ?? type?.icon ?? null);
   const color = secret.color ?? category?.color ?? type?.color ?? null;
   return <IconTile icon={icon} color={color} size={size} />;
 }
@@ -103,7 +104,8 @@ export function Modal({ title, onClose, children, footer, wide }: {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [onClose]);
-  return (
+  // Rendered on the page itself, so the pane it's opened from can't clip or size it.
+  return createPortal(
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={`modal${wide ? " modal-wide" : ""}`} role="dialog" aria-modal="true" aria-label={title}>
         <header className="modal-header">
@@ -113,7 +115,8 @@ export function Modal({ title, onClose, children, footer, wide }: {
         <div className="modal-body">{children}</div>
         {footer && <footer className="modal-footer">{footer}</footer>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
