@@ -48,6 +48,9 @@ on:
       - 'app/src-tauri/**'
       - 'packaging/**'
       - 'rust_csharp/src/Keylo.Platform.MacOS/helper/**'
+  # By hand (Actions → release → Run workflow, or gh workflow run release): e.g. after a change
+  # to this workflow or to the release secrets.
+  workflow_dispatch:
 
 permissions:
   contents: read
