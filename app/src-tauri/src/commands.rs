@@ -44,17 +44,42 @@ fn owner(window: &WebviewWindow) -> isize {
     }
 }
 
-/// Runs the identity check (or uses the session). Commands calling it are async, so they run off
-/// the UI thread; the gate is held for the prompt's duration (one prompt at a time).
-pub async fn ensure(window: &WebviewWindow, state: &State<'_, AppState>, message: &str, value_access: bool) -> Res<()> {
+/// One identity prompt at a time. Separate from the gate: quick commands (status, touch, lock, the
+/// secret list) lock the gate on the UI thread, so it must never be held while a prompt is open, or
+/// the window stops responding until the prompt is answered.
+static PROMPT: tauri::async_runtime::Mutex<()> = tauri::async_runtime::Mutex::const_new(());
+
+/// Shows the identity prompt on a blocking thread and waits for it without holding anything else.
+async fn prompt(window: &WebviewWindow, message: &str) -> Res<()> {
     let hwnd = owner(window);
-    let mut g = state.gate.lock().unwrap();
-    g.ensure(hwnd, message, value_access).map_err(err)
+    let message = message.to_string();
+    tauri::async_runtime::spawn_blocking(move || AccessGate::verify(hwnd, &message))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
 }
 
-pub fn confirm(window: &WebviewWindow, message: &str) -> Res<()> {
+/// Runs the identity check (or uses the session).
+pub async fn ensure(window: &WebviewWindow, state: &State<'_, AppState>, message: &str, value_access: bool) -> Res<()> {
+    let _turn = PROMPT.lock().await;
+    // Checked after waiting our turn: a prompt that just finished may have unlocked it.
+    let needed = state.gate.lock().unwrap().needs_verification(value_access);
+    if !needed {
+        return Ok(());
+    }
+    prompt(window, message).await?;
+    let result = state.gate.lock().unwrap().mark_verified().map_err(err);
+    result
+}
+
+/// Always prompts (ignoring any session) unless the check is off.
+pub async fn confirm(window: &WebviewWindow, message: &str) -> Res<()> {
     let config = KeyloConfig::load().map_err(err)?;
-    AccessGate::new(&config).confirm(owner(window), message).map_err(err)
+    if config.hello == HelloMode::Never {
+        return Ok(());
+    }
+    let _turn = PROMPT.lock().await;
+    prompt(window, message).await
 }
 
 pub fn require_unlocked(state: &State<'_, AppState>) -> Res<()> {
@@ -102,7 +127,7 @@ fn pick(value: Option<&str>, choices: &[&str]) -> String {
 }
 
 #[tauri::command]
-pub fn ui_theme() -> UiTheme {
+pub async fn ui_theme() -> UiTheme {
     let ui = ui_json();
     UiTheme {
         theme: pick(ui.get("Theme").and_then(|v| v.as_str()), THEMES),
@@ -112,14 +137,14 @@ pub fn ui_theme() -> UiTheme {
 
 /// Saves the appearance at once (it's cosmetic: no identity check, not part of Save settings).
 #[tauri::command]
-pub fn set_ui_theme(theme: String, mode: String) -> Res<UiTheme> {
+pub async fn set_ui_theme(theme: String, mode: String) -> Res<UiTheme> {
     let mut ui = ui_json();
     ui.insert("Theme".into(), pick(Some(&theme), THEMES).into());
     ui.insert("Mode".into(), pick(Some(&mode), MODES).into());
     let dir = paths::data_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     std::fs::write(dir.join("ui.json"), serde_json::to_string(&ui).unwrap()).map_err(|e| e.to_string())?;
-    Ok(ui_theme())
+    Ok(ui_theme().await)
 }
 
 /// The keylo command installed next to the app.
@@ -134,7 +159,7 @@ fn keylo_path() -> String {
 }
 
 #[tauri::command]
-pub fn app_info() -> AppInfo {
+pub async fn app_info() -> AppInfo {
     let p = platform::current();
     let keylo = keylo_path();
     AppInfo {
@@ -157,9 +182,9 @@ pub struct Status {
 }
 
 #[tauri::command]
-pub fn status(state: State<'_, AppState>) -> Status {
+pub async fn status(state: State<'_, AppState>) -> Res<Status> {
     let g = state.gate.lock().unwrap();
-    Status { unlocked: g.is_unlocked(), mode: g.mode(), session_expires: g.session_expires_at().map(|t| t.to_rfc3339()) }
+    Ok(Status { unlocked: g.is_unlocked(), mode: g.mode(), session_expires: g.session_expires_at().map(|t| t.to_rfc3339()) })
 }
 
 #[tauri::command]
@@ -168,14 +193,16 @@ pub async fn unlock(window: WebviewWindow, state: State<'_, AppState>) -> Res<()
 }
 
 #[tauri::command]
-pub fn lock(state: State<'_, AppState>) {
+pub async fn lock(state: State<'_, AppState>) -> Res<()> {
     state.gate.lock().unwrap().lock();
+    Ok(())
 }
 
 /// User activity: slides the session so it lasts while someone is at the keyboard.
 #[tauri::command]
-pub fn touch(state: State<'_, AppState>) {
+pub async fn touch(state: State<'_, AppState>) -> Res<()> {
     let _ = state.gate.lock().unwrap().extend_session();
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------- secrets
@@ -193,7 +220,7 @@ pub struct SecretRow {
 }
 
 #[tauri::command]
-pub fn secrets(state: State<'_, AppState>) -> Res<Vec<SecretRow>> {
+pub async fn secrets(state: State<'_, AppState>) -> Res<Vec<SecretRow>> {
     require_unlocked(&state)?;
     let activity = Activity::default();
     let pins = activity.pins();
@@ -258,7 +285,7 @@ fn type_dto(t: &SecretTypeDefinition) -> TypeDto {
 }
 
 #[tauri::command]
-pub fn secret_types() -> Res<Vec<TypeDto>> {
+pub async fn secret_types() -> Res<Vec<TypeDto>> {
     Ok(SecretTypeCatalog::default().all().map_err(err)?.iter().map(type_dto).collect())
 }
 
@@ -283,7 +310,7 @@ pub struct TypeInput {
 
 /// Adds a custom type (`id` None) or changes one. For a built-in type only the icon and colour change.
 #[tauri::command]
-pub fn save_type(state: State<'_, AppState>, id: Option<String>, input: TypeInput) -> Res<Vec<TypeDto>> {
+pub async fn save_type(state: State<'_, AppState>, id: Option<String>, input: TypeInput) -> Res<Vec<TypeDto>> {
     require_unlocked(&state)?;
     let catalog = SecretTypeCatalog::default();
     let icon = keylo_core::store::normalize_icon(input.icon.as_deref()).map_err(err)?;
@@ -298,7 +325,7 @@ pub fn save_type(state: State<'_, AppState>, id: Option<String>, input: TypeInpu
             .collect();
         styles.insert(built_in.id.clone(), types::Style { icon: icon.or(built_in.icon), color });
         catalog.save_built_in_styles(&styles).map_err(err)?;
-        return secret_types();
+        return secret_types().await;
     }
 
     let fields = input
@@ -319,11 +346,11 @@ pub fn save_type(state: State<'_, AppState>, id: Option<String>, input: TypeInpu
         None => custom.push(edited),
     }
     catalog.save_custom(custom).map_err(err)?;
-    secret_types()
+    secret_types().await
 }
 
 #[tauri::command]
-pub fn delete_type(state: State<'_, AppState>, id: String) -> Res<Vec<TypeDto>> {
+pub async fn delete_type(state: State<'_, AppState>, id: String) -> Res<Vec<TypeDto>> {
     require_unlocked(&state)?;
     let catalog = SecretTypeCatalog::default();
     let mut custom = catalog.custom().map_err(err)?;
@@ -335,7 +362,7 @@ pub fn delete_type(state: State<'_, AppState>, id: String) -> Res<Vec<TypeDto>> 
     }
     custom.remove(i);
     catalog.save_custom(custom).map_err(err)?;
-    secret_types()
+    secret_types().await
 }
 
 /// Every field's value (typed) or the value (plain). Needs the identity check.
@@ -518,19 +545,19 @@ pub async fn delete_secret(window: WebviewWindow, state: State<'_, AppState>, na
 }
 
 #[tauri::command]
-pub fn set_pinned(state: State<'_, AppState>, name: String, pinned: bool) -> Res<()> {
+pub async fn set_pinned(state: State<'_, AppState>, name: String, pinned: bool) -> Res<()> {
     require_unlocked(&state)?;
     Activity::default().set_pinned(&name, pinned).map_err(err)
 }
 
 #[tauri::command]
-pub fn recent(state: State<'_, AppState>) -> Res<Vec<RecentUse>> {
+pub async fn recent(state: State<'_, AppState>) -> Res<Vec<RecentUse>> {
     require_unlocked(&state)?;
     Ok(Activity::default().recent(12))
 }
 
 #[tauri::command]
-pub fn generate_password(length: usize, symbols: bool) -> String {
+pub async fn generate_password(length: usize, symbols: bool) -> String {
     keylo_core::password::generate(length, symbols)
 }
 
@@ -581,7 +608,7 @@ pub async fn fetch_image(url: String) -> Res<String> {
 
 /// Stores an icon image (a PNG the app made, base64); returns its icon name ("img" + hash).
 #[tauri::command]
-pub fn save_icon_image(state: State<'_, AppState>, png: String) -> Res<String> {
+pub async fn save_icon_image(state: State<'_, AppState>, png: String) -> Res<String> {
     use base64::Engine;
     require_unlocked(&state)?;
     let bytes = base64::engine::general_purpose::STANDARD.decode(png.trim()).map_err(|_| "That image couldn't be read.".to_string())?;
@@ -590,7 +617,7 @@ pub fn save_icon_image(state: State<'_, AppState>, png: String) -> Res<String> {
 
 /// A stored icon image as a data: URL, or None.
 #[tauri::command]
-pub fn icon_image(name: String) -> Option<String> {
+pub async fn icon_image(name: String) -> Option<String> {
     use base64::Engine;
     keylo_core::icons::load(&name).map(|png| format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png)))
 }
@@ -598,23 +625,23 @@ pub fn icon_image(name: String) -> Option<String> {
 // ---------------------------------------------------------------------------- categories
 
 #[tauri::command]
-pub fn categories(state: State<'_, AppState>) -> Res<Vec<CategorySummary>> {
+pub async fn categories(state: State<'_, AppState>) -> Res<Vec<CategorySummary>> {
     require_unlocked(&state)?;
     Ok(CategoryCatalog::default().all(&SecretStore::default().list().map_err(err)?))
 }
 
 #[tauri::command]
-pub fn create_category(state: State<'_, AppState>, name: String, icon: Option<String>, color: Option<String>) -> Res<Vec<CategorySummary>> {
+pub async fn create_category(state: State<'_, AppState>, name: String, icon: Option<String>, color: Option<String>) -> Res<Vec<CategorySummary>> {
     require_unlocked(&state)?;
     CategoryCatalog::default().create(&name, icon.as_deref(), color.as_deref()).map_err(err)?;
-    categories(state)
+    categories(state).await
 }
 
 #[tauri::command]
-pub fn set_category_style(state: State<'_, AppState>, name: String, icon: Option<String>, color: Option<String>) -> Res<Vec<CategorySummary>> {
+pub async fn set_category_style(state: State<'_, AppState>, name: String, icon: Option<String>, color: Option<String>) -> Res<Vec<CategorySummary>> {
     require_unlocked(&state)?;
     CategoryCatalog::default().set_style(&name, icon.as_deref(), color.as_deref()).map_err(err)?;
-    categories(state)
+    categories(state).await
 }
 
 /// Renames a category on every secret in it; onto an existing name, merges the two.
@@ -622,7 +649,7 @@ pub fn set_category_style(state: State<'_, AppState>, name: String, icon: Option
 pub async fn rename_category(window: WebviewWindow, state: State<'_, AppState>, from: String, to: String) -> Res<Vec<CategorySummary>> {
     ensure(&window, &state, "Unlock Keylo", false).await?;
     CategoryCatalog::default().rename(&SecretStore::default(), &from, &to).map_err(err)?;
-    categories(state)
+    categories(state).await
 }
 
 /// Deletes a category: its secrets move to `move_to` (None: uncategorized) or, with
@@ -636,7 +663,7 @@ pub async fn delete_category(
     delete_secrets: bool,
 ) -> Res<Vec<CategorySummary>> {
     if delete_secrets {
-        confirm(&window, &format!("Keylo: delete every secret in '{name}'"))?;
+        confirm(&window, &format!("Keylo: delete every secret in '{name}'")).await?;
     } else {
         ensure(&window, &state, "Unlock Keylo", false).await?;
     }
@@ -650,7 +677,7 @@ pub async fn delete_category(
     if !doomed.is_empty() {
         let _ = Activity::default().removed(&doomed);
     }
-    categories(state)
+    categories(state).await
 }
 
 // ---------------------------------------------------------------------------- settings
@@ -665,7 +692,7 @@ pub struct SettingsDto {
 }
 
 #[tauri::command]
-pub fn settings() -> Res<SettingsDto> {
+pub async fn settings() -> Res<SettingsDto> {
     let c = KeyloConfig::load().map_err(err)?;
     Ok(SettingsDto {
         hello: c.hello,
@@ -678,7 +705,7 @@ pub fn settings() -> Res<SettingsDto> {
 /// These settings decide when verification happens, so changing them always verifies.
 #[tauri::command]
 pub async fn save_settings(window: WebviewWindow, state: State<'_, AppState>, settings: SettingsDto) -> Res<SettingsDto> {
-    confirm(&window, "Keylo: change settings")?;
+    confirm(&window, "Keylo: change settings").await?;
     let mut c = KeyloConfig::load().map_err(err)?;
     c.hello = settings.hello;
     c.session_minutes = settings.session_minutes;
@@ -689,7 +716,7 @@ pub async fn save_settings(window: WebviewWindow, state: State<'_, AppState>, se
     // The identity check just passed: keep the app open under the new settings.
     gate.mark_verified().map_err(err)?;
     *state.gate.lock().unwrap() = gate;
-    self::settings()
+    self::settings().await
 }
 
 // ---------------------------------------------------------------------------- access keys
@@ -708,7 +735,7 @@ pub struct KeyDto {
 }
 
 #[tauri::command]
-pub fn access_keys(state: State<'_, AppState>) -> Res<Vec<KeyDto>> {
+pub async fn access_keys(state: State<'_, AppState>) -> Res<Vec<KeyDto>> {
     require_unlocked(&state)?;
     let now = chrono::Local::now().fixed_offset();
     Ok(KeyloConfig::load()
@@ -749,7 +776,7 @@ pub async fn create_key(window: WebviewWindow, input: KeyInput) -> Res<String> {
     if c.access_keys.iter().any(|k| eq_ic(&k.name, &name)) {
         return Err(format!("There's already a key called '{name}'."));
     }
-    confirm(&window, &format!("Keylo: create access key '{name}'"))?;
+    confirm(&window, &format!("Keylo: create access key '{name}'")).await?;
     let (mut key, token) = access::create(&name, input.expires_days.filter(|d| *d > 0));
     key.scope = input.scope;
     key.categories = input.categories;
@@ -764,7 +791,7 @@ pub async fn update_key(window: WebviewWindow, id: String, input: KeyInput) -> R
     let mut c = KeyloConfig::load().map_err(err)?;
     let Some(key) = c.access_keys.iter_mut().find(|k| k.id == id) else { return Err("That key no longer exists.".into()) };
     let name = key.name.clone();
-    confirm(&window, &format!("Keylo: change what '{name}' can use"))?;
+    confirm(&window, &format!("Keylo: change what '{name}' can use")).await?;
     key.scope = input.scope;
     key.categories = input.categories;
     key.secrets = input.secrets;
@@ -782,7 +809,7 @@ pub struct ClaudeStatus {
 
 /// Whether Claude Code has Keylo's MCP server, and with which access key (never the key itself).
 #[tauri::command]
-pub fn claude_status(state: State<'_, AppState>) -> Res<ClaudeStatus> {
+pub async fn claude_status(state: State<'_, AppState>) -> Res<ClaudeStatus> {
     require_unlocked(&state)?;
     let registration = claude_code::inspect(&KeyloConfig::load().map_err(err)?, &keylo_path());
     Ok(ClaudeStatus { summary: registration.describe(), registration, cli_installed: claude_code::find_cli().is_some() })
@@ -803,7 +830,7 @@ pub async fn revoke_key(window: WebviewWindow, id: String) -> Res<()> {
     let mut c = KeyloConfig::load().map_err(err)?;
     let Some(pos) = c.access_keys.iter().position(|k| k.id == id) else { return Ok(()) };
     let name = c.access_keys[pos].name.clone();
-    confirm(&window, &format!("Keylo: revoke access key '{name}'"))?;
+    confirm(&window, &format!("Keylo: revoke access key '{name}'")).await?;
     c.access_keys.remove(pos);
     c.save().map_err(err)
 }
@@ -822,7 +849,7 @@ pub struct AuditRow {
 }
 
 #[tauri::command]
-pub fn audit_log(state: State<'_, AppState>, limit: usize) -> Res<Vec<AuditRow>> {
+pub async fn audit_log(state: State<'_, AppState>, limit: usize) -> Res<Vec<AuditRow>> {
     require_unlocked(&state)?;
     let text = std::fs::read_to_string(access::audit_path_in(&paths::data_dir())).unwrap_or_default();
     let strs = |v: &serde_json::Value| -> Vec<String> {
@@ -860,8 +887,8 @@ pub struct ApprovalDto {
 }
 
 #[tauri::command]
-pub fn approval_request(state: State<'_, AppState>) -> Option<ApprovalDto> {
-    state.approval.as_ref().map(|r| ApprovalDto {
+pub async fn approval_request(state: State<'_, AppState>) -> Res<Option<ApprovalDto>> {
+    Ok(state.approval.as_ref().map(|r| ApprovalDto {
         operation: r.op().as_str().into(),
         secrets: r.secrets.clone(),
         key_name: r.key_name.clone(),
@@ -870,7 +897,7 @@ pub fn approval_request(state: State<'_, AppState>) -> Option<ApprovalDto> {
         can_always_allow: r.can_always_allow && r.key_id.is_some() && !r.grant_only,
         grant_only: r.grant_only,
         verifier_name: platform::current().verifier_name(),
-    })
+    }))
 }
 
 /// "deny", "once" or "always": verifies the user for an allow, grants for always, then exits with
@@ -884,7 +911,7 @@ pub async fn answer_approval(window: WebviewWindow, app: AppHandle, state: State
     }
     let always = choice == "always" || request.grant_only;
     let agent = request.key_name.clone().unwrap_or_else(|| "an agent".into());
-    confirm(&window, &format!("Keylo: allow '{agent}' to use {}", request.secrets.join(", ")))?;
+    confirm(&window, &format!("Keylo: allow '{agent}' to use {}", request.secrets.join(", "))).await?;
     let mut code = approval::ALLOWED_ONCE;
     if always {
         let mut c = KeyloConfig::load().map_err(err)?;

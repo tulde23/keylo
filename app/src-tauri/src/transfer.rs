@@ -37,15 +37,15 @@ pub async fn pick_import(window: WebviewWindow, folder: bool) -> Vec<String> {
 
 /// Paths Keylo was started with (`--import`), once.
 #[tauri::command]
-pub fn take_startup_import(state: State<'_, AppState>) -> Vec<String> {
-    std::mem::take(&mut *state.startup_import.lock().unwrap())
+pub async fn take_startup_import(state: State<'_, AppState>) -> Res<Vec<String>> {
+    Ok(std::mem::take(&mut *state.startup_import.lock().unwrap())
         .into_iter()
         .map(|p| std::path::absolute(&p).map(|a| a.display().to_string()).unwrap_or(p))
-        .collect()
+        .collect())
 }
 
 #[tauri::command]
-pub fn import_plan(state: State<'_, AppState>, paths: Vec<String>, category: Option<String>, subfolder_categories: bool) -> Res<ImportResult> {
+pub async fn import_plan(state: State<'_, AppState>, paths: Vec<String>, category: Option<String>, subfolder_categories: bool) -> Res<ImportResult> {
     require_unlocked(&state)?;
     import::plan(&paths, category.as_deref(), subfolder_categories, Some(&SecretStore::default())).map_err(err)
 }
@@ -112,7 +112,7 @@ pub async fn pick_backup(window: WebviewWindow, save: bool) -> Option<String> {
 }
 
 #[tauri::command]
-pub fn check_backup_password(password: String) -> Option<String> {
+pub async fn check_backup_password(password: String) -> Option<String> {
     let password = Zeroizing::new(password);
     backup::check_password(&password)
 }
@@ -125,7 +125,7 @@ pub async fn create_backup(window: WebviewWindow, state: State<'_, AppState>, pa
     if let Some(problem) = backup::check_password(&password) {
         return Err(problem);
     }
-    confirm(&window, "Keylo: back up all secrets")?;
+    confirm(&window, "Keylo: back up all secrets").await?;
     let path = backup::with_extension(Path::new(&path));
     let dir = paths::data_dir();
     let contents = backup::collect(&SecretStore::default(), &CategoryCatalog::in_dir(&dir), &SecretTypeCatalog::default(), &dir).map_err(err)?;
@@ -181,6 +181,7 @@ pub async fn restore_backup(window: WebviewWindow, state: State<'_, AppState>, o
 
 /// Forgets a decrypted backup that wasn't restored.
 #[tauri::command]
-pub fn cancel_restore(state: State<'_, AppState>) {
+pub async fn cancel_restore(state: State<'_, AppState>) -> Res<()> {
     state.pending_restore.lock().unwrap().take();
+    Ok(())
 }
