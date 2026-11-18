@@ -14,6 +14,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
 keylo-core.workspace = true
 keylo-platform.workspace = true
 serde.workspace = true

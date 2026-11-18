@@ -323,11 +323,25 @@ export interface ClaudeStatus {
   installHint: string;
 }
 
+/** latest.json from the newest release, compared with this build. */
+export interface UpdateInfo {
+  current: string;
+  latest: string;
+  notes: string | null;
+  available: boolean;
+  /** Install can update this copy in place; otherwise `reason` says why and the release page is offered. */
+  canInstall: boolean;
+  reason: string | null;
+}
+
 /** The error the backend returns when the session has ended. */
 export const LOCKED = "locked";
 
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
+  checkUpdate: () => invoke<UpdateInfo>("check_update"),
+  installUpdate: () => invoke<void>("install_update"),
+  openReleases: () => invoke<void>("open_releases"),
   status: () => invoke<Status>("status"),
   unlock: () => invoke<void>("unlock"),
   lock: () => invoke<void>("lock"),

@@ -6,6 +6,7 @@
 
 mod commands;
 mod transfer;
+mod updates;
 mod vaults;
 
 use std::sync::Mutex;
@@ -64,6 +65,7 @@ fn main() {
 
     builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
@@ -122,6 +124,9 @@ fn main() {
             transfer::open_backup,
             transfer::restore_backup,
             transfer::cancel_restore,
+            updates::check_update,
+            updates::install_update,
+            updates::open_releases,
         ])
         .setup(move |app| {
             if approving {
@@ -150,6 +155,7 @@ fn main() {
                     .build()?;
                 watch_screen_lock(app.handle().clone());
                 watch_data_files(app.handle().clone());
+                updates::remove_old_programs();
             }
             Ok(())
         })
