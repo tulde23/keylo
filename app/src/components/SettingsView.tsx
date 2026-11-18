@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bot, Folder, Search, Copy, Info, KeyRound, Link2, Palette, Plus, Settings2, Shapes, ShieldCheck, Trash2, X, type LucideIcon } from "lucide-react";
+import { Bot, Folder, FolderSync, Search, Copy, Info, KeyRound, Link2, Palette, Plus, Settings2, Shapes, ShieldCheck, Trash2, X, type LucideIcon } from "lucide-react";
 import { api, message, timeAgo, type CategorySummary, type ClaudeStatus, type AccessKey, type AppInfo, type KeyInput, type Secret, type SecretType, type Settings } from "../api";
 import TypesSection from "./TypesSection";
 import BackupSection from "./BackupSection";
+import SyncSection from "./SyncSection";
 import VaultsSection from "./VaultsSection";
 import AppearanceSection from "./AppearanceSection";
 import { autoCheck, setAutoCheck, SHOW_UPDATE } from "./UpdateNotice";
 import type { Run } from "../App";
 import { Drawer, IconTile, Modal, SecretIcon, useToast } from "./ui";
 
-type Tab = "general" | "appearance" | "agents" | "types" | "vaults" | "backup" | "about";
+type Tab = "general" | "appearance" | "agents" | "types" | "vaults" | "sync" | "backup" | "about";
 
 const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: "general", label: "General", icon: Settings2 },
@@ -18,6 +19,7 @@ const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: "agents", label: "Agents", icon: Bot },
   { id: "types", label: "Secret types", icon: Shapes },
   { id: "vaults", label: "Vault providers", icon: Link2 },
+  { id: "sync", label: "Sync", icon: FolderSync },
   { id: "backup", label: "Backup", icon: ShieldCheck },
   { id: "about", label: "About", icon: Info },
 ];
@@ -211,6 +213,8 @@ export default function SettingsView(props: {
       {tab === "types" && <TypesSection types={props.types} secrets={props.secrets} run={run} onTypes={props.onTypes} />}
 
       {tab === "vaults" && <VaultsSection run={run} verifierName={info.verifierName} />}
+
+      {tab === "sync" && <SyncSection run={run} verifierName={info.verifierName} />}
 
       {tab === "backup" && <BackupSection run={run} verifierName={info.verifierName} onRestored={props.onDataChanged} />}
 

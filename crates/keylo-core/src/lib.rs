@@ -23,6 +23,7 @@ pub mod refs;
 pub mod search;
 pub mod secrets;
 pub mod store;
+pub mod sync;
 pub mod types;
 pub mod updates;
 pub mod version;

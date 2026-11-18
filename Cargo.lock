@@ -2303,6 +2303,7 @@ dependencies = [
  "dirs 6.0.0",
  "flate2",
  "hex",
+ "hmac 0.12.1",
  "minisign-verify 0.2.5",
  "pbkdf2",
  "rand",

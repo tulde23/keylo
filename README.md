@@ -32,6 +32,7 @@ Credential Manager, the macOS Keychain, or the Linux desktop keyring. No server,
 - [Linked secrets: 1Password and AWS Secrets Manager](#linked-secrets-1password-and-aws-secrets-manager)
 - [Pushing secrets to another vault](#pushing-secrets-to-another-vault)
 - [Import, backup and restore](#import-backup-and-restore)
+- [Sync between your devices](#sync-between-your-devices)
 - [Security model](#security-model)
 - [Configuration](#configuration)
 - [Platform notes](#platform-notes)
@@ -114,6 +115,8 @@ There is no tool that returns a value. An agent can use a secret, but it can't r
 - **Push** secrets into 1Password or AWS Secrets Manager.
 - **Import** files and folders as secrets, with type detection (SSH keys, database URLs, tokens).
 - **Encrypted backups** (AES-256-GCM, password-protected) that restore on any OS.
+- **Sync between your own devices** through a folder they already share (OneDrive, iCloud Drive,
+  Dropbox, Syncthing), end-to-end encrypted, with conflict copies instead of lost edits.
 - A **secure clipboard**: copied values skip clipboard history and cloud sync, and clear themselves.
 - An identity check (Windows Hello, Touch ID or polkit) once per session, on every use, or never.
 - Locks when your screen locks. Three colour themes, light and dark.
@@ -488,6 +491,17 @@ keylo backup FILE [--force] [--password-stdin]
 keylo restore FILE [--overwrite] [--dry-run] [--password-stdin]
 ```
 
+### Sync
+
+```bash
+keylo sync create FOLDER [--name N]   # start syncing: a new vault in a folder your devices share
+keylo sync code                       # the code another device needs (asks for your identity check)
+keylo sync join FOLDER [--name N]     # on the other device: asks for the code
+keylo sync                            # sync now
+keylo sync status                     # folder, devices, last result
+keylo sync rename NAME | forget DEVICE | leave
+```
+
 ### Session and settings
 
 ```bash
@@ -757,6 +771,72 @@ In the app: **Settings → Backup**.
 
 ---
 
+## Sync between your devices
+
+Keylo can keep your secrets the same on all your computers: Windows, macOS and Linux, in any mix.
+It doesn't run a server or open a network port. Each device writes an encrypted file into a folder that
+something else already syncs: **OneDrive, iCloud Drive, Dropbox, Google Drive**, a network share, or
+**Syncthing** if you'd rather the files go straight from device to device.
+
+**Setting up**
+1. On the first computer: **Settings → Sync → Start syncing**, and choose a folder inside your synced
+   storage (a new, empty `Keylo` folder is best). Or `keylo sync create ~/OneDrive/Keylo`.
+2. Still on the first computer: **Add a device** shows a join code, after your identity check
+   (`keylo sync code`).
+3. On the other computer: **Settings → Sync → Join another device**, choose the same folder as it
+   appears there, and enter the code (`keylo sync join ~/OneDrive/Keylo`).
+
+Secrets the joining computer already has are kept. If both have a secret with the same name but
+different contents, the one already syncing wins and the joining computer's is kept as
+`NAME (conflict DEVICE DATE)`.
+
+**What syncs:** every secret with its value and details (category, type, fields, icon, notes),
+linked secrets (the links, not the other vault's values), custom types, category icons and colours,
+and uploaded icons. **What doesn't:** access keys and agents' grants, the activity log, settings,
+pins and recent uses, and the session. Those belong to each device, so an agent's key on one computer
+does nothing on another.
+
+**When:** the app syncs every 30 seconds while Keylo is unlocked, and within seconds of another
+device's file changing in the folder. It never syncs while locked, because a sync reads every value.
+From a terminal, run `keylo sync`. **Settings → Sync** shows the last result and every device.
+
+**Conflicts.** When two devices change the same secret between syncs, the newest change wins
+everywhere and the other version is kept as `NAME (conflict DEVICE DATE)`, so no edit is lost. Delete
+the copy once you've checked it. Versions are ordered by hybrid logical clocks, so a computer whose
+clock is a little off doesn't win or lose unfairly.
+
+**Deleting.** Deleting a secret deletes it on every device. As a safeguard, a sync that would delete
+more than half of the secrets (and more than five) at once is refused. This is what a device whose
+store was reset would look like. To recover such a device, stop syncing on it and join again: joining
+never deletes anything, and brings the secrets back.
+
+**How it's protected**
+- **Vault key:** a random 256-bit key. The join code is that key, so treat it like a master password:
+  type it in, and don't send it by email or chat or keep it in the synced folder. Each device keeps
+  it protected like Keylo's other files (DPAPI, the keychain, or the keyring).
+- **Device files:** each one (`devices/<id>.keylo-sync`) is gzipped JSON encrypted with
+  **AES-256-GCM** under the vault key. The device's id is authenticated with it, so files can't be
+  swapped around. Without the key, the files show only how many devices sync and roughly how much
+  data each holds: no names, values or details.
+- **Integrity:** a changed or damaged file fails to decrypt and is ignored.
+- **One writer per file:** each device writes only its own file, so two devices never write the same
+  file and sync tools don't make "conflicted copies".
+
+**Limits**
+- **Trust is all or nothing.** Every device with the code can read and change every synced secret.
+- **Removing a device:** **Forget** (`keylo sync forget DEVICE`) removes its file, but the device still
+  knows the code. To lock out a device you no longer trust, stop syncing everywhere and start a new
+  sync folder with a new code.
+- **Not for sharing with other people.** Sync is for one person's devices. It has no per-person
+  permissions.
+- **Platform limits:** a value or field that one platform's store can't hold (for example a long
+  non-secret field on Windows, which allows 256 bytes) isn't applied there. The sync result says so,
+  and it's retried each time.
+- **Tombstones:** deletions are remembered indefinitely, so a deleted secret doesn't come back from an
+  old device.
+
+---
+
 ## Security model
 
 ### Where secrets are stored
@@ -802,8 +882,10 @@ the Linux keyring and vault they're inside the encrypted item. Never put a secre
 - **The other vault's security** for linked secrets: Keylo is only as strong as your 1Password or AWS
   setup.
 
-Keylo has no server and sends nothing anywhere. Its only network traffic is downloading an icon when
-you paste an image address, and what the `op` and `aws` CLIs do for linked secrets and pushes.
+Keylo has no server and sends nothing about you anywhere. Its only network traffic is the update check
+(`latest.json` from GitHub), downloading an icon when you paste an image address, and what the `op`
+and `aws` CLIs do for linked secrets and pushes. Sync writes encrypted files to a folder; moving them
+between devices is up to whatever syncs that folder.
 
 ---
 
@@ -855,6 +937,7 @@ environments) are in the same file, under `providers`.
 | `blobs/` | Encrypted files for large values |
 | `icons/` | Uploaded icon images |
 | `vault.json`, `store.txt` | Linux: the vault file, and which store is in use |
+| `sync.json`, `sync.key`, `sync-state.bin` | Sync: the folder and device name, the vault key (protected), and what the last sync saw (protected) |
 
 None of these files hold secret values in readable form.
 

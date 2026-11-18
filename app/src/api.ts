@@ -323,6 +323,34 @@ export interface ClaudeStatus {
   installHint: string;
 }
 
+/** One device in the sync folder. */
+export interface SyncDevice {
+  id: string;
+  name: string;
+  platform: string;
+  syncedAt: string;
+  thisDevice: boolean;
+}
+
+/** Whether and how this device syncs (null from syncStatus when it doesn't). */
+export interface SyncStatus {
+  folder: string;
+  deviceId: string;
+  deviceName: string;
+  last: { at: string; ok: boolean; summary: string } | null;
+  devices: SyncDevice[];
+  /** Why the folder couldn't be read, if it couldn't. */
+  problem: string | null;
+}
+
+export interface SyncReport {
+  received: number;
+  sent: number;
+  conflicts: string[];
+  errors: string[];
+  devices: number;
+}
+
 /** latest.json from the newest release, compared with this build. */
 export interface UpdateInfo {
   current: string;
@@ -342,6 +370,16 @@ export const api = {
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
   installUpdate: () => invoke<void>("install_update"),
   openReleases: () => invoke<void>("open_releases"),
+  syncStatus: () => invoke<SyncStatus | null>("sync_status"),
+  syncDeviceName: () => invoke<string>("sync_device_name"),
+  pickSyncFolder: () => invoke<string | null>("pick_sync_folder"),
+  syncCreate: (folder: string, name: string) => invoke<SyncReport>("sync_create", { folder, name }),
+  syncJoin: (folder: string, name: string, code: string) => invoke<SyncReport>("sync_join", { folder, name, code }),
+  syncCode: () => invoke<string>("sync_code"),
+  syncNow: () => invoke<SyncReport>("sync_now"),
+  syncRename: (name: string) => invoke<void>("sync_rename", { name }),
+  syncForget: (id: string) => invoke<void>("sync_forget", { id }),
+  syncLeave: () => invoke<void>("sync_leave"),
   status: () => invoke<Status>("status"),
   unlock: () => invoke<void>("unlock"),
   lock: () => invoke<void>("lock"),
