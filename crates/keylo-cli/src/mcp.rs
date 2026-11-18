@@ -811,7 +811,12 @@ fn details(t: Option<&SecretTypeDefinition>, s: &SecretInfo) -> Option<Value> {
         d.insert(id, json!(u));
     }
     for (k, v) in &s.fields {
-        d.insert(k.clone(), json!(v));
+        let otp = t.and_then(|t| t.field(k)).is_some_and(|f| f.kind == types::FieldKind::Totp);
+        if otp {
+            d.insert(k.clone(), json!(format!("two-factor codes set up: '{}:{k}' in run_with_secrets gives the current code", s.name)));
+        } else {
+            d.insert(k.clone(), json!(v));
+        }
     }
     (!d.is_empty()).then_some(Value::Object(d))
 }

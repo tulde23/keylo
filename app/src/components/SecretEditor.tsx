@@ -168,7 +168,7 @@ export default function SecretEditor(props: {
                     list={listId}
                     spellCheck={false}
                     autoComplete="off"
-                    placeholder={editing && f.secret && !value ? "unchanged" : f.kind === "Url" ? "https://" : ""}
+                    placeholder={editing && f.secret && !value ? "unchanged" : f.kind === "Url" ? "https://" : f.kind === "Totp" ? "Setup key or otpauth:// link" : ""}
                     className={f.secret ? "mono" : ""}
                   />
                 )}

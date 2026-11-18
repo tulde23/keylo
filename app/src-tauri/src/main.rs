@@ -88,6 +88,7 @@ fn main() {
             commands::delete_category,
             commands::reveal,
             commands::copy_field,
+            commands::otp_code,
             commands::save_secret,
             commands::delete_secret,
             commands::set_pinned,

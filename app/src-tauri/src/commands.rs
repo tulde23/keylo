@@ -410,6 +410,28 @@ fn read_fields(name: &str, derive: bool, environment: Option<&str>) -> Res<BTree
     Ok(out)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OtpCode {
+    code: String,
+    seconds_left: u64,
+    period: u64,
+}
+
+/// A one-time code field's current code (not its setup key), and how long it lasts.
+#[tauri::command]
+pub async fn otp_code(window: WebviewWindow, state: State<'_, AppState>, name: String, field: String) -> Res<OtpCode> {
+    ensure(&window, &state, &format!("Keylo: show the code for '{name}'"), true).await?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let fields = read_fields(&name, false, None)?;
+        let key = fields.get(&field).ok_or_else(|| format!("'{name}' has no one-time code."))?;
+        let now = keylo_core::totp::Totp::parse(key).map_err(err)?.now();
+        Ok(OtpCode { code: now.code, seconds_left: now.seconds_left, period: now.period })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Copies one field (default: the main value) to the secure clipboard; it clears itself later.
 #[tauri::command]
 pub async fn copy_field(

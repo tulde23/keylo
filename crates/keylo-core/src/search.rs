@@ -30,7 +30,8 @@ pub fn matches(s: &SecretInfo, query: Option<&str>) -> bool {
             || has(s.username.as_deref(), term)
             || has(s.notes.as_deref(), term)
             || has(s.type_id.as_deref(), term)
-            || s.fields.values().any(|v| contains_ic(v, term));
+            // (A one-time code field's "on" marker isn't content.)
+            || s.fields.values().any(|v| v != crate::types::TOTP_MARKER && contains_ic(v, term));
         if !hit {
             return false;
         }

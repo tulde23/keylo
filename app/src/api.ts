@@ -2,7 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export type HelloMode = "session" | "always" | "never";
-export type FieldKind = "Text" | "Username" | "Url" | "Number" | "Password" | "SecretText";
+export type FieldKind = "Text" | "Username" | "Url" | "Number" | "Password" | "SecretText" | "Totp";
 
 export interface AppInfo {
   platform: string;
@@ -370,6 +370,7 @@ export const api = {
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
   installUpdate: () => invoke<void>("install_update"),
   openReleases: () => invoke<void>("open_releases"),
+  otpCode: (name: string, field: string) => invoke<{ code: string; secondsLeft: number; period: number }>("otp_code", { name, field }),
   syncStatus: () => invoke<SyncStatus | null>("sync_status"),
   syncDeviceName: () => invoke<string>("sync_device_name"),
   pickSyncFolder: () => invoke<string | null>("pick_sync_folder"),

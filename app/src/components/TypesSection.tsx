@@ -11,8 +11,9 @@ const KINDS: { kind: FieldKind; label: string; help: string }[] = [
   { kind: "Number", label: "Number", help: "Shown without unlocking" },
   { kind: "Password", label: "Password", help: "Secret, one line" },
   { kind: "SecretText", label: "Secret text", help: "Secret, several lines (keys, certificates)" },
+  { kind: "Totp", label: "One-time code", help: "A two-factor setup key; Keylo shows and copies its current code" },
 ];
-const isSecret = (k: FieldKind) => k === "Password" || k === "SecretText";
+const isSecret = (k: FieldKind) => k === "Password" || k === "SecretText" || k === "Totp";
 
 /** Settings → Secret types: the built-in types (icon and colour only) and your own. */
 export default function TypesSection({ types, secrets, run, onTypes }: {
