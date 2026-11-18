@@ -261,3 +261,9 @@ export function ColorPicker({ value, onChange }: { value: string | null; onChang
     </div>
   );
 }
+
+/** A keyboard shortcut as this platform writes it: "⌘K" on a Mac, "Ctrl+K" on Windows and Linux. */
+export const IS_MAC = /mac/i.test(navigator.platform || navigator.userAgent);
+export function shortcut(key: string) {
+  return IS_MAC ? `⌘${key}` : `Ctrl+${key}`;
+}

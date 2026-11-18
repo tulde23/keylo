@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { FileDown, FolderDown, Link2, Lock, Plus, Search, Settings, X } from "lucide-react";
+import { Activity, FileDown, FolderDown, Link2, Lock, Plus, Search, Settings, X } from "lucide-react";
+import { IS_MAC, shortcut } from "./ui";
 
 export const TAGLINE = "Agents use them. Never see them.";
 
@@ -16,6 +17,8 @@ export default function TopBar(props: {
   onImport: (folder: boolean) => void;
   onLink: () => void;
   onSettings: () => void;
+  onActivity: () => void;
+  activityActive: boolean;
   onLock: () => void;
   settingsActive: boolean;
   lockTitle: string;
@@ -23,19 +26,21 @@ export default function TopBar(props: {
   const search = useRef<HTMLInputElement>(null);
   const { onNew, onLock } = props;
 
-  // Ctrl+K (or Ctrl+F, or "/" outside a text box) searches; Ctrl+N adds a secret; Ctrl+L locks.
+  // Ctrl+K (⌘K on a Mac; or Ctrl+F, or "/" outside a text box) searches; Ctrl+N adds a secret; Ctrl+L locks.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-      const ctrl = e.ctrlKey || e.metaKey;
-      if ((ctrl && (e.key === "k" || e.key === "f")) || (e.key === "/" && !typing)) {
+      // ⌘ on a Mac (where Ctrl+K, Ctrl+F and Ctrl+N are text-editing keys), Ctrl elsewhere.
+      const ctrl = IS_MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+      const k = e.key.toLowerCase(); // Caps Lock or Shift still count
+      if ((ctrl && (k === "k" || k === "f")) || (e.key === "/" && !typing)) {
         e.preventDefault();
         search.current?.focus();
         search.current?.select();
-      } else if (ctrl && e.key === "n") {
+      } else if (ctrl && k === "n") {
         e.preventDefault();
         onNew();
-      } else if (ctrl && e.key === "l") {
+      } else if (ctrl && k === "l") {
         e.preventDefault();
         onLock();
       }
@@ -68,12 +73,12 @@ export default function TopBar(props: {
         {props.query ? (
           <button className="icon-button small" onClick={() => props.onQuery("")} aria-label="Clear search"><X size={14} /></button>
         ) : (
-          <kbd>Ctrl+K</kbd>
+          <kbd>{shortcut("K")}</kbd>
         )}
       </div>
 
       <div className="topbar-tiles">
-        <button className="tile accent" onClick={props.onNew} title="New secret (Ctrl+N)" aria-label="New secret">
+        <button className="tile accent" onClick={props.onNew} title={`New secret (${shortcut("N")})`} aria-label="New secret">
           <Plus size={18} />
         </button>
         <button className="tile quiet" onClick={() => props.onImport(false)} title="Import files as secrets" aria-label="Import files">
@@ -86,10 +91,14 @@ export default function TopBar(props: {
           <Link2 size={18} />
         </button>
         <span className="toolbar-gap" />
+        <button className={`tile quiet${props.activityActive ? " active" : ""}`} onClick={props.onActivity}
+          title="Activity: every use of a secret by an agent or tool" aria-label="Activity">
+          <Activity size={18} />
+        </button>
         <button className={`tile quiet${props.settingsActive ? " active" : ""}`} onClick={props.onSettings} title="Settings" aria-label="Settings">
           <Settings size={18} />
         </button>
-        <button className="tile quiet" onClick={props.onLock} title={`${props.lockTitle} (Ctrl+L)`} aria-label="Lock">
+        <button className="tile quiet" onClick={props.onLock} title={`${props.lockTitle} (${shortcut("L")})`} aria-label="Lock">
           <Lock size={18} />
         </button>
       </div>

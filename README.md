@@ -416,7 +416,8 @@ window is the app's own; without it, it's a system dialog (a message box on Wind
 
 Every use of a secret by an agent, through its access key or an approval, is recorded in `audit.log`
 in Keylo's data folder: when, which secrets (with environments), which key, how it was allowed, and
-the chain of processes that asked. View it in the app's **Activity** page. Entries older than 90 days
+the chain of processes that asked. View it on the app's **Activity** page (the button left of
+**Settings**), with cards for the last 30 days' uses and the most-used secrets. Entries older than 90 days
 are removed (`keylo config audit-days 365`, or `forever`).
 
 ---
@@ -429,13 +430,17 @@ time: starting it again brings the open window forward.
 - **Lock screen**: unlock with your identity check. Keylo locks itself when your screen locks and
   when the session ends.
 - **Top bar**: search everything (**Ctrl+K**, **Ctrl+F** or **/**), **+** new secret (**Ctrl+N**),
-  **Import files**, **Import folder**, **Link from a vault**, **Settings** and **Lock** (**Ctrl+L**).
+  **Import files**, **Import folder**, **Link from a vault**, **Activity** (the audit log),
+  **Settings** and **Lock** (**Ctrl+L**). On a Mac the shortcuts use **⌘** instead of Ctrl.
 - **Sidebar**: *Home* (pinned secrets, recently used ones by you or your agents, then the rest),
-  *All secrets*, your *categories* (with **Manage**), the *types* in use, *Activity* (the audit log),
-  and the version and build.
+  *All secrets*, your *categories* (with **Manage**) and the *types* in use. Home and All secrets
+  stay in view while the rest scrolls.
+- **Footer**: the version and build; hover it for the store and data folder.
 - **Secret details**: copy the main value or any field to the secure clipboard, show the values,
-  edit, pin to Home, push to a vault, or delete. A ready-made `keylo run` command shows how to use the
-  secret in a terminal. For a linked secret: where it points, its fields, and for a per-environment
+  edit, pin to Home, push to a vault, or delete. **Use it in a command** gives `keylo run` commands
+  to copy and paste, the same in PowerShell, Command Prompt, bash and zsh: a check that the value
+  arrives (Node.js), and for a database or GitHub token the real client (`psql`, `mysql`,
+  `redis-cli`, `sqlcmd`, `gh`) with the details you saved. For a linked secret: where it points, its fields, and for a per-environment
   link an environment picker.
 - **Editor**: a panel that slides in from the right, for new secrets and changes, with a type picker,
   a category picker (pick, filter or create by typing), a password generator for password fields, and

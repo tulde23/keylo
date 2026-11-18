@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, Copy, Eye, EyeOff, Link2, Pencil, Pin, PinOff, Send, Terminal, Trash2 } from "lucide-react";
 import { api, timeAgo, type AppInfo, type CategorySummary, type PushPreview, type Secret, type SecretType, type VaultProvider } from "../api";
 import type { Run } from "../App";
-import { Modal, SecretIcon, useToast } from "./ui";
+import { Modal, SecretIcon, useToast, shortcut } from "./ui";
 
 interface Row {
   id: string;
@@ -78,7 +78,7 @@ export default function SecretDetail(props: {
           <img src="/keylo.svg" alt="" width={72} height={72} />
           <h2>Select a secret</h2>
           <p className="muted">Values stay encrypted until you reveal or copy them.</p>
-          <p className="muted">Ctrl+N new · Ctrl+F search · Ctrl+L lock</p>
+          <p className="muted">{shortcut("N")} new · {shortcut("F")} search · {shortcut("L")} lock</p>
         </div>
       </section>
     );
@@ -87,8 +87,7 @@ export default function SecretDetail(props: {
   const rows = rowsFor(secret, type);
   const env = link?.perEnvironment ? environment : null;
   const reference = `${secret.name}${env && env !== link?.defaultEnvironment ? `@${env}` : ""}`;
-  const variable = secret.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "") || "SECRET";
-  const cliCommand = `keylo run --env ${variable}=${reference.includes(" ") ? `"${reference}"` : reference} -- YOUR-COMMAND`;
+  const commands = commandsFor(secret, reference);
   const mainLabel = link
     ? link.fields.find((f) => f.id === link.mainField)?.label.toLowerCase() ?? "value"
     : type?.fields.find((f) => f.main)?.label.toLowerCase() ?? "value";
@@ -251,19 +250,30 @@ export default function SecretDetail(props: {
       <div className="use-box">
         <h3><Terminal size={15} /> Use it in a command</h3>
         <p className="muted">
-          The value reaches the command as an environment variable and never appears on screen.
+          Keylo starts the program after <code>--</code> with the value in an environment variable; it never
+          appears on screen. These work the same in PowerShell, Command Prompt, bash and zsh.
           {link?.perEnvironment && " Add @ENV to the name for another environment."}
         </p>
-        <div className="code-line">
-          <code>{cliCommand}</code>
-          <button
-            className="icon-button small"
-            aria-label="Copy command"
-            onClick={() => navigator.clipboard.writeText(cliCommand).then(() => toast("Command copied."))}
-          >
-            <Copy size={15} />
-          </button>
-        </div>
+        {commands.map((c) => (
+          <div className="use-command" key={c.label}>
+            <div className="use-label">{c.label}</div>
+            <div className="code-line">
+              <code>{c.command}</code>
+              <button
+                className="icon-button small"
+                aria-label={`Copy: ${c.label}`}
+                onClick={() => navigator.clipboard.writeText(c.command).then(() => toast("Command copied."))}
+              >
+                <Copy size={15} />
+              </button>
+            </div>
+          </div>
+        ))}
+        <p className="muted small-text">
+          For your own program, replace everything after <code>--</code>; it reads the variable from its
+          environment. Don't write <code>$VAR</code> or <code>%VAR%</code> in the command itself: your shell
+          fills those in before Keylo runs, while the variable is still empty.
+        </p>
       </div>
 
       <p className="meta">
@@ -396,4 +406,58 @@ function OtpRow({ name, field, label, run, copied, onCopy, autoRefresh }: {
       </dd>
     </div>
   );
+}
+
+/** A shell-safe argument: quoted only when it has spaces (the same rule in every shell here). */
+function arg(v: string) {
+  return /[\s"]/.test(v) ? `"${v.replace(/"/g, '\\"')}"` : v;
+}
+
+/** The variable most tools expect for a well-known secret, else one made from its name. */
+function variableFor(secret: Secret) {
+  const n = secret.name.toLowerCase();
+  if (/anthropic|claude/.test(n)) return "ANTHROPIC_API_KEY";
+  if (/openai/.test(n)) return "OPENAI_API_KEY";
+  if (/github|(^|[^a-z])gh[-_]/.test(n)) return "GH_TOKEN";
+  return secret.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "") || "SECRET";
+}
+
+/**
+ * Commands to copy and run as they are: a check that the value arrives (Node.js), and for a database
+ * or a GitHub token, the real client, which reads its password or token from the environment.
+ * No $ or ! in them, so PowerShell, cmd, bash and zsh all pass them through unchanged.
+ */
+function commandsFor(secret: Secret, reference: string): { label: string; command: string }[] {
+  const ref = arg(reference);
+  const v = variableFor(secret);
+  const out: { label: string; command: string }[] = [];
+  const f = secret.fields ?? {};
+  const host = f.host ? arg(f.host) : null;
+  if (secret.type === "database" && host) {
+    const r = arg(`${reference}:password`);
+    const port = f.port ? arg(f.port) : null;
+    const user = f.username ? arg(f.username) : null;
+    const db = f.database ? arg(f.database) : null;
+    const parts = (...p: (string | false | null)[]) => p.filter(Boolean).join(" ");
+    switch ((f.engine ?? "").toLowerCase()) {
+      case "postgres":
+        out.push({ label: "Connect with psql", command: parts(`keylo run --env PGPASSWORD=${r} -- psql -h ${host}`, port && `-p ${port}`, user && `-U ${user}`, db && `-d ${db}`) });
+        break;
+      case "mysql":
+        out.push({ label: "Connect with mysql", command: parts(`keylo run --env MYSQL_PWD=${r} -- mysql -h ${host}`, port && `-P ${port}`, user && `-u ${user}`, db) });
+        break;
+      case "redis":
+        out.push({ label: "Connect with redis-cli", command: parts(`keylo run --env REDISCLI_AUTH=${r} -- redis-cli -h ${host}`, port && `-p ${port}`) });
+        break;
+      case "sqlserver":
+        out.push({ label: "Connect with sqlcmd", command: parts(`keylo run --env SQLCMDPASSWORD=${r} -- sqlcmd -S ${port ? `${host},${port}` : host}`, user && `-U ${user}`, db && `-d ${db}`) });
+        break;
+    }
+  }
+  if (v === "GH_TOKEN") out.push({ label: "Check the token with GitHub's gh", command: `keylo run --env GH_TOKEN=${ref} -- gh auth status` });
+  out.push({
+    label: "Check it arrives (needs Node.js)",
+    command: `keylo run --env ${v}=${ref} -- node -e "console.log(process.env.${v} ? '${v} is set' : '${v} is missing')"`,
+  });
+  return out;
 }
