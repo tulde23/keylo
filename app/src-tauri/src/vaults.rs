@@ -120,7 +120,7 @@ fn provider_dtos(config: &KeyloConfig) -> Vec<ProviderDto> {
 }
 
 #[tauri::command]
-pub fn vault_providers(state: State<'_, AppState>) -> Res<Vec<ProviderDto>> {
+pub async fn vault_providers(state: State<'_, AppState>) -> Res<Vec<ProviderDto>> {
     require_unlocked(&state)?;
     Ok(provider_dtos(&config()?))
 }
@@ -236,7 +236,7 @@ pub struct AwsChoices {
 
 /// The Link panel's AWS pickers: the environments, the default credentials, then every profile in ~/.aws.
 #[tauri::command]
-pub fn aws_choices(state: State<'_, AppState>) -> Res<AwsChoices> {
+pub async fn aws_choices(state: State<'_, AppState>) -> Res<AwsChoices> {
     require_unlocked(&state)?;
     let settings = links::provider_settings(&config()?, "aws");
     let mut choices: Vec<AwsChoice> = environments::read(&settings)

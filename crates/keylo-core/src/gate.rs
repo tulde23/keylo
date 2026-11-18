@@ -56,24 +56,32 @@ impl AccessGate {
         self.ensure(owner, message, false)
     }
 
+    /// Whether [`AccessGate::ensure`] would prompt now.
+    pub fn needs_verification(&self, value_access: bool) -> bool {
+        match self.mode {
+            HelloMode::Never => false,
+            HelloMode::Session => self.read_session().is_none(),
+            HelloMode::Always => value_access || !self.browse_unlocked,
+        }
+    }
+
     /// Fails with AccessDenied unless access is (or just became) allowed.
     pub fn ensure(&mut self, owner: isize, message: &str, value_access: bool) -> Result<()> {
-        match self.mode {
-            HelloMode::Never => return Ok(()),
-            HelloMode::Session if self.read_session().is_some() => return Ok(()),
-            HelloMode::Always if !value_access && self.browse_unlocked => return Ok(()),
-            _ => {}
+        if !self.needs_verification(value_access) {
+            return Ok(());
         }
+        Self::verify(owner, message)?;
+        self.mark_verified()
+    }
+
+    /// Shows the identity prompt and waits for the answer; doesn't change the gate. A caller that
+    /// shares the gate (the app) runs this without holding it, then calls [`AccessGate::mark_verified`],
+    /// so the rest of the app isn't stuck behind a prompt left open.
+    pub fn verify(owner: isize, message: &str) -> Result<()> {
         let (result, detail) = platform::current().verifier().verify(owner, message);
         let name = verifier_name();
         match result {
-            VerificationResult::Verified => {
-                self.browse_unlocked = true;
-                if self.mode == HelloMode::Session {
-                    self.write_session(Utc::now() + Duration::minutes(self.session_minutes))?;
-                }
-                Ok(())
-            }
+            VerificationResult::Verified => Ok(()),
             VerificationResult::Unavailable => {
                 let how = if cfg!(windows) { "Set it up in Settings → Accounts → Sign-in options, or run " } else { "Set it up, or run " };
                 Err(Error::AccessDenied(format!(
@@ -105,16 +113,7 @@ impl AccessGate {
         if self.mode == HelloMode::Never {
             return Ok(());
         }
-        let (result, detail) = platform::current().verifier().verify(owner, message);
-        let name = verifier_name();
-        match result {
-            VerificationResult::Verified => Ok(()),
-            VerificationResult::Canceled => Err(Error::AccessDenied(format!("{name} was canceled."))),
-            _ => Err(Error::AccessDenied(format!(
-                "{name} verification failed{}.",
-                detail.map(|d| format!(" ({d})")).unwrap_or_default()
-            ))),
-        }
+        Self::verify(owner, message)
     }
 
     /// Slides an active session's expiry to a full session length from now (app activity only).
