@@ -208,6 +208,7 @@ impl Server {
             "request_access" => self.request_access(args),
             "list_aws_profiles" => self.list_aws_profiles(),
             "list_aws_secrets" => self.list_aws_secrets(args),
+            "check_for_updates" => self.check_for_updates(),
             _ => return Err((-32602, format!("Unknown tool: {name}"))),
         };
         // Tool failures go back to the agent as results it can act on.
@@ -272,6 +273,32 @@ impl Server {
     }
 
     /// AWS profiles (names, regions, how they sign in; never keys), the regions, and what Keylo's AWS provider uses.
+    /// Whether a newer Keylo is out. Read-only: installing is left to the person (the app's Install
+    /// and restart, or `keylo update`), never to an agent.
+    fn check_for_updates(&self) -> ToolResult {
+        use keylo_core::updates;
+        let manifest = updates::check().map_err(|e| ToolError(e.to_string()))?;
+        let available = manifest.is_newer();
+        let how = if !available {
+            "Nothing to do.".to_string()
+        } else if cfg!(windows) {
+            "Tell the user. They can choose Install and restart in the Keylo app, or run 'keylo update' in a terminal. Don't run it for them.".to_string()
+        } else if cfg!(target_os = "macos") {
+            "Tell the user. They can choose Install and restart in the Keylo app.".to_string()
+        } else {
+            format!("Tell the user. They can download the new .deb or tarball from {}.", updates::RELEASES_PAGE)
+        };
+        let result = json!({
+            "current": updates::CURRENT,
+            "latest": manifest.latest(),
+            "updateAvailable": available,
+            "notes": manifest.notes,
+            "releasePage": updates::RELEASES_PAGE,
+            "howToUpdate": how,
+        });
+        Ok(serde_json::to_string(&result).unwrap())
+    }
+
     fn list_aws_profiles(&self) -> ToolResult {
         let (config, _) = load_key()?;
         let settings = links::provider_settings(&config, "aws");
@@ -1125,6 +1152,13 @@ pub fn definitions() -> Value {
         "description": "The secret types (login, api_key, database, ssh_key, note, password, server, email_account, software_license, wireless_router, crypto_wallet, document, credit_card, bank_account, and the user's custom ones) with their fields: which are secret and which is the main value.",
         "inputSchema": { "type": "object", "properties": {} },
         "annotations": { "readOnlyHint": true, "openWorldHint": false }
+      },
+      {
+        "name": "check_for_updates",
+        "title": "Check for a Keylo update",
+        "description": "Whether a newer version of Keylo has been released: this build's version, the latest one, and how the user can install it. Read-only; agents can't install updates (the user does, from the Keylo app or with 'keylo update').",
+        "inputSchema": { "type": "object", "properties": {} },
+        "annotations": { "readOnlyHint": true, "openWorldHint": true }
       },
       {
         "name": "list_aws_profiles",

@@ -27,7 +27,7 @@ use zeroize::Zeroizing;
 
 const FLAGS: &[&str] = &[
     "clip", "yes", "overwrite", "delete-originals", "flat", "plain", "all", "json", "force", "dry-run",
-    "password-stdin", "both", "add-to-claude", "help", "stdio", "ask", "no-ask",
+    "password-stdin", "both", "add-to-claude", "help", "stdio", "ask", "no-ask", "check",
 ];
 
 fn usage_text() -> String {
@@ -76,6 +76,8 @@ keylo restore FILE [--overwrite] [--dry-run] [--password-stdin]
                                         Restore a backup (existing secrets are skipped unless --overwrite)
 keylo mcp                               The MCP server for AI agents
 keylo unlock | lock | status | version
+keylo update [--check] [--yes]          Check for a newer Keylo and install it (Windows: the app and
+                                        keylo, in place; macOS: from the app; Linux: the release page)
 keylo config [hello session|always|never | session-minutes N | clipboard-seconds N | audit-days N|forever]",
         store = p.store_name(),
         verifier = p.verifier_name()
@@ -147,6 +149,7 @@ fn run(argv: &[String]) -> CliResult<i32> {
             Ok(0)
         }
         "status" => status(&c, &args),
+        "update" => update_cmd(&args),
         "config" => config_cmd(&mut c, &args),
         "__clip-clear" => clip_clear(&args),
         "import" => import_cmd(&mut c, &args),
@@ -616,6 +619,51 @@ fn edit(c: &mut Context, args: &Args) -> CliResult<i32> {
     };
     let saved = c.store.save(&draft, Some(&i.name))?;
     info(&format!("Updated '{}'.", saved.name));
+    Ok(0)
+}
+
+/// keylo update [--check] [--yes]: the newest release, and on Windows installs it in place (the app and
+/// this command; the same signed zip and checks as the app's Install).
+fn update_cmd(args: &Args) -> CliResult<i32> {
+    use keylo_core::updates;
+    let check_only = args.flag("check");
+    let yes = args.flag("yes");
+    args.throw_on_unknown(Some(0))?;
+
+    let manifest = updates::check()?;
+    if !manifest.is_newer() {
+        info(&format!("Keylo is up to date ({}).", updates::CURRENT));
+        return Ok(0);
+    }
+    let latest = manifest.latest().to_string();
+    info(&format!("Keylo {latest} is available (you have {}).", updates::CURRENT));
+    if check_only {
+        return Ok(0);
+    }
+    let dir = updates::program_dir()?;
+    if let Some(reason) = updates::install_blocker(&dir) {
+        info(&format!("{reason}\nDownload it from {}", updates::RELEASES_PAGE));
+        return Ok(1);
+    }
+    if !cfg!(windows) {
+        info(&format!("Open Keylo and choose Install and restart, or download it from {}", updates::RELEASES_PAGE));
+        return Ok(1);
+    }
+    let Some(download) = manifest.download() else {
+        info(&format!("The release has no update for this computer. Download it from {}", updates::RELEASES_PAGE));
+        return Ok(1);
+    };
+    if !yes && !terminal::confirm(&format!("Install Keylo {latest} in {}?", dir.display())) {
+        info("Not updated.");
+        return Ok(1);
+    }
+    updates::remove_old_programs(&dir);
+    info("Downloading…");
+    let zip = updates::download_verified(download)?;
+    updates::swap_in_place(&zip, &dir)?;
+    info(&format!(
+        "Updated to Keylo {latest}. If the app is open, restart it; keylo mcp servers that are running update when Claude Code restarts them."
+    ));
     Ok(0)
 }
 

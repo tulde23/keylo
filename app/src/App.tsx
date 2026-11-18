@@ -14,12 +14,14 @@ import SecretEditor from "./components/SecretEditor";
 import SettingsView from "./components/SettingsView";
 import ActivityView from "./components/ActivityView";
 import TopBar from "./components/TopBar";
+import UpdateNotice from "./components/UpdateNotice";
 import { ToastProvider, useToast } from "./components/ui";
 
 export default function App() {
   return (
     <ToastProvider>
       <Shell />
+      <UpdateNotice />
     </ToastProvider>
   );
 }

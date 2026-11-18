@@ -23,6 +23,7 @@ Credential Manager, the macOS Keychain, or the Linux desktop keyring. No server,
 - [How it works](#how-it-works)
 - [Features](#features)
 - [Install](#install)
+- [Updates](#updates)
 - [Quick start](#quick-start)
 - [Concepts](#concepts)
 - [The desktop app](#the-desktop-app)
@@ -63,19 +64,28 @@ value over. Once a value is in an agent's context it has leaked, however careful
 
 ## How it works
 
-Keylo hands the value to the **command**, never to the **agent**:
+Keylo hands the value to the **command**, never to the **agent**.
 
-1. The agent finds secrets by name and description, never value: `search_secrets` returns `prod-db`,
-   its type and fields, and whether the agent may use it.
-2. The agent asks Keylo to run a command, mapping environment variables to secrets:
+**An example.** Say you've saved your production database's login in Keylo as a *database* secret
+and named it `prod-db` (the name is yours to choose; Keylo has no built-in secrets). You ask Claude
+Code to run your project's database migrations, `npm run migrate`, which reads the connection string
+from the `DATABASE_URL` environment variable:
+
+1. **The agent finds the secret by name, never by value.** Keylo's `search_secrets` tool returns
+   `prod-db`, its type and field names, and whether the agent's access key lets it use the secret.
+2. **The agent asks Keylo to run the command,** saying which environment variable gets which secret:
    `run_with_secrets` with `{"DATABASE_URL": "prod-db:connection_string"}` and `npm run migrate`.
-3. Keylo checks the agent's **access key**. A secret outside the key's scope opens an **approval
-   window** on your screen, confirmed with Windows Hello, Touch ID or your system password.
-4. Keylo starts the command with the values in its environment, then replaces any value that shows
-   up in the output with `[keylo:prod-db]` before the agent sees it.
-5. Every use is written to an **audit log**, with the key, the secrets and the process that asked.
+   (`prod-db:connection_string` means "the `connection_string` field of the secret named `prod-db`".)
+3. **Keylo checks the agent's access key.** If `prod-db` is outside the key's scope, an **approval
+   window** opens on your screen, confirmed with Windows Hello, Touch ID or your system password.
+4. **Keylo starts the command** with the value in `DATABASE_URL`. If the value shows up in the
+   command's output, Keylo replaces it with `[keylo:prod-db]` before the agent sees the output.
+5. **The use is written to an audit log,** with the key, the secret and the process that asked.
 
 There is no tool that returns a value. An agent can use a secret, but it can't read it.
+
+> Secret names in this guide, such as `prod-db`, `github-token` and `stripe/live-key`, are examples
+> of names you might give your own secrets.
 
 ## Features
 
@@ -196,6 +206,35 @@ own on a server, without any of these.
 
 ---
 
+## Updates
+
+Keylo checks for a newer release a few seconds after it starts and every 6 hours. When there is one,
+a card in the corner says so; nothing is installed until you choose to.
+
+- **Windows and macOS:** **Install and restart** downloads the update, checks its signature, installs
+  it and restarts Keylo. The `keylo` command is updated with it.
+  - On Windows the new `keylow.exe` and `keylo.exe` replace the old ones in the folder Keylo runs
+    from, whether it was installed with `install.ps1` or the setup .exe. A `keylo mcp` server that's
+    running keeps going on the old version until Claude Code restarts it.
+  - On macOS, Keylo must run from Applications (not straight from Downloads).
+- **Linux:** the card links to the release; install the new .deb or tarball as before.
+- **From a terminal:** `keylo update --check` says whether a newer version is out, and
+  `keylo update` installs it on Windows (the app and `keylo`, after asking; `--yes` skips the
+  question). Restart the app afterwards if it's open.
+- **From an agent:** the MCP tool `check_for_updates` lets Claude Code tell you an update is out.
+  Agents can't install one.
+- **Later** hides the card until a newer version comes out.
+- **Settings → About:** **Check for updates** checks now, and **Check for updates automatically**
+  turns the regular checks off.
+
+**Signatures.** Each update is signed with Keylo's update key, and the app only installs one whose
+signature matches the public key built into it. This is separate from Apple and Microsoft code
+signing, so it covers the unsigned macOS build too. The check reads
+`https://github.com/tulde23/keylo/releases/latest/download/latest.json`; nothing about you or your
+secrets is sent.
+
+---
+
 ## Quick start
 
 ```bash
@@ -221,7 +260,7 @@ an **Add to Claude Code** button.
 
 ### Secrets and names
 
-A secret has a **name** (`prod-db`, `stripe/live-key`), a **value**, and optional details: a
+A secret has a **name** that you choose (for example `prod-db` or `stripe/live-key`), a **value**, and optional details: a
 **category**, a **username**, **notes**, an icon and a colour. Names are up to 128 characters and can
 contain `/`, `:`, `@` and spaces. Values can be up to 4 MB, text or binary.
 
@@ -461,6 +500,8 @@ keylo config session-minutes 30           # 1–1440
 keylo config clipboard-seconds 45         # 5–600
 keylo config audit-days 365|forever       # 7–3650, or forever
 keylo version
+keylo update --check    # is a newer Keylo out?
+keylo update [--yes]    # install it (Windows; elsewhere it says where to get it)
 ```
 
 Exit codes: `0` success, `1` an error (the message says why), `2` a usage mistake. `keylo run` returns
@@ -505,6 +546,7 @@ Other MCP clients: run `keylo mcp` with `KEYLO_ACCESS_KEY` in its environment.
 | `run_with_secrets` | Runs a shell command with secrets as environment variables (`{"VAR": "reference"}`) and returns the exit code and output, with values replaced by `[keylo:name]`. Optional: `shell`, `working_directory`, `timeout_seconds` (default 120, at most 600; the process tree is killed on timeout), and `reason`, which the approval window shows you. |
 | `request_access` | Asks you to add secrets to the key permanently, with a reason. |
 | `list_aws_profiles` | AWS environments, the profiles in `~/.aws` (name, region, how each signs in; never keys), every region, and whether the `aws` CLI is installed. |
+| `check_for_updates` | Whether a newer Keylo has been released, and how you can install it. Read-only: agents can't install updates. |
 | `list_aws_secrets` | The secrets in AWS Secrets Manager for a profile and region, or an environment: names, ARNs, descriptions and tags (never values), grouped by name prefix, with any Keylo secrets already linked to them. |
 
 Shells for `run_with_secrets`:
@@ -935,7 +977,13 @@ They use `KEYLO_HOME` and `KEYLO_PREFIX` so they never touch your real secrets.
 Every merge to `main` that changes shipped code (the crates, the app, packaging) builds, tests and
 publishes a release through `.github/workflows/release.yml`:
 - **Platforms:** Windows, Linux (x64 and ARM64) and macOS (Apple silicon, ad-hoc signed).
-- **Tag:** `v<version>.<build>`, with the version taken from `Cargo.toml`.
+- **Version and tag:** `<major>.<minor>.<build>`, with major and minor taken from `Cargo.toml` and the
+  build number from the workflow run (`.github/stamp-version.sh` stamps it into the build).
+- **Updates:** the Windows zip and the macOS `.app.tar.gz` are signed with the
+  `TAURI_SIGNING_PRIVATE_KEY` secret (and its password, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`), and
+  `latest.json` lists them. The matching public key is `plugins.updater.pubkey` in
+  `app/src-tauri/tauri.conf.json`. Losing the private key means installed copies can't update
+  themselves any more; a new key needs a manual install of a build that has its public key.
 - **Docs and tests:** changes to these alone don't trigger a release.
 
 ---

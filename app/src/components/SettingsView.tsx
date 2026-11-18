@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Bot, Folder, Search, Copy, Info, KeyRound, Link2, Palette, Plus, Settings2, Shapes, ShieldCheck, Trash2, X, type LucideIcon } from "lucide-react";
-import { api, timeAgo, type CategorySummary, type ClaudeStatus, type AccessKey, type AppInfo, type KeyInput, type Secret, type SecretType, type Settings } from "../api";
+import { api, message, timeAgo, type CategorySummary, type ClaudeStatus, type AccessKey, type AppInfo, type KeyInput, type Secret, type SecretType, type Settings } from "../api";
 import TypesSection from "./TypesSection";
 import BackupSection from "./BackupSection";
 import VaultsSection from "./VaultsSection";
 import AppearanceSection from "./AppearanceSection";
+import { autoCheck, setAutoCheck, SHOW_UPDATE } from "./UpdateNotice";
 import type { Run } from "../App";
 import { Drawer, IconTile, Modal, SecretIcon, useToast } from "./ui";
 
@@ -222,6 +223,7 @@ export default function SettingsView(props: {
           <dt>Large values</dt><dd>{info.fileProtection}-encrypted files</dd>
           <dt>Data folder</dt><dd className="mono">{info.dataDir}</dd>
         </dl>
+        <UpdatesRow />
       </section>
       )}
       </div>
@@ -421,5 +423,40 @@ function KeyEditor(props: {
         )}
       </div>
     </Drawer>
+  );
+}
+
+/** Settings → About: check now, and whether Keylo checks by itself. */
+function UpdatesRow() {
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [auto, setAuto] = useState(autoCheck());
+  const check = async () => {
+    setChecking(true);
+    setResult(null);
+    try {
+      const u = await api.checkUpdate();
+      if (u.available) {
+        setResult(`Keylo ${u.latest} is available.`);
+        window.dispatchEvent(new CustomEvent(SHOW_UPDATE, { detail: u }));
+      } else {
+        setResult(`Keylo is up to date (${u.current}).`);
+      }
+    } catch (e) {
+      setResult(message(e));
+    }
+    setChecking(false);
+  };
+  return (
+    <div className="about-updates">
+      <div className="form-actions start">
+        <button className="button" onClick={check} disabled={checking}>{checking ? "Checking…" : "Check for updates"}</button>
+        {result && <span className="muted">{result}</span>}
+      </div>
+      <label>
+        <input type="checkbox" checked={auto} onChange={(e) => { setAuto(e.target.checked); setAutoCheck(e.target.checked); }} />
+        Check for updates automatically (asks before installing)
+      </label>
+    </div>
   );
 }
