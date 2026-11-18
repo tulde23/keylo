@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, Check, FilePlus, FolderPlus, X } from "lucide-react";
 import { api, type CategorySummary, type ImportResult, type SecretType } from "../api";
 import CategoryDropdown from "./CategoryDropdown";
+import PasswordImportDialog from "./PasswordImportDialog";
 import type { Run } from "../App";
 import { Drawer } from "./ui";
 
@@ -27,6 +28,16 @@ export default function ImportPanel({ initialPaths, types, categories, run, onCl
   const [chosenTypes, setChosenTypes] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<(ImportResult & { deleted: number }) | null>(null);
+  // One CSV exported from another password manager: offer to import its logins instead.
+  const [exportFormat, setExportFormat] = useState<string | null>(null);
+  const [passwordImport, setPasswordImport] = useState(false);
+  useEffect(() => {
+    setExportFormat(null);
+    if (paths.length !== 1 || !paths[0].toLowerCase().endsWith(".csv")) return;
+    let current = true;
+    api.passwordExportFormat(paths[0]).then((f) => current && setExportFormat(f)).catch(() => {});
+    return () => { current = false; };
+  }, [paths]);
 
   // Files dropped on the window while this is open join the list.
   useEffect(() => {
@@ -127,6 +138,23 @@ export default function ImportPanel({ initialPaths, types, categories, run, onCl
               </li>
             ))}
           </ul>
+
+          {exportFormat && (
+            <div className="pm-hint">
+              <AlertTriangle size={16} />
+              <div>
+                <strong>This looks like a {exportFormat} export.</strong> Importing it here would store the whole file as one
+                secret. Import its logins one by one instead?
+                <div className="form-actions start">
+                  <button className="button primary small" onClick={() => setPasswordImport(true)}>Import its logins…</button>
+                </div>
+              </div>
+            </div>
+          )}
+          {passwordImport && (
+            <PasswordImportDialog initialPath={paths[0]} categories={categories} run={run}
+              onClose={() => setPasswordImport(false)} onImported={() => { onImported(); onClose(); }} />
+          )}
 
           <div className="form-grid">
             <div className="form-row">

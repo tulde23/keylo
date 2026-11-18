@@ -371,6 +371,12 @@ select {
 .toast { padding: 10px 16px; border-radius: 9px; background: #2a2a31; color: #fff; box-shadow: var(--shadow); max-width: 520px; }
 .toast-error { background: var(--danger); }
 
+/* ------------------------------------------------------------------ password import */
+.pm-preview { max-height: 320px; overflow-y: auto; margin: 10px 0; }
+.pm-preview .chip { margin-left: 6px; display: inline-flex; align-items: center; gap: 3px; }
+.pm-hint { display: flex; gap: 10px; padding: 10px 12px; margin: 10px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--row-hover); }
+.pm-hint .form-actions { margin-top: 8px; }
+
 /* ------------------------------------------------------------------ one-time codes */
 .otp-value { display: inline-flex; align-items: center; gap: 10px; }
 .otp-code { font-size: 18px; letter-spacing: 0.08em; font-weight: 600; }

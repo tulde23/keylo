@@ -20,6 +20,7 @@ pbkdf2.workspace = true
 flate2.workspace = true
 hmac = "0.12"
 sha1 = "0.10"
+csv = "1"
 ureq = "3"
 semver = "1"
 minisign-verify = "0.2"

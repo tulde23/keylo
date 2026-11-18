@@ -323,6 +323,25 @@ export interface ClaudeStatus {
   installHint: string;
 }
 
+/** One row of another password manager's export, as it will be imported (never its password). */
+export interface ImportedLogin {
+  name: string;
+  type: string;
+  url: string | null;
+  username: string | null;
+  category: string | null;
+  hasOneTimeCode: boolean;
+  exists: boolean;
+  warnings: string[];
+}
+
+export interface PasswordImport {
+  format: string;
+  items: ImportedLogin[];
+  skipped: { row: number; title: string; reason: string }[];
+  imported: number;
+}
+
 /** One device in the sync folder. */
 export interface SyncDevice {
   id: string;
@@ -371,6 +390,11 @@ export const api = {
   installUpdate: () => invoke<void>("install_update"),
   openReleases: () => invoke<void>("open_releases"),
   otpCode: (name: string, field: string) => invoke<{ code: string; secondsLeft: number; period: number }>("otp_code", { name, field }),
+  pickPasswordExport: () => invoke<string | null>("pick_password_export"),
+  passwordExportFormat: (path: string) => invoke<string | null>("password_export_format", { path }),
+  passwordImportPlan: (path: string, category: string | null) => invoke<PasswordImport>("password_import_plan", { path, category }),
+  passwordImport: (path: string, category: string | null, overwrite: boolean, deleteFile: boolean) =>
+    invoke<PasswordImport>("password_import", { path, category, overwrite, deleteFile }),
   syncStatus: () => invoke<SyncStatus | null>("sync_status"),
   syncDeviceName: () => invoke<string>("sync_device_name"),
   pickSyncFolder: () => invoke<string | null>("pick_sync_folder"),
