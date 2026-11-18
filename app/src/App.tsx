@@ -13,6 +13,7 @@ import SecretDetail from "./components/SecretDetail";
 import SecretEditor from "./components/SecretEditor";
 import SettingsView from "./components/SettingsView";
 import ActivityView from "./components/ActivityView";
+import Footer from "./components/Footer";
 import TopBar from "./components/TopBar";
 import UpdateNotice from "./components/UpdateNotice";
 import { ToastProvider, useToast } from "./components/ui";
@@ -226,6 +227,8 @@ function Shell() {
         }}
         onLink={() => setLinking(true)}
         onSettings={() => setSettingsOpen(!settingsOpen)}
+        onActivity={() => { setSettingsOpen(false); setView("activity"); setQuery(""); setSelected(null); }}
+        activityActive={view === "activity" && !settingsOpen}
         onLock={lock}
         settingsActive={settingsOpen}
         lockTitle={lockTitle}
@@ -237,7 +240,6 @@ function Shell() {
         types={types}
         secrets={secrets}
         onManageCategories={() => setManagingCategories(true)}
-        info={info}
       />
       {isSecretsView && (
         <>
@@ -269,6 +271,7 @@ function Shell() {
         </>
       )}
       {view === "activity" && <ActivityView run={run} version={dataVersion} />}
+      <Footer info={info} />
       {settingsOpen && (
         <SettingsView
           info={info}

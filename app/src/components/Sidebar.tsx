@@ -1,8 +1,8 @@
-import { Activity, Folder, Home, Layers, Pencil } from "lucide-react";
-import type { AppInfo, CategorySummary, Secret, SecretType } from "../api";
+import { Folder, Home, Layers, Pencil } from "lucide-react";
+import type { CategorySummary, Secret, SecretType } from "../api";
 import { IconView } from "./ui";
 
-/** "home", "all", "cat:NAME", "type:ID", or "activity". */
+/** "home", "all", "cat:NAME", "type:ID", or "activity" (from the top bar). */
 export type View = string;
 
 export default function Sidebar(props: {
@@ -12,7 +12,6 @@ export default function Sidebar(props: {
   types: SecretType[];
   secrets: Secret[];
   onManageCategories: () => void;
-  info: AppInfo;
 }) {
   const { view, onView } = props;
   const usedTypes = props.types
@@ -54,10 +53,6 @@ export default function Sidebar(props: {
         </div>
       )}
 
-      <div className="nav-bottom">
-        {item("activity", "Activity", Activity)}
-        <div className="build" title={`${props.info.storeName} · ${props.info.dataDir}`}>Keylo {props.info.version}</div>
-      </div>
     </nav>
   );
 }
