@@ -32,7 +32,7 @@ export default function Sidebar(props: {
 
   return (
     <nav className="sidebar" aria-label="Secrets">
-      <div className="nav-section">
+      <div className="nav-section nav-top">
         {item("home", "Home", Home)}
         {item("all", "All secrets", Layers, props.secrets.length)}
       </div>
