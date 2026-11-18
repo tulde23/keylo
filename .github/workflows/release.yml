@@ -1,6 +1,6 @@
 # Builds, tests and publishes Keylo (the Rust port) on every merge to main that changes shipped code
 # (see the paths below): Windows, Linux (x64 and
-# ARM64) and macOS (Apple silicon, unsigned). When every build passes, the files are published as
+# ARM64) and macOS (Apple silicon, Developer ID signed and notarized). When every build passes, the files are published as
 # the latest GitHub release, tagged v<major>.<minor>.<run number> (major.minor from Cargo.toml; every
 # build is stamped with that version, so the app can tell which release is newer).
 #
@@ -13,10 +13,19 @@
 #   Keylo_<v>_x64-setup.exe          the app's installer (keylo.exe installed next to it)
 #   keylo-<v>-linux-<arch>.tar.gz    keylow, keylo, install.sh, the polkit policy
 #   Keylo_<v>_<arch>.deb             the same as a Debian/Ubuntu package
-#   keylo-<v>-macos-arm64.zip        Keylo.app with keylo and keylo-mac inside (ad-hoc signed, not
-#                                    notarized: open it with right-click → Open the first time)
+#   keylo-<v>-macos-arm64.zip        Keylo.app with keylo and keylo-mac inside, signed with the
+#                                    Developer ID and notarized (the ticket is stapled)
 #   keylo-<v>-macos-arm64.app.tar.gz the same Keylo.app, for the in-app updater
 #   *.sig, latest.json               update signatures and the update manifest
+#
+# macOS signing secrets (the release fails without them: an ad-hoc signed build would make the
+# Keychain ask again for every secret after an update, since only a Developer ID signature stays
+# the same from one build to the next):
+#   APPLE_CERTIFICATE           the "Developer ID Application" certificate and key, a base64 .p12
+#   APPLE_CERTIFICATE_PASSWORD  its password
+#   APPLE_API_KEY               an App Store Connect API key (the .p8 file's text), for notarizing
+#   APPLE_API_KEY_ID            its key id
+#   APPLE_API_ISSUER            its issuer id
 name: release
 
 on:
@@ -201,10 +210,79 @@ jobs:
           cp target/release/keylo-mac "app/src-tauri/binaries/keylo-mac-$triple"
           cd app && npm ci && npx tauri build --bundles app --config "$GITHUB_WORKSPACE/app/src-tauri/release/macos.json"
 
-      - name: Package (ad-hoc signed)
+      # A throwaway keychain for this run, holding only the Developer ID identity.
+      - name: Import the Developer ID certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_CERTIFICATE_PASSWORD" ]; then
+            echo "::error::APPLE_CERTIFICATE and APPLE_CERTIFICATE_PASSWORD are required (see the top of this file)"
+            exit 1
+          fi
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          kcpw=$(openssl rand -hex 24)
+          p12="$RUNNER_TEMP/devid.p12"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$p12"
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          security import "$p12" -k "$kc" -P "$APPLE_CERTIFICATE_PASSWORD" -f pkcs12 -T /usr/bin/codesign
+          rm -f "$p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpw" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          identity=$(security find-identity -v -p codesigning "$kc" | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)
+          if [ -z "$identity" ]; then
+            echo "::error::APPLE_CERTIFICATE has no Developer ID Application identity"
+            exit 1
+          fi
+          echo "Signing as $identity"
+          echo "SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "SIGN_KEYCHAIN=$kc" >> "$GITHUB_ENV"
+
+      # Hardened runtime and a secure timestamp; the two helpers first, then the bundle (which signs
+      # keylow, its main program). Fixed identifiers keep each program's identity, and with it the
+      # Keychain's "Always Allow", the same across updates.
+      - name: Sign and notarize
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          if [ -z "$APPLE_API_KEY" ] || [ -z "$APPLE_API_KEY_ID" ] || [ -z "$APPLE_API_ISSUER" ]; then
+            echo "::error::APPLE_API_KEY, APPLE_API_KEY_ID and APPLE_API_ISSUER are required (see the top of this file)"
+            exit 1
+          fi
+          app=target/release/bundle/macos/Keylo.app
+          sign() { codesign --force --timestamp --options runtime --keychain "$SIGN_KEYCHAIN" --sign "$SIGN_IDENTITY" "$@"; }
+          sign --identifier io.github.tulde23.keylo.cli "$app/Contents/MacOS/keylo"
+          sign --identifier io.github.tulde23.keylo.helper "$app/Contents/MacOS/keylo-mac"
+          sign "$app"
+          codesign --verify --strict --deep --verbose=2 "$app"
+
+          key="$RUNNER_TEMP/notary.p8"
+          printf '%s\n' "$APPLE_API_KEY" > "$key"
+          zip="$RUNNER_TEMP/notarize.zip"
+          ditto -c -k --keepParent "$app" "$zip"
+          result="$RUNNER_TEMP/notary.json"
+          xcrun notarytool submit "$zip" --key "$key" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" \
+            --wait --timeout 45m --output-format json > "$result" || true
+          status=$(jq -r '.status // empty' "$result")
+          if [ "$status" != "Accepted" ]; then
+            cat "$result"
+            id=$(jq -r '.id // empty' "$result")
+            [ -n "$id" ] && xcrun notarytool log "$id" --key "$key" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER"
+            rm -f "$key"
+            echo "::error::Notarization failed (status: ${status:-none})"
+            exit 1
+          fi
+          rm -f "$key" "$zip"
+          xcrun stapler staple "$app"
+          spctl --assess --type exec --verbose=2 "$app"
+
+      - name: Package
         run: |
           app=target/release/bundle/macos/Keylo.app
-          codesign --force --deep --sign - "$app"
           mkdir -p out
           ditto -c -k --keepParent "$app" "out/keylo-$VERSION-macos-arm64.zip"
           # For the updater: Keylo.app at the archive's root, no AppleDouble files.
@@ -224,6 +302,10 @@ jobs:
             out/*.tar.gz
             out/*.sig
           if-no-files-found: error
+
+      - name: Remove the signing keychain
+        if: always()
+        run: '[ -z "$SIGN_KEYCHAIN" ] || security delete-keychain "$SIGN_KEYCHAIN" || true'
 
   release:
     needs: [windows, linux, macos]
