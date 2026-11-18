@@ -342,6 +342,15 @@ export interface PasswordImport {
   imported: number;
 }
 
+/** A browser, and whether the Keylo extension in it can reach Keylo. */
+export interface BrowserStatus {
+  id: string;
+  name: string;
+  detected: boolean;
+  connected: boolean;
+  elsewhere: string | null;
+}
+
 /** One device in the sync folder. */
 export interface SyncDevice {
   id: string;
@@ -395,6 +404,9 @@ export const api = {
   passwordImportPlan: (path: string, category: string | null) => invoke<PasswordImport>("password_import_plan", { path, category }),
   passwordImport: (path: string, category: string | null, overwrite: boolean, deleteFile: boolean) =>
     invoke<PasswordImport>("password_import", { path, category, overwrite, deleteFile }),
+  browserStatus: () => invoke<BrowserStatus[]>("browser_status"),
+  browserConnect: (id: string) => invoke<BrowserStatus[]>("browser_connect", { id }),
+  browserDisconnect: (id: string) => invoke<BrowserStatus[]>("browser_disconnect", { id }),
   syncStatus: () => invoke<SyncStatus | null>("sync_status"),
   syncDeviceName: () => invoke<string>("sync_device_name"),
   pickSyncFolder: () => invoke<string | null>("pick_sync_folder"),

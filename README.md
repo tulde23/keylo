@@ -30,6 +30,7 @@ OneDrive, iCloud Drive, Dropbox or Syncthing.
 - [Quick start](#quick-start)
 - [Concepts](#concepts)
 - [The desktop app](#the-desktop-app)
+- [Browser extension](#browser-extension)
 - [Command line reference](#command-line-reference)
 - [AI agents: the MCP server](#ai-agents-the-mcp-server)
 - [Linked secrets: 1Password and AWS Secrets Manager](#linked-secrets-1password-and-aws-secrets-manager)
@@ -108,6 +109,8 @@ There is no tool that returns a value. An agent can use a secret, but it can't r
 
 **For you**
 - Desktop app for Windows, macOS and Linux, with a command line that does everything the app does.
+- **Browser extension** for Chrome, Edge, Brave and Firefox: fills a site's login on your click, and
+  never in a browser an agent controls.
 - **14 built-in secret types** (login, API key, password, database, SSH key, secure note, server,
   email account, software license, wireless router, crypto wallet, document, credit card, bank
   account) plus your own **custom types**, each with named fields.
@@ -458,6 +461,77 @@ Keylo is already open.
 
 ---
 
+## Browser extension
+
+The Keylo extension fills your logins in **Chrome, Edge, Brave and Firefox**.
+
+**In the sign-in form:** when Keylo has a login for the site, a small Keylo icon appears in the username
+and password fields. Click it and choose the login to fill. If Keylo is locked, the icon is still there,
+and the menu offers to unlock.
+
+**From the toolbar:** click the Keylo button to see the current site's logins, then:
+- **Fill:** puts the username and password into the page.
+- **Copy:** copies the username, password or one-time code to the secure clipboard.
+- **Ctrl+Shift+L** (Cmd+Shift+L on a Mac) fills straight away when the site has one login, and opens the
+  list when it has several.
+
+Search finds any login to copy, and **Generate a password** makes a new one.
+
+**How it reaches Keylo.** Browsers don't let extensions read the system's secure store. Instead the
+browser starts `keylo` as a *native messaging host*, and only for the Keylo extension's id. Messages go
+over the two programs' standard input and output, with no network connection and no local server.
+Connecting a browser registers `keylo` with it:
+- on Windows, a registry entry under `HKCU\Software\…\NativeMessagingHosts`;
+- on macOS and Linux, a manifest file in the browser's `NativeMessagingHosts` folder.
+
+**Setting it up**
+1. **Connect your browsers:** in Keylo, **Settings → Browser → Connect**, or `keylo browser connect`
+   (every installed browser, or name them: `keylo browser connect chrome firefox`).
+2. **Add the extension:** it isn't in the browsers' stores yet. Download
+   `keylo-VERSION-browser-chrome.zip` (or `-firefox.zip`) from the release and unzip it somewhere it
+   can stay.
+   - **Chrome, Edge, Brave:** on the extensions page (`chrome://extensions`, `edge://extensions`), turn
+     on Developer mode, choose **Load unpacked** and pick the folder.
+   - **Firefox:** `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on**. Firefox removes it
+     when it restarts, until the extension is signed.
+3. Restart the browser.
+
+```bash
+keylo browser status                     # which browsers can reach Keylo
+keylo browser connect [BROWSER…]         # chrome, edge, brave, chromium, firefox
+keylo browser disconnect [BROWSER…]
+```
+
+**Safeguards**
+- **Right site only.** A login fills only on the site it's saved for, or a subdomain of it: `github.com`
+  fills on `gist.github.com`, but never on `github.com.evil.io`, and never the other way round. Keylo
+  itself checks the page's address before releasing anything. Logins found by search can be copied,
+  but not filled.
+- **Secure pages only.** It fills only over https, or plain http on `localhost`, and only in the
+  page's main frame, never in embedded frames.
+- **Only on your action.** It fills only when you click a login in Keylo's menu, click Fill, or press
+  the shortcut. Pages can't ask for anything.
+- **The in-field menu is out of the page's reach.** It's an extension page in a frame, inside a closed
+  shadow root, at an address that changes each browser session. So the page can't read it, script it,
+  or load it on its own. In Chrome, Edge and Brave it also refuses to fill when the page covers or
+  hides it, a "clickjacking" trick.
+- **Not in automated browsers.** A browser driven by an agent or a test tool (Playwright, Selenium,
+  Puppeteer, anything that sets `navigator.webdriver`) is refused. Keylo's promise that agents never
+  see values holds in the browser too.
+- **Identity check.** Your identity check applies as everywhere else: once per session, or on every
+  use. Fills and copies appear in the app's recent activity.
+- **What the extension can see.** It never sees a password except while filling it, and it only lists
+  names, usernames and websites.
+
+**Permissions.** To show the icon in sign-in fields, the extension runs on https pages (and
+`http://localhost`). Chrome describes this as "read and change your data on all https sites". It
+only looks for sign-in fields, and asks Keylo about a site only when a page has one. In Firefox, allow
+it "on all websites" in the add-on's permissions to get the icon; the toolbar button works without it.
+
+**For now:** linked secrets (1Password, AWS) are found by search and can be copied, but aren't matched
+to pages, because their website lives in the other vault. Saving new logins from the browser, and
+passkeys, are planned.
+
 ## Command line reference
 
 `keylo help` lists everything. Values are never accepted as arguments, where other processes could
@@ -544,6 +618,12 @@ keylo sync join FOLDER [--name N]     # on the other device: asks for the code
 keylo sync                            # sync now
 keylo sync status                     # folder, devices, last result
 keylo sync rename NAME | forget DEVICE | leave
+```
+
+### Browser
+
+```bash
+keylo browser [status | connect [BROWSER…] | disconnect [BROWSER…]]
 ```
 
 ### Session and settings
@@ -1131,6 +1211,7 @@ cd app && npm ci && npx tauri build         # the app, and an installer for your
 | `crates/keylo-cli` | `keylo` and the MCP server |
 | `app/` | The desktop app, `keylow`: Tauri 2, with a React and TypeScript front end in `app/src` |
 | `packaging/` | The install scripts and the polkit policy shipped in releases |
+| `browser/` | The browser extension (`extension/`, plain JavaScript, no build step), Firefox's manifest, and `package.sh` for releases |
 | `tests/` | Integration tests and the fake `op`, `aws` and `claude` used by them |
 | `rust_csharp/` | The earlier C# Keylo |
 

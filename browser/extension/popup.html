@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Keylo</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="icons/32.png" alt="" width="20" height="20">
+    <strong>Keylo</strong>
+    <span id="site" class="muted"></span>
+  </header>
+
+  <main id="main">
+    <p class="muted center">Connecting to Keylo…</p>
+  </main>
+
+  <section id="search-area" hidden>
+    <input id="search" type="search" placeholder="Search all logins" autocomplete="off" spellcheck="false" aria-label="Search all logins">
+    <ul id="results" class="logins"></ul>
+  </section>
+
+  <footer>
+    <button id="generate" class="link">Generate a password</button>
+    <span id="generated" class="mono" hidden></span>
+  </footer>
+
+  <p id="message" role="status" hidden></p>
+
+  <script src="keylo.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

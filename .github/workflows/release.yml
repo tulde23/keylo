@@ -16,6 +16,8 @@
 #   keylo-<v>-macos-arm64.zip        Keylo.app with keylo and keylo-mac inside (ad-hoc signed, not
 #                                    notarized: open it with right-click → Open the first time)
 #   keylo-<v>-macos-arm64.app.tar.gz the same Keylo.app, for the in-app updater
+#   keylo-<v>-browser-chrome.zip     the browser extension (Chrome, Edge, Brave: load unpacked)
+#   keylo-<v>-browser-firefox.zip    the same for Firefox
 #   *.sig, latest.json               update signatures and the update manifest
 name: release
 
@@ -38,6 +40,7 @@ on:
       - 'app/src/**'
       - 'app/src-tauri/**'
       - 'packaging/**'
+      - 'browser/**'
       - 'rust_csharp/src/Keylo.Platform.MacOS/helper/**'
 
 permissions:
@@ -241,6 +244,9 @@ jobs:
       - name: Version
         run: bash .github/stamp-version.sh
 
+      - name: Browser extension
+        run: bash browser/package.sh "$VERSION" out
+
       - name: Update manifest
         run: |
           base="https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"
@@ -274,5 +280,6 @@ jobs:
           - Windows: keylo-$version-windows-x64.zip (run install.ps1) or the setup .exe. Either updates itself from the app.
           - Linux: the .deb, or the tarball (run install.sh; the app needs libwebkit2gtk-4.1-0).
           - macOS (Apple silicon): unsigned; unzip, move Keylo.app to Applications, and right-click → Open the first time. It updates itself from the app.
+          - Browser extension: keylo-$version-browser-chrome.zip (Chrome, Edge, Brave) or -firefox.zip; see Settings → Browser in Keylo.
 
           Check downloads against SHA256SUMS.txt."

@@ -148,7 +148,7 @@ pub async fn set_ui_theme(theme: String, mode: String) -> Res<UiTheme> {
 }
 
 /// The keylo command installed next to the app.
-fn keylo_path() -> String {
+pub(crate) fn keylo_path() -> String {
     std::env::current_exe()
         .ok()
         .as_ref()

@@ -1,0 +1,69 @@
+{
+  "manifest_version": 3,
+  "name": "Keylo",
+  "version": "1.3.0",
+  "description": "Fill your Keylo logins from the toolbar or the Keylo icon in sign-in fields: matched to the site, after your identity check, never in automated browsers.",
+  "icons": {
+    "32": "icons/32.png",
+    "128": "icons/128.png"
+  },
+  "action": {
+    "default_title": "Keylo",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "32": "icons/32.png"
+    }
+  },
+  "permissions": [
+    "nativeMessaging",
+    "activeTab",
+    "scripting"
+  ],
+  "commands": {
+    "fill-login": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+L",
+        "mac": "Command+Shift+L"
+      },
+      "description": "Fill this site's login"
+    }
+  },
+  "background": {
+    "scripts": [
+      "keylo.js",
+      "background.js"
+    ]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "keylo@tulde23.github.io",
+      "strict_min_version": "128.0"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": [
+        "inline.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "menu.html"
+      ],
+      "matches": [
+        "https://*/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ]
+    }
+  ]
+}

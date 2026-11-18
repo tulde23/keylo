@@ -1,6 +1,7 @@
 //! keylo: the command line for Keylo's secrets, and (keylo mcp) the MCP server for AI agents.
 
 mod args;
+mod browser_host;
 mod mcp;
 mod runner;
 mod sync_cmd;
@@ -84,6 +85,9 @@ keylo sync [status | code]              Sync now with your other devices (a shar
 keylo sync create FOLDER [--name N]     Start syncing: a new vault in a folder your devices share
 keylo sync join FOLDER [--name N]       Join it from another device (asks for the code)
 keylo sync rename NAME | forget DEVICE | leave
+keylo browser [status | connect [BROWSER…] | disconnect [BROWSER…]]
+                                        Let the Keylo browser extension use Keylo (chrome, edge, brave,
+                                        chromium, firefox; default: every one installed)
 keylo update [--check] [--yes]          Check for a newer Keylo and install it (Windows: the app and
                                         keylo, in place; macOS: from the app; Linux: the release page)
 keylo config [hello session|always|never | session-minutes N | clipboard-seconds N | audit-days N|forever]",
@@ -95,6 +99,11 @@ keylo config [hello session|always|never | session-minutes N | clipboard-seconds
 fn main() -> ExitCode {
     keylo_platform::install();
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    // Started by a browser for the Keylo extension (native messaging): no terminal, JSON on stdio.
+    if browser_host::caller(&argv).is_some() {
+        keylo_platform::set_terminal_prompts(false);
+        return ExitCode::from(browser_host::serve(&argv) as u8);
+    }
     // A store that needs a passphrase (Linux's vault file) may ask on the terminal, except from the
     // MCP server (its stdin and stdout are the agent's) and the clipboard clearer.
     let command = argv.first().map(|a| a.to_lowercase()).unwrap_or_default();
@@ -160,6 +169,7 @@ fn run(argv: &[String]) -> CliResult<i32> {
         "status" => status(&c, &args),
         "update" => update_cmd(&args),
         "sync" => sync_cmd::sync_cmd(&mut c, &args),
+        "browser" | "browsers" => browser_cmd(&args),
         "config" => config_cmd(&mut c, &args),
         "__clip-clear" => clip_clear(&args),
         "import" => import_cmd(&mut c, &args),
@@ -729,6 +739,63 @@ fn otp_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
     Ok(0)
 }
 
+/// keylo browser [status | connect | disconnect] [BROWSER…]: registers keylo as the browser
+/// extension's native messaging host.
+fn browser_cmd(args: &Args) -> CliResult<i32> {
+    use keylo_core::browser::{self, Browser};
+    let action = args.optional_positional(0).map(|a| a.to_lowercase()).unwrap_or_else(|| "status".into());
+    let names = args.positionals_from(1);
+    args.throw_on_unknown(None)?;
+    let keylo = std::env::current_exe()?;
+    let chosen = |default_detected: bool| -> CliResult<Vec<Browser>> {
+        if names.is_empty() {
+            let status = browser::status(&keylo);
+            return Ok(Browser::ALL.into_iter().filter(|b| !default_detected || status.iter().any(|s| s.id == b.id() && (s.detected || s.connected))).collect());
+        }
+        names.iter().map(|n| Browser::parse(n).ok_or_else(|| CliError::Usage(format!("No browser '{n}': chrome, edge, brave, chromium or firefox.")))).collect()
+    };
+    match action.as_str() {
+        "status" => {
+            let rows: Vec<Vec<String>> = browser::status(&keylo)
+                .into_iter()
+                .map(|s| {
+                    let state = if s.connected {
+                        "connected".to_string()
+                    } else if let Some(p) = &s.elsewhere {
+                        format!("connected to another keylo ({p})")
+                    } else {
+                        "not connected".to_string()
+                    };
+                    vec![s.name, if s.detected { "installed".into() } else { "not found".into() }, state]
+                })
+                .collect();
+            terminal::print_table(&["BROWSER", "", "KEYLO"], &rows);
+            info(&format!("Extension id: {} (Chrome, Edge, Brave), {} (Firefox).", browser::CHROME_EXTENSION_ID, browser::FIREFOX_EXTENSION_ID));
+            Ok(0)
+        }
+        "connect" => {
+            let list = chosen(true)?;
+            if list.is_empty() {
+                fail!("No supported browser was found. Name one: keylo browser connect chrome");
+            }
+            for b in list {
+                browser::connect(b, &keylo)?;
+                info(&format!("Connected {}.", b.name()));
+            }
+            info("Restart the browser if the Keylo extension says it can't reach Keylo.");
+            Ok(0)
+        }
+        "disconnect" => {
+            for b in chosen(false)? {
+                browser::disconnect(b)?;
+                info(&format!("Disconnected {}.", b.name()));
+            }
+            Ok(0)
+        }
+        _ => usage!("keylo browser [status | connect [BROWSER…] | disconnect [BROWSER…]]"),
+    }
+}
+
 fn remove(c: &mut Context, args: &Args) -> CliResult<i32> {
     let name = args.positional(0, "secret name")?;
     let yes = args.flag("yes");
@@ -1166,7 +1233,7 @@ fn config_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
     Ok(0)
 }
 
-fn copy_with_timeout(c: &Context, text: &str, what: &str) -> CliResult<i32> {
+pub(crate) fn copy_with_timeout(c: &Context, text: &str, what: &str) -> CliResult<i32> {
     let token = platform::current().clipboard().set_text(text)?;
     let seconds = c.config.clipboard_seconds;
     // A separate hidden process clears the clipboard, so this command can return immediately.

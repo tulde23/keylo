@@ -4,6 +4,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod browser;
 mod commands;
 mod sync;
 mod transfer;
@@ -133,6 +134,9 @@ fn main() {
             updates::check_update,
             updates::install_update,
             updates::open_releases,
+            browser::browser_status,
+            browser::browser_connect,
+            browser::browser_disconnect,
             sync::sync_status,
             sync::sync_device_name,
             sync::pick_sync_folder,

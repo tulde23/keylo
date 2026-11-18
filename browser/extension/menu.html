@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Keylo</title>
+  <link rel="stylesheet" href="popup.css">
+  <style>
+    body { width: auto; min-height: 0; height: 236px; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    main { flex: 1; overflow-y: auto; padding: 6px 8px; }
+    header { padding: 8px 10px; }
+    #message { border-top: 1px solid var(--border); }
+    .login { cursor: pointer; }
+    .login:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="icons/32.png" alt="" width="18" height="18">
+    <strong>Keylo</strong>
+    <span id="site" class="muted"></span>
+  </header>
+  <main id="main"><p class="muted center">Loading…</p></main>
+  <p id="message" role="status" hidden></p>
+  <script src="menu.js"></script>
+</body>
+</html>

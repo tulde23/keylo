@@ -6,6 +6,7 @@ pub mod access;
 pub mod activity;
 pub mod approval;
 pub mod backup;
+pub mod browser;
 pub mod categories;
 pub mod claude_code;
 pub mod config;
