@@ -10,6 +10,8 @@ interface Row {
   secret: boolean;
   multiline: boolean;
   url: boolean;
+  /** A one-time code field: shows the current code with a countdown. */
+  otp: boolean;
   /** Known without unlocking (non-secret fields of Keylo's own secrets). */
   value: string | null;
 }
@@ -18,13 +20,13 @@ function rowsFor(secret: Secret, type: SecretType | undefined): Row[] {
   // A link's fields live in its vault: every value is read from there when shown.
   if (secret.link) {
     return secret.link.fields.map((f) => ({
-      id: f.id, label: f.label, secret: f.secret, multiline: f.id === "notes", url: f.id.startsWith("website") || f.id.includes("url"), value: null,
+      id: f.id, label: f.label, secret: f.secret, multiline: f.id === "notes", url: f.id.startsWith("website") || f.id.includes("url"), otp: false, value: null,
     }));
   }
   if (!type) {
     const rows: Row[] = [];
-    if (secret.username) rows.push({ id: "username", label: "Username", secret: false, multiline: false, url: false, value: secret.username });
-    rows.push({ id: "value", label: "Value", secret: true, multiline: true, url: false, value: null });
+    if (secret.username) rows.push({ id: "username", label: "Username", secret: false, multiline: false, url: false, otp: false, value: secret.username });
+    rows.push({ id: "value", label: "Value", secret: true, multiline: true, url: false, otp: false, value: null });
     return rows;
   }
   return type.fields
@@ -34,9 +36,11 @@ function rowsFor(secret: Secret, type: SecretType | undefined): Row[] {
       secret: f.secret,
       multiline: f.kind === "SecretText",
       url: f.kind === "Url",
+      otp: f.kind === "Totp",
       value: f.secret ? null : f.kind === "Username" ? secret.username : secret.fields[f.id] ?? null,
     }))
-    .filter((r) => r.secret || r.value);
+    // One-time code fields only when set (a visible marker says so; the key stays encrypted).
+    .filter((r) => (r.otp ? !!secret.fields[r.id] : r.secret || r.value));
 }
 
 export default function SecretDetail(props: {
@@ -47,6 +51,8 @@ export default function SecretDetail(props: {
   run: Run;
   onEdit: (values: Record<string, string>) => void;
   onChanged: (selectName?: string | null) => Promise<void>;
+  /** Keep a shown one-time code current (not when every use asks for the identity check). */
+  autoRefreshCodes: boolean;
 }) {
   const { secret, type, run } = props;
   const toast = useToast();
@@ -208,6 +214,8 @@ export default function SecretDetail(props: {
 
       <dl className="fields">
         {rows.map((r) => {
+          if (r.otp) return <OtpRow key={r.id} name={secret.name} field={r.id} label={r.label} run={run}
+            copied={copied === r.id} onCopy={() => copy(r.id)} autoRefresh={props.autoRefreshCodes} />;
           const value = r.secret || link ? revealed?.[r.id] ?? null : r.value;
           return (
             <div className="field-row" key={r.id}>
@@ -330,5 +338,62 @@ function PushDialog({ provider, name, run, onClose }: { provider: VaultProvider;
         </>
       )}
     </Modal>
+  );
+}
+
+/**
+ * A one-time code: hidden until shown, then the current code with a countdown, kept current while
+ * shown (when the identity check allows it without asking each time).
+ */
+function OtpRow({ name, field, label, run, copied, onCopy, autoRefresh }: {
+  name: string;
+  field: string;
+  label: string;
+  run: Run;
+  copied: boolean;
+  onCopy: () => void;
+  autoRefresh: boolean;
+}) {
+  const [code, setCode] = useState<{ code: string; until: number; period: number } | null>(null);
+  const [now, setNow] = useState(Date.now());
+
+  const load = async () => {
+    const c = await run(() => api.otpCode(name, field));
+    if (c) setCode({ code: c.code, until: Date.now() + c.secondsLeft * 1000, period: c.period });
+  };
+
+  useEffect(() => {
+    if (!code) return;
+    const tick = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(tick);
+  }, [code]);
+
+  const left = code ? Math.max(0, Math.ceil((code.until - now) / 1000)) : 0;
+  useEffect(() => {
+    if (code && left === 0) {
+      if (autoRefresh) load();
+      else setCode(null);
+    }
+  }, [left]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pretty = code ? (code.code.length === 6 ? `${code.code.slice(0, 3)} ${code.code.slice(3)}` : code.code) : "";
+  return (
+    <div className="field-row">
+      <dt>{label}</dt>
+      <dd>
+        {code ? (
+          <span className="field-value otp-value">
+            <span className="mono otp-code">{pretty}</span>
+            <span className={`otp-timer${left <= 5 ? " ending" : ""}`} title={`Changes in ${left}s`}
+              style={{ ["--otp-left" as string]: `${(left / code.period) * 100}%` }}>{left}</span>
+          </span>
+        ) : (
+          <button className="button small" onClick={load}>Show code</button>
+        )}
+        <button className="icon-button small" onClick={onCopy} title="Copy the current code" aria-label={`Copy ${label}`}>
+          {copied ? <Check size={15} /> : <Copy size={15} />}
+        </button>
+      </dd>
+    </div>
   );
 }

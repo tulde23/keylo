@@ -259,6 +259,7 @@ function Shell() {
             category={current ? categoryOf(current) : undefined}
             info={info}
             run={run}
+            autoRefreshCodes={status.mode !== "always"}
             onEdit={(values) => current && setEditing({ secret: current, values })}
             onChanged={async (name) => {
               await run(refresh);

@@ -25,6 +25,9 @@ pub enum FieldKind {
     Password,
     /// Secret, multi-line (private keys, notes, certificates).
     SecretText,
+    /// A two-factor setup key (an otpauth:// link or base32 key). Secret; where the value is used
+    /// (`derive`), it's the current one-time code (see crate::totp).
+    Totp,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -46,7 +49,7 @@ impl FieldDefinition {
     }
 
     pub fn is_secret(&self) -> bool {
-        matches!(self.kind, FieldKind::Password | FieldKind::SecretText)
+        matches!(self.kind, FieldKind::Password | FieldKind::SecretText | FieldKind::Totp)
     }
 
     /// "Host name" → "host_name".
@@ -152,7 +155,12 @@ pub fn built_in() -> Vec<SecretTypeDefinition> {
     let mut brand = f("brand", "Brand", Text);
     brand.options = Some(["Visa", "Mastercard", "American Express", "Discover", "Other"].map(String::from).to_vec());
     vec![
-        t("login", "Login", "Person24", vec![f("username", "Username", Username), f("password", "Password", Password), f("url", "Website", Url)]),
+        t(
+            "login",
+            "Login",
+            "Person24",
+            vec![f("username", "Username", Username), f("password", "Password", Password), f("url", "Website", Url), f("totp", "One-time code", Totp)],
+        ),
         t("api_key", "API key", "Key24", vec![f("key_id", "Key ID", Username), f("secret", "Secret", Password), f("endpoint", "Endpoint", Url)]),
         t(
             "database",
@@ -433,10 +441,18 @@ pub fn typed_draft(
         let Some(v) = fields.iter().find(|(k, _)| eq_ic(k, &f.id)).map(|(_, v)| v).filter(|v| !v.is_empty()) else {
             continue;
         };
+        if f.kind == FieldKind::Totp {
+            crate::totp::Totp::parse(v).map_err(|e| Error::msg(format!("{}: {e}", f.label)))?;
+        }
         if f.kind == FieldKind::Username {
             username = Some(v.trim().to_string());
         } else if f.is_secret() {
             secret.insert(f.id.clone(), v.clone());
+            // A one-time code field also leaves a visible marker, so lists can show that a login has
+            // two-factor codes without decrypting it. The key itself is only in the value.
+            if f.kind == FieldKind::Totp {
+                visible.insert(f.id.clone(), TOTP_MARKER.into());
+            }
         } else {
             visible.insert(f.id.clone(), v.trim().to_string());
         }
@@ -455,6 +471,9 @@ pub fn typed_draft(
     })
 }
 
+/// The visible attribute value marking a one-time code field as set.
+pub const TOTP_MARKER: &str = "on";
+
 /// Every field's value: attributes plus the decrypted secret fields, and (with `derive`) a database
 /// connection string built from the other fields when none is stored.
 pub fn read_fields(t: &SecretTypeDefinition, info: &SecretInfo, value: &[u8], derive: bool) -> BTreeMap<String, String> {
@@ -463,6 +482,9 @@ pub fn read_fields(t: &SecretTypeDefinition, info: &SecretInfo, value: &[u8], de
         fields.insert(u.id.clone(), name.clone());
     }
     for (k, v) in &info.fields {
+        if t.field(k).is_some_and(|f| f.kind == FieldKind::Totp) {
+            continue; // the marker, not a value
+        }
         fields.insert(k.clone(), v.clone());
     }
     match serde_json::from_slice::<BTreeMap<String, String>>(value) {
@@ -472,6 +494,16 @@ pub fn read_fields(t: &SecretTypeDefinition, info: &SecretInfo, value: &[u8], de
             if let (Some(p), Ok(raw)) = (t.primary(), std::str::from_utf8(value)) {
                 if !raw.is_empty() {
                     fields.insert(p.id.clone(), raw.to_string());
+                }
+            }
+        }
+    }
+    // One-time code fields: the code now, not the setup key (an unreadable key gives no code).
+    if derive {
+        for f in t.fields.iter().filter(|f| f.kind == FieldKind::Totp) {
+            if let Some(key) = fields.remove(&f.id) {
+                if let Ok(totp) = crate::totp::Totp::parse(&key) {
+                    fields.insert(f.id.clone(), totp.now().code);
                 }
             }
         }
@@ -545,6 +577,36 @@ pub fn connection_string(f: &BTreeMap<String, String>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_one_time_code_field_gives_codes_for_use_and_the_key_for_editing() {
+        let login = built_in().into_iter().find(|t| t.id == "login").unwrap();
+        let key = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+        let fields: BTreeMap<String, String> = [("password".to_string(), "pw".to_string()), ("totp".to_string(), key.to_string())].into();
+        let draft = typed_draft(&login, "github", &fields, None, None, None, None).unwrap();
+        let info = SecretInfo {
+            name: "github".into(),
+            category: None,
+            username: None,
+            notes: None,
+            updated_at: chrono::Utc::now(),
+            size: 0,
+            storage: crate::secrets::StorageKind::CredentialManager,
+            icon: None,
+            color: None,
+            type_id: Some("login".into()),
+            fields: draft.fields.clone(),
+        };
+        let used = read_fields(&login, &info, &draft.value, true);
+        assert_eq!(used["totp"], crate::totp::Totp::parse(key).unwrap().now().code);
+        assert_eq!(used["password"], "pw");
+        assert_eq!(read_fields(&login, &info, &draft.value, false)["totp"], key);
+        assert_eq!(draft.fields["totp"], TOTP_MARKER, "lists can tell it's set");
+        assert!(!String::from_utf8_lossy(&draft.value).is_empty() && !draft.fields.values().any(|v| v == key));
+
+        let bad: BTreeMap<String, String> = [("password".to_string(), "pw".to_string()), ("totp".to_string(), "123456".to_string())].into();
+        assert!(typed_draft(&login, "github", &bad, None, None, None, None).err().unwrap().to_string().starts_with("One-time code:"));
+    }
 
     #[test]
     fn built_in_types_are_valid() {

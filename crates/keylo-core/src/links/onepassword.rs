@@ -236,6 +236,8 @@ impl VaultProvider for OnePassword {
             Err(e) => return fail(e.to_string()),
         };
         let typed = t.as_ref().map(|t| types::read_fields(t, info, &secret.value, true));
+        // One-time code fields go as the setup key (1Password makes the codes), not today's code.
+        let raw = t.as_ref().map(|t| types::read_fields(t, info, &secret.value, false));
         let value = match (&t, &typed) {
             (Some(t), Some(f)) => Some(t.primary().and_then(|p| f.get(&p.id)).cloned().unwrap_or_default()),
             _ => types::decode_text(&secret.value),
@@ -251,6 +253,13 @@ impl VaultProvider for OnePassword {
         if let (Some(t), Some(typed)) = (&t, &typed) {
             let primary = t.primary().map(|p| p.id.clone());
             for f in t.fields.iter().filter(|f| Some(&f.id) != primary.as_ref() && f.kind != FieldKind::Username) {
+                if f.kind == FieldKind::Totp {
+                    let key = raw.as_ref().and_then(|r| r.get(&f.id)).and_then(|k| crate::totp::Totp::parse(k).ok());
+                    if let Some(totp) = key {
+                        item_fields.push(json!({"id": f.id, "type": "OTP", "label": f.label, "value": totp.to_uri(&info.name)}));
+                    }
+                    continue;
+                }
                 if let Some(text) = typed.get(&f.id) {
                     let kind = if f.is_secret() { "CONCEALED" } else if f.kind == FieldKind::Url { "URL" } else { "STRING" };
                     item_fields.push(json!({"id": f.id, "type": kind, "label": f.label, "value": text}));

@@ -120,6 +120,8 @@ There is no tool that returns a value. An agent can use a secret, but it can't r
 - **Encrypted backups** (AES-256-GCM, password-protected) that restore on any OS.
 - **Sync between your own devices** through a folder they already share (OneDrive, iCloud Drive,
   Dropbox, Syncthing), end-to-end encrypted, with conflict copies instead of lost edits.
+- **One-time codes** (two-factor, TOTP): store a site's setup key with a login, then show or copy its
+  current code in the app, with `keylo otp`, or in agents' commands.
 - A **secure clipboard**: copied values skip clipboard history and cloud sync, and clear themselves.
 - An identity check (Windows Hello, Touch ID or polkit) once per session, on every use, or never.
 - Locks when your screen locks. Three colour themes, light and dark.
@@ -129,15 +131,16 @@ There is no tool that returns a value. An agent can use a secret, but it can't r
 ## Install
 
 Download the latest release from **[Releases](https://github.com/tulde23/keylo/releases/latest)**.
-Every release has a `SHA256SUMS.txt`. Check your download against it:
+Releases are numbered `major.minor.build` (for example 1.3.20); below, `VERSION` stands for the one
+you downloaded. Every release has a `SHA256SUMS.txt`. Check your download against it:
 
 ```powershell
 # Windows (PowerShell)
-(Get-FileHash .\keylo-1.2.0-windows-x64.zip -Algorithm SHA256).Hash
+(Get-FileHash .\keylo-VERSION-windows-x64.zip -Algorithm SHA256).Hash
 ```
 ```bash
 # macOS / Linux
-shasum -a 256 keylo-1.2.0-linux-x64.tar.gz
+shasum -a 256 keylo-VERSION-linux-x64.tar.gz
 ```
 
 ### Windows
@@ -185,7 +188,7 @@ x64 or ARM64, with a desktop (GNOME, KDE and others) or without one (servers, co
 **Debian and Ubuntu:**
 
 ```bash
-sudo apt install ./Keylo_1.2.0_amd64.deb      # or _arm64.deb
+sudo apt install ./Keylo_VERSION_amd64.deb      # or _arm64.deb
 ```
 
 This installs `keylow` and `keylo` to `/usr/bin`, a menu entry, and Keylo's polkit policy, and pulls in
@@ -194,7 +197,7 @@ the WebKitGTK runtime the app needs.
 **Other distributions:** unpack the tarball and run its installer:
 
 ```bash
-tar -xzf keylo-1.2.0-linux-x64.tar.gz && ./keylo-1.2.0-linux-x64/install.sh
+tar -xzf keylo-VERSION-linux-x64.tar.gz && ./keylo-VERSION-linux-x64/install.sh
 ```
 
 It installs to `~/.local/lib/keylo`, links `~/.local/bin/keylo`, adds a menu entry, and (with sudo,
@@ -290,7 +293,7 @@ The **main** field (the first secret field) is what `prod-db` means without a fi
 
 | Type | Id | Fields |
 |---|---|---|
-| Login | `login` | username, **password**, url |
+| Login | `login` | username, **password**, url, **totp** (one-time code) |
 | API key | `api_key` | key_id, **secret**, endpoint |
 | Password | `password` | **password**, url |
 | Database | `database` | engine, host, port, database, username, **password**, **connection_string** |
@@ -308,13 +311,45 @@ The **main** field (the first secret field) is what `prod-db` means without a fi
 - A **database** without its own connection string gets one built from its fields for postgres,
   mysql, sqlserver, mongodb and redis, so `prod-db:connection_string` always works.
 - **Plain** secrets have no type: one value and an optional username.
+- A **one-time code** field (a login's `totp`) holds a site's two-factor setup key. Wherever the
+  field is used (copying it, `keylo get NAME:totp`, an agent's command), it gives the current
+  6-digit code instead. See [One-time codes](#one-time-codes).
 - **Custom types**: Settings → Secret types → New type. Give it a name, icon, colour and fields, each
-  text, username, URL, number, password or multi-line secret, with optional suggested values. Field ids
+  text, username, URL, number, password, multi-line secret or one-time code, with optional suggested
+  values. Field ids
   are fixed once saved, because secrets store their data under them.
 - Built-in types can take your own icon and colour, but their fields are fixed.
 - A secret's **type can be changed** when editing it. Values move to fields with the same id or role
   (main value, username, website), and anything that has no place in the new type is listed before
   you save.
+
+### One-time codes
+
+Sites that offer two-factor sign-in with an authenticator app show a QR code, and usually a
+"can't scan it?" setup key next to it. Keylo can hold that key with the login and produce the codes,
+like an authenticator app:
+
+1. **Add the key:** edit the login and paste the key (or the `otpauth://` link) into **One-time
+   code**, or run `keylo otp NAME --set`. Keylo checks it and, from the command line, shows the
+   first code, so you can finish the setup on the site.
+2. **Use the codes:** the login shows **Show code** (the code, with a countdown) and a copy button.
+   From a terminal, run `keylo otp NAME`, or `keylo otp NAME --clip`.
+3. **In commands and for agents:** `NAME:totp` is the current code, so
+   `keylo run --env GITHUB_OTP=github:totp -- …` or an agent's `run_with_secrets` gets a fresh code
+   without ever seeing the key.
+
+- **Supported:** time-based codes (TOTP) with SHA-1, SHA-256 or SHA-512, 6 to 8 digits, and any period.
+  These are what almost every site uses. Counter-based (HOTP) codes aren't supported.
+- **Protection:** the key is a secret field: encrypted with the password, shown only when editing,
+  synced and backed up like any other secret. A visible marker shows that a login has codes, without
+  revealing the key.
+- **Pushing:** a login pushed to 1Password takes the key as 1Password's own one-time password field.
+  AWS Secrets Manager gets the key in the secret's JSON.
+- **Custom types** can have a one-time code field too.
+
+Keeping the password and its second factor in the same place is convenient, but it means anyone who
+gets into Keylo has both. For your most important accounts, consider keeping the codes in a separate
+authenticator app.
 
 ### Categories
 
@@ -444,6 +479,9 @@ keylo get NAME --field host                    # one field (or NAME:host)
 keylo get NAME --both                          # every field
 keylo get NAME --clip                          # to the secure clipboard; it clears itself
 keylo get NAME --out FILE                      # to a file
+
+keylo otp NAME [--clip]                        # a login's current two-factor code
+keylo otp NAME --set                           # store its setup key (asked for, not an argument)
 
 keylo edit NAME [--rename NEW] [--category C] [--username U] [--notes N] [--field F=V]…
 keylo rm NAME [--yes]

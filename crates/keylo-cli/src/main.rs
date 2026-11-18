@@ -28,7 +28,7 @@ use zeroize::Zeroizing;
 
 const FLAGS: &[&str] = &[
     "clip", "yes", "overwrite", "delete-originals", "flat", "plain", "all", "json", "force", "dry-run",
-    "password-stdin", "both", "add-to-claude", "help", "stdio", "ask", "no-ask", "check",
+    "password-stdin", "both", "add-to-claude", "help", "stdio", "ask", "no-ask", "check", "set",
 ];
 
 fn usage_text() -> String {
@@ -43,6 +43,7 @@ keylo categories                        List categories with counts
 keylo types                             List secret types and their fields
 keylo get NAME [--clip] [--out FILE] [--field F] [--both]
                                         Print the value (a typed secret's main field, or --field F)
+keylo otp NAME [--clip] | NAME --set     A login's current two-factor code; --set stores its setup key
 keylo set NAME [--category C] [--username U] [--notes N] [--file FILE]
                                         Add or update (value is prompted, piped, or read from FILE)
 keylo set NAME --type T [--field F=V]... [--category C] [--notes N] [--file FILE]
@@ -132,6 +133,7 @@ fn run(argv: &[String]) -> CliResult<i32> {
         "categories" | "cats" => categories(&mut c, &args),
         "types" => types_cmd(&c, &args),
         "get" => get(&mut c, &args),
+        "otp" | "totp" => otp_cmd(&mut c, &args),
         "set" | "add" => set(&mut c, &args),
         "edit" => edit(&mut c, &args),
         "rm" | "delete" | "remove" => remove(&mut c, &args),
@@ -670,6 +672,58 @@ fn update_cmd(args: &Args) -> CliResult<i32> {
     info(&format!(
         "Updated to Keylo {latest}. If the app is open, restart it; keylo mcp servers that are running update when Claude Code restarts them."
     ));
+    Ok(0)
+}
+
+/// keylo otp NAME [--clip]: a secret's current two-factor code. keylo otp NAME --set: stores the
+/// setup key (asked for, so it stays out of shell history).
+fn otp_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
+    let name = args.positional(0, "secret name")?;
+    let clip = args.flag("clip");
+    let set = args.flag("set");
+    args.throw_on_unknown(Some(1))?;
+    if clip && set {
+        usage!("--set stores a setup key; --clip copies a code. Use one.");
+    }
+
+    let found = c.store.find(&name)?.ok_or_else(|| Error::NotFound(name.clone()))?;
+    if links::is_linked(&found) {
+        fail!("'{name}' is linked to another vault; Keylo doesn't keep one-time codes for linked secrets.");
+    }
+    let Some(t) = c.types.find(found.type_id.as_deref())? else {
+        fail!("'{name}' is a plain secret. One-time codes belong to logins: keylo set NAME --type login, then keylo otp NAME --set.")
+    };
+    let Some(field) = t.fields.iter().find(|f| f.kind == types::FieldKind::Totp).cloned() else {
+        fail!("{} secrets have no one-time code field ('{name}' is one). Logins do, and custom types can.", t.name)
+    };
+
+    if set {
+        c.browse()?;
+        let key = terminal::read_secret("Setup key or otpauth:// link (from the site's two-factor setup): ", false)?;
+        let key = String::from_utf8_lossy(&key).trim().to_string();
+        let totp = keylo_core::totp::Totp::parse(&key)?;
+        let secret = c.store.get(&found.name)?;
+        let mut fields = types::read_fields(&t, &found, &secret.value, false);
+        fields.insert(field.id.clone(), key);
+        let draft = types::typed_draft(&t, &found.name, &fields, found.category.clone(), found.notes.clone(), found.icon.clone(), found.color.clone())?;
+        c.store.save(&draft, Some(&found.name))?;
+        let now = totp.now();
+        info(&format!("Saved. To finish turning on two-factor sign-in, enter the code {} ({}s left) on the site.", now.code, now.seconds_left));
+        return Ok(0);
+    }
+
+    c.authorize(SecretOperation::Get, std::slice::from_ref(&found), &format!("read the one-time code of '{name}'"))?;
+    let secret = c.store.get(&found.name)?;
+    let Some(key) = types::read_fields(&t, &found, &secret.value, false).remove(&field.id) else {
+        fail!("'{name}' has no one-time code yet. Add its setup key with: keylo otp {name} --set")
+    };
+    let now = keylo_core::totp::Totp::parse(&key)?.now();
+    if clip {
+        copy_with_timeout(c, &now.code, "Code")?;
+    } else {
+        println!("{}", now.code);
+    }
+    info(&format!("Valid for {} more seconds.", now.seconds_left));
     Ok(0)
 }
 

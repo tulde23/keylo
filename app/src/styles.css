@@ -371,6 +371,17 @@ select {
 .toast { padding: 10px 16px; border-radius: 9px; background: #2a2a31; color: #fff; box-shadow: var(--shadow); max-width: 520px; }
 .toast-error { background: var(--danger); }
 
+/* ------------------------------------------------------------------ one-time codes */
+.otp-value { display: inline-flex; align-items: center; gap: 10px; }
+.otp-code { font-size: 18px; letter-spacing: 0.08em; font-weight: 600; }
+.otp-timer {
+  position: relative; isolation: isolate; display: inline-grid; place-items: center; width: 26px; height: 26px;
+  border-radius: 50%; font-size: 11px; color: var(--muted);
+  background: conic-gradient(var(--accent) var(--otp-left), var(--border) 0);
+}
+.otp-timer::before { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--surface); z-index: -1; }
+.otp-timer.ending { background: conic-gradient(var(--danger) var(--otp-left), var(--border) 0); color: var(--danger); }
+
 /* ------------------------------------------------------------------ update notice */
 .update-notice {
   position: fixed; right: 18px; bottom: 18px; z-index: 19; width: 340px; max-width: calc(100vw - 36px);
