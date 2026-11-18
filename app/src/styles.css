@@ -380,6 +380,7 @@ select {
 .update-notice p { margin: 0; font-size: 13px; }
 .update-notice-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .update-notice-error { color: var(--danger); }
+.sync-code { font-size: 17px; letter-spacing: 0.04em; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); user-select: all; overflow-wrap: anywhere; }
 .about-updates { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
 .about-updates label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 

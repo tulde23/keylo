@@ -5,6 +5,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod sync;
 mod transfer;
 mod updates;
 mod vaults;
@@ -127,6 +128,16 @@ fn main() {
             updates::check_update,
             updates::install_update,
             updates::open_releases,
+            sync::sync_status,
+            sync::sync_device_name,
+            sync::pick_sync_folder,
+            sync::sync_create,
+            sync::sync_join,
+            sync::sync_code,
+            sync::sync_now,
+            sync::sync_rename,
+            sync::sync_forget,
+            sync::sync_leave,
         ])
         .setup(move |app| {
             if approving {
@@ -156,6 +167,7 @@ fn main() {
                 watch_screen_lock(app.handle().clone());
                 watch_data_files(app.handle().clone());
                 updates::remove_old_programs();
+                sync::watch(app.handle().clone());
             }
             Ok(())
         })

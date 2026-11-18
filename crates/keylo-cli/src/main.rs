@@ -3,6 +3,7 @@
 mod args;
 mod mcp;
 mod runner;
+mod sync_cmd;
 mod terminal;
 mod vaults;
 
@@ -76,6 +77,10 @@ keylo restore FILE [--overwrite] [--dry-run] [--password-stdin]
                                         Restore a backup (existing secrets are skipped unless --overwrite)
 keylo mcp                               The MCP server for AI agents
 keylo unlock | lock | status | version
+keylo sync [status | code]              Sync now with your other devices (a shared folder; see status)
+keylo sync create FOLDER [--name N]     Start syncing: a new vault in a folder your devices share
+keylo sync join FOLDER [--name N]       Join it from another device (asks for the code)
+keylo sync rename NAME | forget DEVICE | leave
 keylo update [--check] [--yes]          Check for a newer Keylo and install it (Windows: the app and
                                         keylo, in place; macOS: from the app; Linux: the release page)
 keylo config [hello session|always|never | session-minutes N | clipboard-seconds N | audit-days N|forever]",
@@ -150,6 +155,7 @@ fn run(argv: &[String]) -> CliResult<i32> {
         }
         "status" => status(&c, &args),
         "update" => update_cmd(&args),
+        "sync" => sync_cmd::sync_cmd(&mut c, &args),
         "config" => config_cmd(&mut c, &args),
         "__clip-clear" => clip_clear(&args),
         "import" => import_cmd(&mut c, &args),
