@@ -11,9 +11,12 @@ passwords and tokens without ever seeing their values: secrets go straight into 
 need them and are redacted from the output, so they don't end up in conversation logs or get pasted
 into your code and commit history.
 
-It runs on your own machine, with a desktop app (`keylow`), a command line (`keylo`) and an MCP
-server for agents (`keylo mcp`). Secrets live in your operating system's own secure store: Windows
-Credential Manager, the macOS Keychain, or the Linux desktop keyring. No server, no account, no sync.
+It runs on your own computers, with a desktop app (`keylow`), a command line (`keylo`) and an MCP
+server for agents (`keylo mcp`). On each computer, secrets live in the operating system's own secure
+store: Windows Credential Manager, the macOS Keychain, or the Linux desktop keyring. There's no Keylo
+server and no account. To use the same secrets on several computers, Keylo can
+[sync them](#sync-between-your-devices) end-to-end encrypted, through a folder you already sync with
+OneDrive, iCloud Drive, Dropbox or Syncthing.
 
 ---
 
@@ -744,8 +747,9 @@ Migrating a `.secrets` folder: import it, check with `keylo list`, then delete t
 
 ### Backup and restore
 
-Keylo's normal storage only opens for your account on your machine. A **backup** is how your secrets
-reach a new computer, another operating system, or survive a lost account.
+Each computer's store only opens for your account on that computer. To keep several computers in step,
+use [sync](#sync-between-your-devices). A **backup** is a single file: for an offline copy, a computer
+that doesn't sync, or recovering from a lost account.
 
 ```bash
 keylo backup ~/keylo-2026-11-17.keylo           # asks for a password, twice
@@ -848,6 +852,11 @@ never deletes anything, and brings the secrets back.
 | Larger values | DPAPI-encrypted files in `blobs\` | AES-256-GCM files, key in the keychain | AES-256-GCM files, key in the keyring or derived from the vault key |
 | Tied to | your Windows account on this PC | your macOS account and its keychain | your keyring, or the vault's passphrase |
 
+**With sync on,** each synced secret is also in every syncing device's file in the sync folder,
+encrypted with AES-256-GCM under the sync vault key (see
+[How it's protected](#sync-between-your-devices)). Each device then also keeps the secret in its own
+store as above.
+
 **On Linux,** Keylo uses the desktop keyring when there is one that can store items. Otherwise (servers,
 containers, WSL) it keeps `vault.json`:
 - **Encryption:** AES-256-GCM under a random key, wrapped with your passphrase (PBKDF2-SHA256,
@@ -865,6 +874,8 @@ the Linux keyring and vault they're inside the encrypted item. Never put a secre
 
 - Other users on the same computer.
 - A stolen or copied disk, or a backup of your files, without your account password.
+- **The sync folder and the service that syncs it** (OneDrive, iCloud, Dropbox…): without the join
+  code they hold only encrypted files, and a changed file is rejected.
 - Secrets in plain-text files getting committed, synced or shared.
 - **Agents seeing values**: they get commands' output, redacted, never the values.
 - **Agents using secrets they shouldn't**: access keys, approvals and "always ask" environments.
@@ -881,11 +892,17 @@ the Linux keyring and vault they're inside the encrypted item. Never put a secre
   sending it somewhere or encoding it past the redactor.
 - **The other vault's security** for linked secrets: Keylo is only as strong as your 1Password or AWS
   setup.
+- **A synced device you've lost control of,** or anyone with the join code and access to the sync
+  folder. They can read and change every synced secret. Forgetting a device doesn't revoke it; start a
+  new sync folder with a new code instead.
 
-Keylo has no server and sends nothing about you anywhere. Its only network traffic is the update check
-(`latest.json` from GitHub), downloading an icon when you paste an image address, and what the `op`
-and `aws` CLIs do for linked secrets and pushes. Sync writes encrypted files to a folder; moving them
-between devices is up to whatever syncs that folder.
+Keylo has no server and no account. Keylo itself only goes online for:
+- the update check (`latest.json` from GitHub);
+- downloading an icon when you paste an image address;
+- what the `op` and `aws` CLIs do for linked secrets and pushes.
+
+If you turn on sync, Keylo writes encrypted files to the folder you chose, and whatever syncs that
+folder (OneDrive, iCloud, Dropbox, Syncthing…) moves them between your devices.
 
 ---
 
