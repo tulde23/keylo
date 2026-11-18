@@ -170,8 +170,9 @@ or agents.
 Apple silicon (M1 or later).
 
 1. Unzip `keylo-<version>-macos-arm64.zip` and move **Keylo.app** to Applications.
-2. The release isn't notarized, so the first time, right-click Keylo.app and choose **Open**, then
-   **Open** again. (If macOS says the app is damaged, run `xattr -dr com.apple.quarantine /Applications/Keylo.app`.)
+2. Open it. The app is signed with a Developer ID and notarized by Apple, so it opens like any other.
+   Because its signature stays the same from one version to the next, the Keychain's **Always Allow**
+   carries over to updates.
 3. Put the command on your PATH:
 
    ```bash
@@ -240,7 +241,7 @@ a card in the corner says so; nothing is installed until you choose to.
 
 **Signatures.** Each update is signed with Keylo's update key, and the app only installs one whose
 signature matches the public key built into it. This is separate from Apple and Microsoft code
-signing, so it covers the unsigned macOS build too. The check reads
+signing, and applies on every platform. The check reads
 `https://github.com/tulde23/keylo/releases/latest/download/latest.json`; nothing about you or your
 secrets is sent.
 
@@ -1158,7 +1159,7 @@ They use `KEYLO_HOME` and `KEYLO_PREFIX` so they never touch your real secrets.
 
 Every merge to `main` that changes shipped code (the crates, the app, packaging) builds, tests and
 publishes a release through `.github/workflows/release.yml`:
-- **Platforms:** Windows, Linux (x64 and ARM64) and macOS (Apple silicon, ad-hoc signed).
+- **Platforms:** Windows, Linux (x64 and ARM64) and macOS (Apple silicon, Developer ID signed and notarized).
 - **Version and tag:** `<major>.<minor>.<build>`, with major and minor taken from `Cargo.toml` and the
   build number from the workflow run (`.github/stamp-version.sh` stamps it into the build).
 - **Updates:** the Windows zip and the macOS `.app.tar.gz` are signed with the
