@@ -20,7 +20,7 @@ const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: "types", label: "Secret types", icon: Shapes },
   { id: "vaults", label: "Vault providers", icon: Link2 },
   { id: "sync", label: "Sync", icon: FolderSync },
-  { id: "backup", label: "Backup", icon: ShieldCheck },
+  { id: "backup", label: "Backup & import", icon: ShieldCheck },
   { id: "about", label: "About", icon: Info },
 ];
 
@@ -216,7 +216,7 @@ export default function SettingsView(props: {
 
       {tab === "sync" && <SyncSection run={run} verifierName={info.verifierName} />}
 
-      {tab === "backup" && <BackupSection run={run} verifierName={info.verifierName} onRestored={props.onDataChanged} />}
+      {tab === "backup" && <BackupSection run={run} verifierName={info.verifierName} categories={props.categories} onRestored={props.onDataChanged} />}
 
       {tab === "about" && (
       <section className="card">

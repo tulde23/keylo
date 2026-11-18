@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { ArchiveRestore, HardDriveDownload } from "lucide-react";
-import { api, type BackupPreview } from "../api";
+import { ArchiveRestore, FileUp, HardDriveDownload } from "lucide-react";
+import { api, type BackupPreview, type CategorySummary } from "../api";
+import PasswordImportDialog from "./PasswordImportDialog";
 import type { Run } from "../App";
 import { Modal, useToast } from "./ui";
 
@@ -8,11 +9,13 @@ import { Modal, useToast } from "./ui";
  * Password-protected backups of every secret, category, custom type and icon, portable to another
  * PC or Mac (and to the C# Keylo). Restoring skips secrets that exist unless you choose to replace them.
  */
-export default function BackupSection({ run, verifierName, onRestored }: {
+export default function BackupSection({ run, verifierName, categories, onRestored }: {
   run: Run;
   verifierName: string;
+  categories: CategorySummary[];
   onRestored: () => void;
 }) {
+  const [importing, setImporting] = useState(false);
   const [backingUp, setBackingUp] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
 
@@ -26,6 +29,22 @@ export default function BackupSection({ run, verifierName, onRestored }: {
   };
 
   return (
+    <>
+    <section className="card">
+      <div className="card-header">
+        <div>
+          <h2>Import from another password manager</h2>
+          <p className="muted">
+            Bring your logins over from Chrome, Edge, Firefox, Bitwarden, 1Password, LastPass, KeePassXC or Apple Passwords: export
+            them as CSV there, then choose the file. You'll see every login before anything is imported.
+          </p>
+        </div>
+      </div>
+      <div className="form-actions start">
+        <button className="button primary" onClick={() => setImporting(true)}><FileUp size={16} /> Import passwords…</button>
+      </div>
+      {importing && <PasswordImportDialog initialPath={null} categories={categories} run={run} onClose={() => setImporting(false)} onImported={onRestored} />}
+    </section>
     <section className="card">
       <div className="card-header">
         <div>
@@ -43,6 +62,7 @@ export default function BackupSection({ run, verifierName, onRestored }: {
       {backingUp && <BackupDialog path={backingUp} run={run} onClose={() => setBackingUp(null)} />}
       {restoring && <RestoreDialog path={restoring} run={run} onClose={() => setRestoring(null)} onRestored={onRestored} />}
     </section>
+    </>
   );
 }
 

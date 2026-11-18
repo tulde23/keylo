@@ -72,6 +72,8 @@ keylo keys revoke NAME
 keylo import PATH... [--category C | --flat] [--overwrite] [--delete-originals] [--plain]
                                         Import files as secrets (a folder's subfolders become
                                         categories; types are guessed unless --plain)
+keylo import EXPORT.csv [--category C] [--overwrite] [--dry-run] [--delete-originals]
+                                        Import another password manager's CSV export as logins
 keylo backup FILE [--force] [--password-stdin]
                                         Encrypted, password-protected backup of everything
 keylo restore FILE [--overwrite] [--dry-run] [--password-stdin]
@@ -752,12 +754,23 @@ fn import_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
     options.subfolder_categories = !args.flag("flat");
     options.infer_types = !args.flag("plain");
     let delete_originals = args.flag("delete-originals");
+    let dry_run = args.flag("dry-run");
     args.throw_on_unknown(None)?;
     if paths.is_empty() {
         usage!("Give one or more files or folders to import.");
     }
     if args.flag("flat") && category.is_some() {
         usage!("Use --category or --flat, not both.");
+    }
+    // One CSV exported from another password manager: its rows become logins.
+    if paths.len() == 1 && options.infer_types {
+        let path = std::path::PathBuf::from(&paths[0]);
+        if path.is_file() && keylo_core::pm_import::detect(&path).is_some() {
+            return import_passwords(c, &path, category.as_deref(), options.overwrite, dry_run, delete_originals);
+        }
+    }
+    if dry_run {
+        usage!("--dry-run is for password exports (a CSV from another password manager) and restore.");
     }
     options.category = category;
     c.browse()?;
@@ -781,6 +794,55 @@ fn import_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
         info(&format!("Deleted {} original file(s).", result.imported.len() - failed.len()));
     } else if !result.imported.is_empty() {
         info("The original files are untouched. Re-run with --delete-originals once you've checked the import.");
+    }
+    Ok(if result.skipped.is_empty() { 0 } else { 1 })
+}
+
+/// keylo import EXPORT.csv: another password manager's export, one login (or note) per row.
+fn import_passwords(c: &mut Context, path: &std::path::Path, category: Option<&str>, overwrite: bool, dry_run: bool, delete: bool) -> CliResult<i32> {
+    use keylo_core::pm_import;
+    c.browse()?;
+    let result = if dry_run { pm_import::plan(path, category, &c.store)? } else { pm_import::import(path, category, overwrite, &c.store)? };
+    info(&format!("Export from: {}.", result.format));
+    for item in &result.items {
+        let mark = if item.exists && !overwrite { "=" } else { "+" };
+        let mut extra = Vec::new();
+        if item.type_id != "login" {
+            extra.push(item.type_id.clone());
+        }
+        if let Some(u) = &item.username {
+            extra.push(u.clone());
+        }
+        if item.has_one_time_code {
+            extra.push("one-time code".into());
+        }
+        if item.exists {
+            extra.push(if overwrite { "replaces the existing one".into() } else { "exists; skipped (--overwrite replaces it)".into() });
+        }
+        let cat = item.category.as_ref().map(|c| format!("  [{c}]")).unwrap_or_default();
+        info(&format!("  {mark} {}{}{cat}", item.name, if extra.is_empty() { String::new() } else { format!("  ({})", extra.join(", ")) }));
+        for w in &item.warnings {
+            info(&format!("      {w}"));
+        }
+    }
+    for s in &result.skipped {
+        let what = if s.title.is_empty() { format!("row {}", s.row) } else { format!("row {} ({})", s.row, s.title) };
+        info(&format!("  - {what}: {}", s.reason));
+    }
+    if dry_run {
+        let would = result.items.iter().filter(|i| !i.exists || overwrite).count();
+        info(&format!("Would import {would}, skip {}. Nothing was changed.", result.items.len() - would + result.skipped.len()));
+        return Ok(0);
+    }
+    info(&format!("Imported {}, skipped {}.", result.imported, result.items.len() - result.imported + result.skipped.len()));
+    if delete && result.imported > 0 {
+        std::fs::remove_file(path)?;
+        info(&format!("Deleted {} (it held every password in plain text).", path.display()));
+    } else {
+        info(&format!(
+            "{} holds every password in plain text: delete it (and empty the recycle bin) once you've checked the import, or re-run with --delete-originals.",
+            path.display()
+        ));
     }
     Ok(if result.skipped.is_empty() { 0 } else { 1 })
 }

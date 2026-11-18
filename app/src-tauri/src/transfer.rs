@@ -185,3 +185,63 @@ pub async fn cancel_restore(state: State<'_, AppState>) -> Res<()> {
     state.pending_restore.lock().unwrap().take();
     Ok(())
 }
+
+// ---------------------------------------------------------------------------- other password managers
+
+/// A CSV export from another password manager; None when canceled.
+#[tauri::command]
+pub async fn pick_password_export(window: WebviewWindow) -> Option<String> {
+    window
+        .dialog()
+        .file()
+        .set_parent(&window)
+        .set_title("Choose the export from your other password manager")
+        .add_filter("CSV export", &["csv"])
+        .blocking_pick_file()
+        .and_then(|p| p.into_path().ok())
+        .map(|p| p.display().to_string())
+}
+
+/// The app a CSV was exported from, if it's a password export (for the Import panel to offer it).
+#[tauri::command]
+pub async fn password_export_format(path: String) -> Option<String> {
+    let path = PathBuf::from(path);
+    let is_csv = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("csv"));
+    if !is_csv {
+        return None;
+    }
+    tauri::async_runtime::spawn_blocking(move || keylo_core::pm_import::detect(&path)).await.ok().flatten()
+}
+
+/// What importing an export would do (names, sites, usernames, categories; never passwords).
+#[tauri::command]
+pub async fn password_import_plan(state: State<'_, AppState>, path: String, category: Option<String>) -> Res<keylo_core::pm_import::PasswordImport> {
+    require_unlocked(&state)?;
+    tauri::async_runtime::spawn_blocking(move || keylo_core::pm_import::plan(Path::new(&path), category.as_deref(), &SecretStore::default()))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
+}
+
+/// Imports an export; with `delete_file`, removes it afterwards (it holds every password in plain text).
+#[tauri::command]
+pub async fn password_import(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    path: String,
+    category: Option<String>,
+    overwrite: bool,
+    delete_file: bool,
+) -> Res<keylo_core::pm_import::PasswordImport> {
+    ensure(&window, &state, "Unlock Keylo", false).await?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = PathBuf::from(path);
+        let result = keylo_core::pm_import::import(&path, category.as_deref(), overwrite, &SecretStore::default()).map_err(err)?;
+        if delete_file && result.imported > 0 {
+            std::fs::remove_file(&path).map_err(|e| format!("Imported, but couldn't delete {}: {e}", path.display()))?;
+        }
+        Ok(result)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

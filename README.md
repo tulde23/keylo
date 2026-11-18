@@ -117,6 +117,8 @@ There is no tool that returns a value. An agent can use a secret, but it can't r
   with **per-environment links** (`orders-db@uat`, `orders-db@prod`).
 - **Push** secrets into 1Password or AWS Secrets Manager.
 - **Import** files and folders as secrets, with type detection (SSH keys, database URLs, tokens).
+- **Import from another password manager:** CSV exports from Chrome, Edge, Firefox, Bitwarden,
+  1Password, LastPass, KeePassXC and Apple Passwords, with folders, notes and one-time codes.
 - **Encrypted backups** (AES-256-GCM, password-protected) that restore on any OS.
 - **Sync between your own devices** through a folder they already share (OneDrive, iCloud Drive,
   Dropbox, Syncthing), end-to-end encrypted, with conflict copies instead of lost edits.
@@ -528,6 +530,7 @@ keylo provider env aws [list | set ENV PROFILE REGION [--ask|--no-ask] | remove 
 
 ```bash
 keylo import PATH… [--category C | --flat] [--overwrite] [--delete-originals] [--plain]
+keylo import EXPORT.csv [--category C] [--overwrite] [--dry-run] [--delete-originals]   # another password manager's export
 keylo backup FILE [--force] [--password-stdin]
 keylo restore FILE [--overwrite] [--dry-run] [--password-stdin]
 ```
@@ -782,6 +785,42 @@ keylo import id_ed25519 prod.env --category ops # files, into one category
 
 Migrating a `.secrets` folder: import it, check with `keylo list`, then delete the folder (or re-run with
 `--overwrite --delete-originals`).
+
+### From another password manager
+
+Export your passwords as CSV from the other app, then import the file. In the app: **Settings → Backup &
+import → Import passwords**, or drop the file on the window. From a terminal:
+
+```bash
+keylo import ~/Downloads/bitwarden_export.csv --dry-run   # what it would import; changes nothing
+keylo import ~/Downloads/bitwarden_export.csv --delete-originals
+```
+
+| From | Where to export (menus vary by version) | Comes across |
+|---|---|---|
+| Chrome, Edge, Brave | the browser's password manager settings, "Export passwords" | name, website, username, password, notes |
+| Firefox | `about:logins`, the ⋯ menu, export | website, username, password |
+| Bitwarden | Export vault, as `.csv` | name, folder, website, username, password, one-time code, notes; secure notes |
+| 1Password | the desktop app's Export, as CSV | title, first tag, website, username, password, one-time code, notes |
+| LastPass | Advanced options, Export | name, folder, website, username, password, one-time code, notes; secure notes |
+| KeePassXC | Database, Export to CSV | title, group, website, username, password, one-time code, notes |
+| Apple Passwords | the Passwords app's File menu, export | title, website, username, password, one-time code, notes |
+
+- **Format:** recognized from the file's column names. Anything with a password column imports as a
+  plain CSV, using the columns it can match.
+- **What each row becomes:** a [login](#secret-types), or a secure note for notes. Folders, groups
+  and tags become categories; KeePass groups use their last part, e.g. `Root/Work/Cloud` → `Cloud`.
+  Rows without a folder get the category you choose.
+- **Names:** the item's title, or its website when there's none. Two items with the same title get
+  the username added: `GitHub (octocat)`.
+- **Existing names:** skipped unless you choose to replace them (`--overwrite`).
+- **Not imported:** cards, identities and rows without a password, each listed with the reason.
+- **Shortened, with a warning:** notes longer than 255 characters (the system store's limit for a
+  login's notes), web addresses too long to store (cut to the site), and one-time code setups Keylo
+  can't use (left out).
+- **The export file holds every password in plain text.** The preview never shows passwords. Delete
+  the file afterwards: `--delete-originals`, or the checkbox in the app. If it was in Downloads or a
+  synced folder, empty the recycle bin too.
 
 ### Backup and restore
 
