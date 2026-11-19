@@ -32,8 +32,13 @@ having Keylo run commands with them, and never **read** them. This is a summary;
   vault, each encrypted under a key protected by the OS (DPAPI on Windows), or in the macOS Keychain
   or the Linux keyring or vault, all tied to your account. On Windows and macOS, secrets' details
   (names, categories, usernames, websites, notes) are readable by programs running as you, as
-  Credential Manager and Keychain attributes always were; Keylo detects changes made to them outside
-  Keylo.
+  Credential Manager and Keychain attributes always were. Keylo authenticates the whole vault (every
+  value, every detail and the set of entries) under its key and checks it before every read and
+  change, so a secret added, removed, altered or rolled back to an older copy by anything **without
+  the key** is refused. This detection assumes the attacker never had the key: code running as you
+  can read the key and so could also re-sign the vault, and replacing the entire vault file with a
+  complete older copy can't be caught without an anchor outside the file — both are the same-user
+  case below.
 - **The sync folder and the service that syncs it.** Synced secrets are encrypted (AES-256-GCM) with a
   key the service never sees; changed files are rejected.
 
