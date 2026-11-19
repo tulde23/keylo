@@ -45,6 +45,7 @@ OneDrive, iCloud Drive, Dropbox or Syncthing.
 - [Troubleshooting](#troubleshooting)
 - [Building from source](#building-from-source)
 - [Security](#security)
+- [Contributing](#contributing)
 - [License](#license)
 
 ---
@@ -156,19 +157,19 @@ Windows 10 or 11, x64. The app uses Microsoft Edge WebView2, which Windows 11 in
 install the [WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/) if the app
 doesn't open (the setup `.exe` installs it for you).
 
-**Recommended: the zip.** Unzip `keylo-<version>-windows-x64.zip` and run its installer:
+**Recommended: the installer.** Run `Keylo_<version>_x64-setup.exe`. It installs the app and
+`keylo.exe` for your account in `%LOCALAPPDATA%\Keylo`, adds that folder to your user PATH (open a
+new terminal for `keylo`), and adds **Keylo** to the Start menu. No admin rights needed. Uninstall
+it from Settings → Apps; that removes the PATH entry too and leaves your secrets.
+
+**Alternatively, the zip:** unzip `keylo-<version>-windows-x64.zip` and run its installer:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-This installs to `%LOCALAPPDATA%\Programs\Keylo`, adds that folder to your user PATH (open a new
-terminal for `keylo`), and adds **Keylo** to the Start menu. No admin rights needed.
+This installs to `%LOCALAPPDATA%\Programs\Keylo` with the same PATH entry and Start menu shortcut.
 `install.ps1 -Uninstall` removes the program and leaves your secrets.
-
-**Alternatively, the installer:** `Keylo_<version>_x64-setup.exe` installs the app and `keylo.exe`
-for your account. It doesn't add `keylo` to your PATH, so prefer the zip if you use the command line
-or agents.
 
 ### macOS
 
@@ -1212,6 +1213,10 @@ publishes a release through `.github/workflows/release.yml`:
 
 Report vulnerabilities privately; see [SECURITY.md](SECURITY.md), which also summarises the threat
 model.
+
+## Contributing
+
+Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

@@ -1,3 +1,6 @@
 {
-  "bundle": { "externalBin": ["binaries/keylo"] }
+  "bundle": {
+    "externalBin": ["binaries/keylo"],
+    "windows": { "nsis": { "installerHooks": "windows/hooks.nsh" } }
+  }
 }
