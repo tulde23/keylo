@@ -32,7 +32,7 @@ if ($Uninstall) {
     Remove-Item $target -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item $shortcut -Force -ErrorAction SilentlyContinue
     [Environment]::SetEnvironmentVariable('Path', ($entries -join ';'), 'User')
-    Write-Host 'Keylo uninstalled. Secrets in Credential Manager and %LOCALAPPDATA%\Keylo were left in place.'
+    Write-Host 'Keylo uninstalled. Your secrets and settings (in %LOCALAPPDATA%\Keylo) were left in place.'
     return
 }
 

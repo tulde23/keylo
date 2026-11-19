@@ -47,7 +47,10 @@ on:
       - 'app/src/**'
       - 'app/src-tauri/**'
       - 'packaging/**'
-      - 'packaging/macos/**'
+      # Package-manager manifests aren't part of a release (packages.yml publishes them).
+      - '!packaging/chocolatey/**'
+      - '!packaging/winget/**'
+      - '!packaging/homebrew/**'
   # By hand (Actions → release → Run workflow, or gh workflow run release): e.g. after a change
   # to this workflow or to the release secrets.
   workflow_dispatch:
@@ -315,6 +318,8 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
 
@@ -324,7 +329,11 @@ jobs:
           merge-multiple: true
 
       - name: Version
-        run: bash .github/stamp-version.sh
+        id: version
+        run: |
+          bash .github/stamp-version.sh
+          # The stamped version, for the packages job.
+          grep '^VERSION=' "$GITHUB_ENV" | tail -1 | sed 's/^VERSION=/version=/' >> "$GITHUB_OUTPUT"
 
       - name: Update manifest
         run: |
@@ -356,8 +365,16 @@ jobs:
             --latest \
             --notes "Built from $GITHUB_SHA on merge to main.
 
-          - Windows: keylo-$version-windows-x64.zip (run install.ps1) or the setup .exe. Either updates itself from the app.
+          - Windows: the setup .exe (adds keylo to your PATH), or keylo-$version-windows-x64.zip (run install.ps1). Also on winget (tulde23.Keylo) and Chocolatey (keylo). Either updates itself from the app.
           - Linux: the .deb, or the tarball (run install.sh; the app needs libwebkit2gtk-4.1-0).
-          - macOS (Apple silicon): unsigned; unzip, move Keylo.app to Applications, and right-click → Open the first time. It updates itself from the app.
+          - macOS (Apple silicon): signed with a Developer ID and notarized; unzip and move Keylo.app to Applications. It updates itself from the app.
 
           Check downloads against SHA256SUMS.txt."
+
+  # Chocolatey and winget (see packages.yml). A failure here doesn't undo the release.
+  packages:
+    needs: release
+    uses: ./.github/workflows/packages.yml
+    with:
+      version: ${{ needs.release.outputs.version }}
+    secrets: inherit
