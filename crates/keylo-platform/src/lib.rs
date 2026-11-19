@@ -2,6 +2,10 @@
 //! (Keychain, Touch ID) and Linux (desktop keyring or Keylo's vault file, polkit). Call [`install`]
 //! once at startup.
 
+mod crypto;
+#[cfg(windows)]
+mod sqlite_vault;
+
 #[cfg(windows)]
 mod windows_platform;
 #[cfg(windows)]

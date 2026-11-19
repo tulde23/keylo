@@ -32,6 +32,40 @@ impl RawCredential {
     }
 }
 
+/// An item without its value: what listing, searching and recategorizing need. `summary` describes
+/// the value without containing it (see [`crate::store::summarize`]): its kind and size, or the
+/// reference to an encrypted file.
+#[derive(Clone)]
+pub struct CredentialDetails {
+    pub target: String,
+    pub user_name: Option<String>,
+    pub comment: Option<String>,
+    pub last_written: DateTime<Utc>,
+    pub attributes: BTreeMap<String, String>,
+    pub summary: Vec<u8>,
+}
+
+impl CredentialDetails {
+    pub fn of(c: &RawCredential) -> Self {
+        CredentialDetails {
+            target: c.target.clone(),
+            user_name: c.user_name.clone(),
+            comment: c.comment.clone(),
+            last_written: c.last_written,
+            attributes: c.attributes.clone(),
+            summary: crate::store::summarize(&c.blob),
+        }
+    }
+
+    /// An attribute by name, ignoring case.
+    pub fn attribute(&self, name: &str) -> Option<&str> {
+        self.attributes
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    }
+}
+
 /// The OS's secure item store: Credential Manager, the Keychain, the Secret Service…
 pub trait CredentialStore: Send + Sync {
     /// Largest blob the store accepts; larger values go to protected files.
@@ -54,6 +88,31 @@ pub trait CredentialStore: Send + Sync {
         attributes: &BTreeMap<String, String>,
     ) -> Result<()>;
     fn delete(&self, target: &str) -> Result<bool>;
+
+    /// Like [`CredentialStore::enumerate`], without values. A store that keeps values apart (Keylo's
+    /// vault) never decrypts them for this; the default reads the items and drops the values.
+    fn enumerate_details(&self, prefix: &str) -> Result<Vec<CredentialDetails>> {
+        Ok(self.enumerate(prefix)?.iter().map(CredentialDetails::of).collect())
+    }
+
+    /// Like [`CredentialStore::read`], without the value.
+    fn read_details(&self, target: &str) -> Result<Option<CredentialDetails>> {
+        Ok(self.read(target)?.as_ref().map(CredentialDetails::of))
+    }
+
+    /// Replaces an item's user name, comment and attributes, keeping its value. False when there's
+    /// no such item. The default rewrites the item with the value it read.
+    fn update_details(
+        &self,
+        target: &str,
+        user_name: Option<&str>,
+        comment: Option<&str>,
+        attributes: &BTreeMap<String, String>,
+    ) -> Result<bool> {
+        let Some(c) = self.read(target)? else { return Ok(false) };
+        self.write(&c.target, &c.blob, user_name, comment, attributes)?;
+        Ok(true)
+    }
 }
 
 /// Encrypts local files so only this user can read them: DPAPI, a Keychain-held key…
