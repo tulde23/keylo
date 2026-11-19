@@ -6,8 +6,10 @@
 //!   stored readable, as Credential Manager and the Keychain stored them, so they can be listed and
 //!   searched without a key. Each row carries an HMAC over its details and its sealed value, so a
 //!   change made outside Keylo is detected when the row is read.
-//! - **A manifest** (an HMAC over every row's id and HMAC) detects rows deleted, added or put back
-//!   from an older copy outside Keylo; it's checked when the vault is listed.
+//! - **An integrity record** (meta `state`): an HMAC over a monotonic counter, the schema, the
+//!   key's protection and every row's id and HMAC. It's checked before every read, list and change
+//!   and re-signed after each change, so rows deleted, added, altered or put back from an older copy
+//!   are refused — and the record itself can't be removed or reset without the key.
 //! - **The vault key** is random (32 bytes) and kept by the OS through an [`OsKey`] (DPAPI on
 //!   Windows). The value and HMAC keys are derived from it with HKDF-SHA256.
 //!
@@ -30,8 +32,9 @@ use zeroize::Zeroizing;
 
 use crate::crypto::{open, random_key, seal};
 
-/// The schema this build reads and writes; a newer one is refused rather than rewritten.
-const SCHEMA: i64 = 1;
+/// The schema this build writes. Schema 1 (Keylo 2.0, a weaker manifest) is read and upgraded; a
+/// newer schema is refused rather than rewritten.
+const SCHEMA: i64 = 2;
 const VALUE_AAD: &str = "keylo:vault:value:v1:";
 
 /// Keeps the vault key safe with the operating system, so the vault opens for this user only.
@@ -179,9 +182,34 @@ impl SqliteVault {
             Ok(k)
         };
         let opened_keys = (derive(b"keylo:vault:value-key:v1")?, derive(b"keylo:vault:mac-key:v1")?);
-        if meta("manifest")?.is_none() {
-            let manifest = manifest_of(&tx, &opened_keys.1)?;
-            tx.execute("INSERT INTO meta (key, value) VALUES ('manifest', ?1)", [manifest]).map_err(db_err)?;
+        let mac_key = &opened_keys.1;
+        let rows: i64 = tx.query_row("SELECT count(*) FROM items", [], |r| r.get(0)).map_err(db_err)?;
+        match meta("state")? {
+            // Already on the authenticated-state scheme: it must verify.
+            Some(stored) => {
+                if !constant_eq(&stored, &state_mac(&tx, mac_key)?) {
+                    bail!("Keylo's vault ({}) was changed outside Keylo, so it isn't trusted.", self.path.display());
+                }
+            }
+            None => match meta("manifest")? {
+                // A Keylo 2.0 vault (the weaker manifest): verify it, then upgrade to the state record.
+                Some(m) => {
+                    if !constant_eq(&m, &legacy_manifest(&tx, mac_key)?) {
+                        bail!("Keylo's vault ({}) was changed outside Keylo, so it isn't trusted.", self.path.display());
+                    }
+                    tx.execute("DELETE FROM meta WHERE key = 'manifest'", []).map_err(db_err)?;
+                    tx.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', ?1)", [SCHEMA.to_string().into_bytes()]).map_err(db_err)?;
+                    sign_state(&tx, mac_key)?;
+                }
+                // No integrity record at all. Only a brand-new, empty vault is allowed to make one;
+                // rows without a record mean it was removed outside Keylo to hide other changes.
+                None => {
+                    if rows > 0 {
+                        bail!("Keylo's vault ({}) has no integrity record; it may have been changed outside Keylo.", self.path.display());
+                    }
+                    sign_state(&tx, mac_key)?;
+                }
+            },
         }
         tx.commit().map_err(db_err)?;
         Ok(Opened { conn, value_key: opened_keys.0, mac_key: opened_keys.1 })
@@ -192,6 +220,7 @@ impl SqliteVault {
     pub fn import(&self, credentials: &[RawCredential]) -> Result<usize> {
         self.with(|o| {
             let tx = o.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(db_err)?;
+            check_state(&tx, &o.mac_key)?;
             let mut written = 0;
             for c in credentials {
                 let existing: Option<String> = tx
@@ -204,7 +233,7 @@ impl SqliteVault {
                     written += 1;
                 }
             }
-            update_manifest(&tx, &o.mac_key)?;
+            sign_state(&tx, &o.mac_key)?;
             tx.commit().map_err(db_err)?;
             Ok(written)
         })
@@ -250,8 +279,60 @@ fn constant_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-/// The HMAC over every row's id and HMAC, in id order.
-fn manifest_of(conn: &Connection, mac_key: &[u8]) -> Result<Vec<u8>> {
+fn meta_value(conn: &Connection, key: &str) -> Result<Vec<u8>> {
+    Ok(conn
+        .query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get::<_, Vec<u8>>(0))
+        .optional()
+        .map_err(db_err)?
+        .unwrap_or_default())
+}
+
+/// The integrity record: an HMAC over a monotonic counter, the schema, the key's protection and
+/// every row's id and HMAC (in id order). The counter lets a spliced-in older row be told from the
+/// current one; binding schema and protection stops them being downgraded unnoticed.
+fn state_mac(conn: &Connection, mac_key: &[u8]) -> Result<Vec<u8>> {
+    let mut m = <Hmac<Sha256> as Mac>::new_from_slice(mac_key).expect("HMAC takes any key length");
+    let mut field = |b: &[u8]| {
+        m.update(&(b.len() as u64).to_le_bytes());
+        m.update(b);
+    };
+    field(b"keylo:vault:state:v2");
+    field(&meta_value(conn, "seq")?);
+    field(&meta_value(conn, "schema")?);
+    field(&meta_value(conn, "protection")?);
+    let mut stmt = conn.prepare("SELECT id, mac FROM items ORDER BY id").map_err(db_err)?;
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))).map_err(db_err)?;
+    for r in rows {
+        let (id, mac) = r.map_err(db_err)?;
+        field(id.as_bytes());
+        field(&mac);
+    }
+    Ok(m.finalize().into_bytes().to_vec())
+}
+
+/// Bumps the counter and writes a fresh integrity record. Run at the end of every change.
+fn sign_state(conn: &Connection, mac_key: &[u8]) -> Result<()> {
+    let seq: i64 = String::from_utf8_lossy(&meta_value(conn, "seq")?).parse().unwrap_or(0) + 1;
+    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('seq', ?1)", [seq.to_string().into_bytes()]).map_err(db_err)?;
+    let state = state_mac(conn, mac_key)?;
+    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('state', ?1)", [state]).map_err(db_err)?;
+    Ok(())
+}
+
+/// Refuses the vault unless its integrity record matches the current contents. Run before every
+/// read and at the start of every change, so tampering is caught everywhere, not only when listing,
+/// and a later change can't bless it.
+fn check_state(conn: &Connection, mac_key: &[u8]) -> Result<()> {
+    let stored: Option<Vec<u8>> = conn.query_row("SELECT value FROM meta WHERE key = 'state'", [], |r| r.get(0)).optional().map_err(db_err)?;
+    let expected = state_mac(conn, mac_key)?;
+    if !stored.is_some_and(|s| constant_eq(&s, &expected)) {
+        bail!("Keylo's vault: it was changed outside Keylo (secrets added, removed, altered or restored), so it isn't trusted.");
+    }
+    Ok(())
+}
+
+/// Keylo 2.0's record, kept only to verify a 2.0 vault before upgrading it.
+fn legacy_manifest(conn: &Connection, mac_key: &[u8]) -> Result<Vec<u8>> {
     let mut m = <Hmac<Sha256> as Mac>::new_from_slice(mac_key).expect("HMAC takes any key length");
     m.update(b"keylo:vault:manifest:v1");
     let mut stmt = conn.prepare("SELECT id, mac FROM items ORDER BY id").map_err(db_err)?;
@@ -263,21 +344,6 @@ fn manifest_of(conn: &Connection, mac_key: &[u8]) -> Result<Vec<u8>> {
         m.update(&mac);
     }
     Ok(m.finalize().into_bytes().to_vec())
-}
-
-fn update_manifest(conn: &Connection, mac_key: &[u8]) -> Result<()> {
-    let manifest = manifest_of(conn, mac_key)?;
-    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('manifest', ?1)", [manifest]).map_err(db_err)?;
-    Ok(())
-}
-
-fn check_manifest(conn: &Connection, mac_key: &[u8]) -> Result<()> {
-    let stored: Option<Vec<u8>> = conn.query_row("SELECT value FROM meta WHERE key = 'manifest'", [], |r| r.get(0)).optional().map_err(db_err)?;
-    let expected = manifest_of(conn, mac_key)?;
-    if !stored.is_some_and(|s| constant_eq(&s, &expected)) {
-        bail!("Keylo's vault: secrets were added, removed or restored outside Keylo, so it isn't trusted.");
-    }
-    Ok(())
 }
 
 /// Replaces (or adds) the item named `target` (case-insensitively) with a new row.
@@ -349,6 +415,7 @@ impl CredentialStore for SqliteVault {
                 .query_row(&format!("SELECT {COLUMNS} FROM items WHERE target = ?1"), [target], row)
                 .optional()
                 .map_err(db_err)?;
+            check_state(&o.conn, &o.mac_key)?;
             let Some(r) = r else { return Ok(None) };
             verify(&o.mac_key, &r)?;
             let d = details_of(&r)?;
@@ -359,21 +426,32 @@ impl CredentialStore for SqliteVault {
     }
 
     fn enumerate(&self, prefix: &str) -> Result<Vec<RawCredential>> {
-        let targets: Vec<String> = self.enumerate_details(prefix)?.into_iter().map(|d| d.target).collect();
-        let mut out = Vec::with_capacity(targets.len());
-        for t in targets {
-            if let Some(c) = self.read(&t)? {
-                out.push(c);
+        self.with(|o| {
+            check_state(&o.conn, &o.mac_key)?;
+            let mut stmt = o
+                .conn
+                .prepare(&format!("SELECT {COLUMNS} FROM items WHERE target LIKE ?1 ESCAPE '\\' ORDER BY target"))
+                .map_err(db_err)?;
+            let rows = stmt.query_map([format!("{}%", escape_like(prefix))], row).map_err(db_err)?;
+            let mut out = Vec::new();
+            for r in rows {
+                let r = r.map_err(db_err)?;
+                verify(&o.mac_key, &r)?;
+                let blob = open(&o.value_key, &r.value, format!("{VALUE_AAD}{}", r.id).as_bytes())
+                    .ok_or_else(|| Error::msg(format!("Keylo's vault: '{}' couldn't be decrypted.", r.target)))?;
+                let d = details_of(&r)?;
+                out.push(RawCredential { target: d.target, user_name: d.user_name, comment: d.comment, last_written: d.last_written, blob, attributes: d.attributes });
             }
-        }
-        Ok(out)
+            Ok(out)
+        })
     }
 
     fn write(&self, target: &str, blob: &[u8], user_name: Option<&str>, comment: Option<&str>, attributes: &BTreeMap<String, String>) -> Result<()> {
         self.with(|o| {
             let tx = o.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(db_err)?;
+            check_state(&tx, &o.mac_key)?;
             put(&tx, &o.value_key, &o.mac_key, target, blob, user_name, comment, attributes, Utc::now())?;
-            update_manifest(&tx, &o.mac_key)?;
+            sign_state(&tx, &o.mac_key)?;
             tx.commit().map_err(db_err)
         })
     }
@@ -381,8 +459,9 @@ impl CredentialStore for SqliteVault {
     fn delete(&self, target: &str) -> Result<bool> {
         self.with(|o| {
             let tx = o.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(db_err)?;
+            check_state(&tx, &o.mac_key)?;
             let n = tx.execute("DELETE FROM items WHERE target = ?1", [target]).map_err(db_err)?;
-            update_manifest(&tx, &o.mac_key)?;
+            sign_state(&tx, &o.mac_key)?;
             tx.commit().map_err(db_err)?;
             Ok(n > 0)
         })
@@ -390,7 +469,7 @@ impl CredentialStore for SqliteVault {
 
     fn enumerate_details(&self, prefix: &str) -> Result<Vec<CredentialDetails>> {
         self.with(|o| {
-            check_manifest(&o.conn, &o.mac_key)?;
+            check_state(&o.conn, &o.mac_key)?;
             let mut stmt = o
                 .conn
                 .prepare(&format!("SELECT {COLUMNS} FROM items WHERE target LIKE ?1 ESCAPE '\\' ORDER BY target"))
@@ -413,6 +492,7 @@ impl CredentialStore for SqliteVault {
                 .query_row(&format!("SELECT {COLUMNS} FROM items WHERE target = ?1"), [target], row)
                 .optional()
                 .map_err(db_err)?;
+            check_state(&o.conn, &o.mac_key)?;
             let Some(r) = r else { return Ok(None) };
             verify(&o.mac_key, &r)?;
             details_of(&r).map(Some)
@@ -422,6 +502,7 @@ impl CredentialStore for SqliteVault {
     fn update_details(&self, target: &str, user_name: Option<&str>, comment: Option<&str>, attributes: &BTreeMap<String, String>) -> Result<bool> {
         self.with(|o| {
             let tx = o.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(db_err)?;
+            check_state(&tx, &o.mac_key)?;
             let r = tx
                 .query_row(&format!("SELECT {COLUMNS} FROM items WHERE target = ?1"), [target], row)
                 .optional()
@@ -437,7 +518,7 @@ impl CredentialStore for SqliteVault {
                 params![r.id, user_name, comment, when, attributes, mac],
             )
             .map_err(db_err)?;
-            update_manifest(&tx, &o.mac_key)?;
+            sign_state(&tx, &o.mac_key)?;
             tx.commit().map_err(db_err)?;
             Ok(true)
         })
@@ -553,6 +634,108 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    // --- the three attacks from the security review: each must now be refused ---
+
+    fn mac_key_of(path: &std::path::Path) -> Vec<u8> {
+        let c = Connection::open(path).unwrap();
+        let blob: Vec<u8> = c.query_row("SELECT value FROM meta WHERE key = 'key'", [], |r| r.get(0)).unwrap();
+        let vk = TestKey.unprotect(&blob).unwrap();
+        let mut mk = vec![0u8; 32];
+        Hkdf::<Sha256>::new(None, &vk).expand(b"keylo:vault:mac-key:v1", &mut mk).unwrap();
+        mk
+    }
+
+    #[test]
+    fn removing_the_integrity_record_to_hide_a_deletion_is_refused() {
+        // Attack: delete the `state` meta row so Keylo would regenerate it over the tampered rows.
+        let (dir, v) = temp("reset");
+        let db = dir.join("keylo.db");
+        v.write("Keylo:a", &inline(b"one"), None, None, &attrs("x")).unwrap();
+        v.write("Keylo:b", &inline(b"two"), None, None, &attrs("x")).unwrap();
+        drop(v);
+        {
+            let c = Connection::open(&db).unwrap();
+            c.execute("DELETE FROM meta WHERE key = 'state'", []).unwrap();
+            c.execute("DELETE FROM items WHERE target = 'Keylo:a'", []).unwrap();
+        }
+        let v = SqliteVault::new(db, Box::new(TestKey));
+        assert!(v.read("Keylo:b").is_err());
+        assert!(v.enumerate_details("Keylo:").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rolling_one_secret_back_is_detected_on_read_and_cannot_be_healed() {
+        // Attack: while Keylo has the vault open, splice an older, validly-signed copy of a rotated
+        // secret back in. The read path (not only listing) must catch it, and a later write must not
+        // bless it.
+        let (dir, v) = temp("rollback");
+        let db = dir.join("keylo.db");
+        v.write("Keylo:a", &inline(b"v1"), None, None, &attrs("x")).unwrap();
+        let old: (String, Vec<u8>, Vec<u8>, String) = {
+            let c = Connection::open(&db).unwrap();
+            c.query_row("SELECT id, value, mac, last_written FROM items WHERE target = 'Keylo:a'", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })
+            .unwrap()
+        };
+        v.write("Keylo:a", &inline(b"v2"), None, None, &attrs("x")).unwrap(); // rotate
+        assert_eq!(v.read("Keylo:a").unwrap().unwrap().blob.as_slice(), inline(b"v2").as_slice());
+        {
+            let c = Connection::open(&db).unwrap();
+            c.busy_timeout(Duration::from_secs(5)).unwrap();
+            c.execute("DELETE FROM items WHERE target = 'Keylo:a'", []).unwrap();
+            let summary = keylo_core::store::summarize(&inline(b"v1"));
+            c.execute(
+                "INSERT INTO items (id, target, user_name, comment, last_written, attributes, summary, value, mac) \
+                 VALUES (?1, 'Keylo:a', NULL, NULL, ?4, '{\"KeyloCategory\":\"x\"}', ?5, ?2, ?3)",
+                params![old.0, old.1, old.2, old.3, summary],
+            )
+            .unwrap();
+        }
+        // The same open vault now reads the tampered file: the old value is refused, not returned.
+        assert!(v.read("Keylo:a").is_err());
+        // And a later, unrelated write can't re-sign (heal) the tampered state.
+        assert!(v.write("Keylo:c", &inline(b"x"), None, None, &BTreeMap::new()).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_2_0_vault_is_upgraded_and_a_tampered_one_refused() {
+        let (dir, v) = temp("upgrade");
+        let db = dir.join("keylo.db");
+        v.write("Keylo:a", &inline(b"one"), None, None, &attrs("x")).unwrap();
+        drop(v);
+        let mk = mac_key_of(&db);
+        // Rewrite the file on disk as a 2.0 vault: a valid legacy manifest, no state record.
+        let to_2_0 = |mk: &[u8]| {
+            let c = Connection::open(&db).unwrap();
+            let manifest = legacy_manifest(&c, mk).unwrap();
+            c.execute("DELETE FROM meta WHERE key IN ('state', 'seq')", []).unwrap();
+            c.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('manifest', ?1)", [manifest]).unwrap();
+            c.execute("UPDATE meta SET value = CAST('1' AS BLOB) WHERE key = 'schema'", []).unwrap();
+        };
+        to_2_0(&mk);
+        // Keylo opens it, verifies the manifest, and upgrades to the state record.
+        let v = SqliteVault::new(db.clone(), Box::new(TestKey));
+        assert_eq!(v.read("Keylo:a").unwrap().unwrap().blob.as_slice(), inline(b"one").as_slice());
+        drop(v);
+        {
+            let c = Connection::open(&db).unwrap();
+            let state: i64 = c.query_row("SELECT count(*) FROM meta WHERE key = 'state'", [], |r| r.get(0)).unwrap();
+            let manifest: i64 = c.query_row("SELECT count(*) FROM meta WHERE key = 'manifest'", [], |r| r.get(0)).unwrap();
+            assert_eq!((state, manifest), (1, 0));
+        }
+        // A tampered 2.0 vault (its manifest no longer matches the rows) is refused, not upgraded.
+        to_2_0(&mk);
+        {
+            let c = Connection::open(&db).unwrap();
+            c.execute("UPDATE items SET mac = x'00' WHERE target = 'Keylo:a'", []).unwrap();
+        }
+        assert!(SqliteVault::new(db, Box::new(TestKey)).read("Keylo:a").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn import_keeps_times_and_prefers_newer() {
         let (dir, v) = temp("import");
@@ -580,9 +763,9 @@ mod tests {
         v.write("Keylo:a", &inline(b"one"), None, None, &BTreeMap::new()).unwrap();
         drop(v);
         let raw = Connection::open(dir.join("keylo.db")).unwrap();
-        raw.execute("UPDATE meta SET value = CAST('2' AS BLOB) WHERE key = 'schema'", []).unwrap();
+        raw.execute("UPDATE meta SET value = CAST('3' AS BLOB) WHERE key = 'schema'", []).unwrap();
         assert!(SqliteVault::new(dir.join("keylo.db"), Box::new(TestKey)).read("Keylo:a").is_err());
-        raw.execute("UPDATE meta SET value = CAST('1' AS BLOB) WHERE key = 'schema'", []).unwrap();
+        raw.execute("UPDATE meta SET value = CAST('2' AS BLOB) WHERE key = 'schema'", []).unwrap();
         raw.execute("UPDATE meta SET value = CAST('other' AS BLOB) WHERE key = 'protection'", []).unwrap();
         assert!(SqliteVault::new(dir.join("keylo.db"), Box::new(TestKey)).read("Keylo:a").is_err());
         drop(raw);
