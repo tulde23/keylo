@@ -227,6 +227,11 @@ own on a server, without any of these.
 Keylo checks for a newer release a few seconds after it starts and every 6 hours. When there is one,
 a card in the corner says so; nothing is installed until you choose to.
 
+**Updating to 2.0 on Windows** moves your secrets from Credential Manager into Keylo's vault the first
+time 2.0 runs (see [Where secrets are stored](#where-secrets-are-stored)). It copies and checks every
+secret before removing the originals, but make a backup first (**Settings → Backup**) so the move can
+always be undone. Afterwards, restart any Claude Code sessions still running an older `keylo mcp`.
+
 - **Windows and macOS:** **Install and restart** downloads the update, checks its signature, installs
   it and restarts Keylo. The `keylo` command is updated with it.
   - On Windows the new `keylow.exe` and `keylo.exe` replace the old ones in the folder Keylo runs
@@ -829,7 +834,7 @@ keylo import ~/Downloads/bitwarden_export.csv --delete-originals
   the username added: `GitHub (octocat)`.
 - **Existing names:** skipped unless you choose to replace them (`--overwrite`).
 - **Not imported:** cards, identities and rows without a password, each listed with the reason.
-- **Shortened, with a warning:** notes longer than 255 characters (the system store's limit for a
+- **Shortened, with a warning:** notes longer than 255 characters (Keylo's limit for a
   login's notes), web addresses too long to store (cut to the site), and one-time code setups Keylo
   can't use (left out).
 - **The export file holds every password in plain text.** The preview never shows passwords. Delete
@@ -1064,13 +1069,15 @@ environments) are in the same file, under `providers`.
 |---|---|
 | `KEYLO_ACCESS_KEY` | The access key for `keylo mcp` and `keylo run` (set by your agent's MCP configuration) |
 | `KEYLO_HOME` | A different data folder (tests, experiments) |
-| `KEYLO_PREFIX` | A different prefix for items in the secure store (default `Keylo:`), to keep test secrets apart |
+| `KEYLO_PREFIX` | A different prefix for secrets' entries in the store (default `Keylo:`), to keep test secrets apart |
 | `KEYLO_STORE` | Linux: `keyring` or `file`, overriding the remembered choice |
 | `KEYLO_PASSPHRASE` / `KEYLO_PASSPHRASE_FILE` | Linux vault file: the passphrase, for unattended use |
 | `KEYLO_VAULT_CACHE_MINUTES` | Linux vault file: how long the unlocked key is cached (default 15; 0 turns caching off) |
 | `KEYLO_KEYCHAIN` | macOS: use this keychain file instead of the login keychain (tests, SSH sessions) |
 
-`KEYLO_HOME` with `KEYLO_PREFIX` gives you a completely separate, throwaway Keylo for experiments.
+`KEYLO_HOME` with `KEYLO_PREFIX` gives you a completely separate, throwaway Keylo for experiments. (On
+Windows, a `KEYLO_HOME` set without its own `KEYLO_PREFIX` never moves your real secrets out of
+Credential Manager: only the default data folder, or a setup with its own prefix, does.)
 
 ### Data folder
 
@@ -1140,7 +1147,8 @@ None of these files hold secret values in readable form; `keylo.db` holds secret
 | Linux: "Keylo's vault is locked" | `keylo unlock` in a terminal, or set `KEYLO_PASSPHRASE_FILE`. |
 | Linux: the keyring isn't available | Use Keylo from your desktop session, unlock the keyring, or switch to the vault file with `KEYLO_STORE=file`. |
 | macOS: "keylo-mac isn't installed" | Run `keylo` from inside Keylo.app (or the link to it), not a copy elsewhere. |
-| macOS keeps asking for keychain access | Choose **Always Allow**. Unsigned builds may ask again after an update. |
+| macOS keeps asking for keychain access | Choose **Always Allow**. Builds before 1.4.14 weren't signed with a Developer ID and may ask again after an update; current ones don't. |
+| Windows: saving fails with "Not enough memory resources are available to process this command" | Credential Manager is full (Keylo 1.x kept every secret there). Update to Keylo 2.0, which moves your secrets into its own vault and frees that space. Make a backup first. |
 | Copying fails on Linux | Install `wl-clipboard` (Wayland) or `xclip` (X11). Without a desktop there's no clipboard: use `keylo get`. |
 
 `keylo status` shows the version, session, data folder and (on Linux) which store is in use.
@@ -1170,7 +1178,7 @@ cd app && npm ci && npx tauri build         # the app, and an installer for your
 | Path | |
 |---|---|
 | `crates/keylo-core` | Everything OS-neutral: the store format, types, access keys, the identity gate, the audit log, redaction, search, import, backups, linked vaults |
-| `crates/keylo-platform` | The OS layer and Keylo's vault (`vault.rs`): Windows (the vault with a DPAPI-protected key, Windows Hello), macOS (Keychain, Touch ID) and Linux (Secret Service or the vault file, polkit) |
+| `crates/keylo-platform` | The OS layer: Windows (Keylo's vault in `sqlite_vault.rs`, its key protected with DPAPI; Windows Hello), macOS (Keychain, Touch ID) and Linux (Secret Service or the vault file, polkit) |
 | `crates/keylo-cli` | `keylo` and the MCP server |
 | `app/` | The desktop app, `keylow`: Tauri 2, with a React and TypeScript front end in `app/src` |
 | `packaging/` | The install scripts, the macOS helper `keylo-mac` (Swift), the polkit policy, and the Homebrew and winget manifests |
