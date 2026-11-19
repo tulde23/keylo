@@ -1,6 +1,6 @@
 //! Categories live on the secrets themselves (an item attribute). This catalog adds what a secret
 //! can't hold: categories with no secrets yet, and each category's icon and colour. It's display
-//! metadata, not a security setting: a plain file (categories.json), as in the C# build.
+//! metadata, not a security setting: a plain file (categories.json).
 
 use std::collections::BTreeMap;
 use std::fs;

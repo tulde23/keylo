@@ -1,7 +1,6 @@
 //! Keylo's own encrypted store, for Linux machines without a desktop keyring (servers, containers,
 //! WSL). One file holds every item, sealed with AES-256-GCM under a random vault key; the vault key
 //! is wrapped with a key derived from the user's passphrase (PBKDF2-SHA256, 600,000 iterations).
-//! The format is the C# build's (vault.json), so either build opens the other's vault.
 //!
 //! The passphrase comes from KEYLO_PASSPHRASE or KEYLO_PASSPHRASE_FILE, or is asked for on the
 //! terminal; the unlocked vault key is then cached in the kernel keyring for

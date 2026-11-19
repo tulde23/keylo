@@ -1,5 +1,5 @@
 //! Password-protected backups, portable between accounts, PCs and Macs (unlike DPAPI or the
-//! keychain). The same files as the C# build's KeyloBackup: either can restore the other's.
+//! keychain).
 //!
 //! File layout (all integers little-endian):
 //!   "KEYLOBK1"  8-byte magic
@@ -48,7 +48,7 @@ const MAX_ITERATIONS: u32 = 10_000_000;
 
 const WRONG_PASSWORD: &str = "Wrong password, or the backup file is damaged.";
 
-/// One secret in a backup. The value is base64 in the JSON (as .NET writes byte[]).
+/// One secret in a backup. The value is base64 in the JSON.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupSecret {
@@ -344,7 +344,7 @@ mod b64_map {
     }
 }
 
-/// DateTimeOffset as .NET writes it: "2026-11-16T10:42:07.1234567+00:00".
+/// A timestamp with offset and 7 fractional digits: "2026-11-16T10:42:07.1234567+00:00".
 mod dto {
     use super::*;
     pub fn serialize<S: Serializer>(t: &DateTime<FixedOffset>, s: S) -> std::result::Result<S::Ok, S::Error> {

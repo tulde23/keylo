@@ -31,7 +31,7 @@ name: release
 on:
   push:
     branches: [main]
-    # Only when something that's built and shipped changes: docs, tests, the C# code and
+    # Only when something that's built and shipped changes: docs, tests and
     # workflow-only edits don't build or publish a release.
     paths:
       - 'Cargo.toml'
@@ -47,7 +47,7 @@ on:
       - 'app/src/**'
       - 'app/src-tauri/**'
       - 'packaging/**'
-      - 'rust_csharp/src/Keylo.Platform.MacOS/helper/**'
+      - 'packaging/macos/**'
   # By hand (Actions → release → Run workflow, or gh workflow run release): e.g. after a change
   # to this workflow or to the release secrets.
   workflow_dispatch:
@@ -200,7 +200,7 @@ jobs:
       - name: Build keylo and keylo-mac
         run: |
           cargo build --release -p keylo-cli
-          swiftc -O rust_csharp/src/Keylo.Platform.MacOS/helper/keylo-mac.swift -o target/release/keylo-mac
+          swiftc -O packaging/macos/keylo-mac.swift -o target/release/keylo-mac
 
       - name: Keychain checks (a throwaway keychain)
         run: bash tests/macos-ci.sh target/release/keylo

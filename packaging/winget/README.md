@@ -13,4 +13,5 @@ wingetcreate update tulde23.Keylo --version <version> `
 Check locally first: `winget validate --manifest <folder>`, then `winget install --manifest <folder>`
 in a test machine or Windows Sandbox.
 
-The setup .exe installs the app and `keylo.exe` for your account but doesn't add `keylo` to PATH.
+The setup .exe installs the app and `keylo.exe` for your account and adds its folder to the user
+PATH (from the release after 1.7; see app/src-tauri/windows/hooks.nsh).

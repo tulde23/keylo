@@ -17,8 +17,7 @@ use zeroize::Zeroizing;
 const NONCE: usize = 12;
 const TAG: usize = 16;
 
-/// AES-256-GCM with a 12-byte nonce in front and the tag behind (nonce | ciphertext | tag), as the
-/// C# build writes.
+/// AES-256-GCM with a 12-byte nonce in front and the tag behind (nonce | ciphertext | tag).
 pub fn seal(key: &[u8], plain: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| Error::msg("Bad key length."))?;
     let mut nonce = [0u8; NONCE];

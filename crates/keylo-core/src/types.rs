@@ -189,8 +189,7 @@ pub fn built_in() -> Vec<SecretTypeDefinition> {
             ],
         ),
         t("note", "Secure note", "Note24", vec![f("note", "Note", SecretText)]),
-        // Added in the Rust build, after 1Password's categories. The C# Keylo 1.2.0 doesn't know
-        // them and shows such secrets as plain values.
+        // After 1Password's categories.
         t("password", "Password", "LockClosed24", vec![f("password", "Password", Password), f("url", "Website", Url)]),
         t(
             "server",
@@ -532,7 +531,7 @@ pub fn decode_text(value: &[u8]) -> Option<String> {
     std::str::from_utf8(value).ok().map(str::to_string)
 }
 
-/// .NET's Uri.EscapeDataString: everything but unreserved characters is percent-encoded.
+/// Percent-encodes everything but unreserved characters (RFC 3986).
 fn escape_data(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
@@ -625,7 +624,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("keylo-types-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        // A custom "Credit card" made before the built-in existed (as the C# build could).
+        // A custom "Credit card" made before the built-in existed (as early versions could).
         let mine = r#"{"custom":[{"id":"credit_card","name":"Credit card","fields":[{"id":"card","label":"Card","kind":"Password"}]}]}"#;
         fs::write(dir.join("types.json"), mine).unwrap();
         let catalog = SecretTypeCatalog::in_dir(&dir);

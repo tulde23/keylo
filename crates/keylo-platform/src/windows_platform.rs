@@ -243,7 +243,7 @@ impl CredentialStore for CredentialManager {
 
 // ---------------------------------------------------------------------------- DPAPI
 
-/// DPAPI for the current user (as .NET's ProtectedData with DataProtectionScope.CurrentUser).
+/// DPAPI for the current user (CryptProtectData, user scope).
 struct Dpapi;
 
 fn blob_of(data: &[u8]) -> CRYPT_INTEGER_BLOB {

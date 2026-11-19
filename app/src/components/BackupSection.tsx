@@ -7,7 +7,7 @@ import { Modal, useToast } from "./ui";
 
 /**
  * Password-protected backups of every secret, category, custom type and icon, portable to another
- * PC or Mac (and to the C# Keylo). Restoring skips secrets that exist unless you choose to replace them.
+ * PC or Mac. Restoring skips secrets that exist unless you choose to replace them.
  */
 export default function BackupSection({ run, verifierName, categories, onRestored }: {
   run: Run;

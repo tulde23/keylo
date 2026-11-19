@@ -102,8 +102,7 @@ pub struct AppInfo {
 
 // ---------------------------------------------------------------------------- appearance
 
-/// The colour theme and light/dark mode, kept in ui.json with the C# app's window layout (same
-/// names, so both apps share them): Theme = QuietViolet (the default) | Graphite | Ocean | Evergreen | Ember,
+/// The colour theme and light/dark mode, kept in ui.json: Theme = QuietViolet (the default) | Graphite | Ocean | Evergreen | Ember,
 /// Mode = System | Light | Dark. A theme that's gone (Twilight, Aurora) reads as the default.
 #[derive(Serialize)]
 pub struct UiTheme {

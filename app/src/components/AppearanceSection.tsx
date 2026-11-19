@@ -24,7 +24,7 @@ export default function AppearanceSection({ run }: { run: Run }) {
   return (
     <section className="card">
       <h2>Appearance</h2>
-      <p className="muted">Changes right away, here and in the C# Keylo. Not part of Save settings.</p>
+      <p className="muted">Changes right away. Not part of Save settings.</p>
 
       <div className="form-row">
         <span>Theme</span>

@@ -25,7 +25,7 @@ const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
 ];
 
 /**
- * Settings, as a dialog with a tab for each area (as in the C# app). Esc or a click outside closes
+ * Settings, as a dialog with a tab for each area. Esc or a click outside closes
  * it; drawers and dialogs opened from it (key editor, new key) sit on top and close first.
  */
 export default function SettingsView(props: {

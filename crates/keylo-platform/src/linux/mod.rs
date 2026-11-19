@@ -132,7 +132,7 @@ impl LinuxPlatform {
         let protector = AesKeyProtector::new(move || match shared.kind()? {
             StoreKind::Keyring => keyring_master_key(),
             StoreKind::File => {
-                // The files key is derived from the vault key, as in the C# build.
+                // The files key is derived from the vault key.
                 let vault_key = shared.vault.vault_key()?;
                 let mut key = Zeroizing::new(vec![0u8; 32]);
                 Hkdf::<Sha256>::new(None, &vault_key).expand(b"keylo-vault:files:v1", &mut key).map_err(|_| Error::msg("HKDF failed."))?;

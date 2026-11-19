@@ -1,7 +1,7 @@
 //! A request from an agent (via `keylo mcp`) for secrets its access key doesn't cover. The Keylo
 //! app shows it (`keylow --approve <base64 JSON>`), verifies the user, and answers with an exit
-//! code. The reason and command come from the agent: untrusted text. The encoding matches the C#
-//! build (PascalCase JSON, the operation as a number), so either keylo can open either app.
+//! code. The reason and command come from the agent: untrusted text. Encoded as PascalCase JSON,
+//! with the operation as a number.
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ const MAX_TEXT: usize = 2000;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ApprovalRequest {
-    /// 0 browse, 1 run, 2 get (as the C# enum).
+    /// 0 browse, 1 run, 2 get.
     pub operation: u8,
     pub secrets: Vec<String>,
     pub key_id: Option<String>,
@@ -74,7 +74,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_the_csharp_encoding() {
+    fn reads_the_pascal_case_encoding() {
         let json = r#"{"Operation":1,"Secrets":["db"],"KeyId":"ab12cd34","KeyName":"Claude Code","Reason":"migrate","Command":"[bash] x","CanAlwaysAllow":true,"GrantOnly":false}"#;
         let encoded = base64::engine::general_purpose::STANDARD.encode(json);
         let r = ApprovalRequest::decode(&encoded).unwrap();

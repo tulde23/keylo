@@ -8,14 +8,14 @@ import type { CategorySummary, Secret, SecretType } from "../api";
 import { createPortal } from "react-dom";
 import { importImageFile, importImageUrl, isImageIcon, useIconImage } from "../iconImages";
 
-// Secrets store Fluent icon names ("Person24") from the C# app; these are the lucide equivalents.
+// Secrets store Fluent icon names ("Person24"); these are the lucide equivalents.
 const ICONS: Record<string, LucideIcon> = {
   Person: User, Key: KeyRound, Database, Server, Note: StickyNote, Cloud, Globe, Mail, Lock, Shield,
   Payment: CreditCard, Wallet, Document: FileText, Code: Terminal, WindowConsole: Terminal, Link: Link2,
   Apps: LayoutGrid, LockClosed: Lock, Building: Building2, Phone: Smartphone, Wifi1: Wifi, Wifi,
 };
 
-/** Icons to choose from, by the Fluent names the C# app stores (so both apps show the same icon). */
+/** Icons to choose from, by their stored Fluent names. */
 export const ICON_CHOICES = [
   "Key24", "Person24", "Database24", "Server24", "Cloud24", "Globe24", "Mail24", "LockClosed24", "Shield24",
   "Payment24", "Wallet24", "Document24", "Code24", "Building24", "Phone24", "Wifi24", "Note24", "Apps24",

@@ -1,7 +1,7 @@
 //! The macOS login keychain as Keylo's credential store. Each secret is a generic password
 //! (service "Keylo", account = the target, so it shows in Keychain Access as such): the value is
 //! the item's data, and username, notes and attributes ride along as JSON in the item's "generic"
-//! attribute, as the C# build stores them.
+//! attribute.
 //!
 //! KEYLO_KEYCHAIN uses a specific keychain file instead of the login keychain (a throwaway one for
 //! tests, or from an SSH session where the login keychain is locked).
@@ -71,7 +71,7 @@ fn check(status: OSStatus, what: &str) -> Result<()> {
     Err(Error::msg(format!("Couldn't {what} in the Keychain: {message}")))
 }
 
-/// What the C# build keeps in the item's "generic" attribute (System.Text.Json defaults: PascalCase).
+/// What's kept in the item's "generic" attribute (PascalCase JSON).
 #[derive(Serialize, Deserialize, Default)]
 struct Metadata {
     #[serde(rename = "UserName")]
