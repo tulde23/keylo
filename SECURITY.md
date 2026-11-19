@@ -44,6 +44,10 @@ having Keylo run commands with them, and never **read** them. This is a summary;
 
 ### What it doesn't protect against
 
+- **A master passphrase closes most of this** (Windows, opt-in): with one set, the vault key is also
+  wrapped by an Argon2id key from the passphrase, so a copied disk or same-user code can't open the
+  vault while it's locked, and can't open it at all without the passphrase. During an unlocked session
+  the key is cached (OS-sealed) so agents can use it, as on Linux; `keylo lock` ends that.
 - **An agent, or any program, with unrestricted shell access as you.** Keylo's protection holds for
   agents that use secrets through Keylo (the MCP server or `keylo run`). It doesn't sandbox the agent.
   A program running as you can read the same store Keylo uses:

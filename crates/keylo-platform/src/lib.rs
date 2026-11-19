@@ -54,18 +54,54 @@ pub fn unlock_store() -> keylo_core::Result<Option<String>> {
     Ok(None)
 }
 
-/// `keylo lock`: forgets a store's unlocked key (Linux's vault file).
+/// `keylo lock`: forgets a store's unlocked key (Linux's vault file, or a Windows master passphrase).
 pub fn lock_store() {
     #[cfg(target_os = "linux")]
     linux::lock_store();
+    #[cfg(windows)]
+    windows_platform::lock();
 }
 
 /// Where secrets are kept, with its state, for `keylo status` (None: nothing to add).
 pub fn store_status() -> Option<String> {
     #[cfg(target_os = "linux")]
     return linux::store_status();
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    return windows_platform::status();
+    #[cfg(not(any(target_os = "linux", windows)))]
     None
+}
+
+/// Whether the vault is unlocked with a master passphrase (Windows). False where there's none.
+pub fn vault_has_passphrase() -> keylo_core::Result<bool> {
+    #[cfg(windows)]
+    return windows_platform::has_passphrase();
+    #[cfg(not(windows))]
+    Ok(false)
+}
+
+/// Unlocks the vault: `Some(passphrase)` to open a passphrase vault, `None` to try quietly (the
+/// session cache or KEYLO_PASSPHRASE). Returns whether it's unlocked afterwards.
+pub fn unlock_vault(passphrase: Option<&str>) -> keylo_core::Result<bool> {
+    #[cfg(windows)]
+    return windows_platform::unlock(passphrase);
+    #[cfg(not(windows))]
+    {
+        let _ = passphrase;
+        Ok(true)
+    }
+}
+
+/// Sets, changes or removes the vault's master passphrase (Windows). `current` must match when one
+/// is set; `new` of None removes it.
+pub fn set_vault_passphrase(current: Option<&str>, new: Option<&str>) -> keylo_core::Result<()> {
+    #[cfg(windows)]
+    return windows_platform::set_passphrase(current, new);
+    #[cfg(not(windows))]
+    {
+        let _ = (current, new);
+        keylo_core::bail!("A master passphrase isn't available on this platform yet.")
+    }
 }
 
 /// An approval dialog for the MCP server when the app isn't installed (macOS and Linux; Windows

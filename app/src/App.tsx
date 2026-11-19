@@ -7,6 +7,7 @@ import CategoryManager from "./components/CategoryManager";
 import ImportPanel from "./components/ImportPanel";
 import LinkPanel from "./components/LinkPanel";
 import LockScreen from "./components/LockScreen";
+import VaultUnlock from "./components/VaultUnlock";
 import Sidebar, { type View } from "./components/Sidebar";
 import SecretList from "./components/SecretList";
 import SecretDetail from "./components/SecretDetail";
@@ -186,6 +187,9 @@ function Shell() {
   const current = secrets.find((s) => s.name === selected) ?? null;
 
   if (!info || !status) return <div className="splash" />;
+  if (status.vaultLocked) {
+    return <VaultUnlock info={info} onUnlocked={async () => setStatus(await api.status())} />;
+  }
   if (!status.unlocked) {
     return (
       <LockScreen

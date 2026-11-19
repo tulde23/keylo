@@ -18,6 +18,8 @@ export interface Status {
   unlocked: boolean;
   mode: HelloMode;
   sessionExpires: string | null;
+  /** The vault has a master passphrase and isn't open yet, so nothing can be read. */
+  vaultLocked: boolean;
 }
 
 export interface Secret {
@@ -418,6 +420,9 @@ export const api = {
   syncLeave: () => invoke<void>("sync_leave"),
   status: () => invoke<Status>("status"),
   unlock: () => invoke<void>("unlock"),
+  vaultHasPassphrase: () => invoke<boolean>("vault_has_passphrase"),
+  vaultUnlock: (passphrase: string) => invoke<void>("vault_unlock", { passphrase }),
+  setVaultPassphrase: (current: string | null, next: string | null) => invoke<void>("set_vault_passphrase", { current, new: next }),
   lock: () => invoke<void>("lock"),
   touch: () => invoke<void>("touch"),
   secrets: () => invoke<Secret[]>("secrets"),
