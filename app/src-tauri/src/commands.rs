@@ -179,12 +179,15 @@ pub struct Status {
     unlocked: bool,
     mode: HelloMode,
     session_expires: Option<String>,
+    /// The vault has a master passphrase and isn't unlocked yet, so nothing can be read.
+    vault_locked: bool,
 }
 
 #[tauri::command]
 pub async fn status(state: State<'_, AppState>) -> Res<Status> {
     let g = state.gate.lock().unwrap();
-    Ok(Status { unlocked: g.is_unlocked(), mode: g.mode(), session_expires: g.session_expires_at().map(|t| t.to_rfc3339()) })
+    let vault_locked = keylo_platform::vault_has_passphrase().unwrap_or(false) && !keylo_platform::unlock_vault(None).unwrap_or(true);
+    Ok(Status { unlocked: g.is_unlocked(), mode: g.mode(), session_expires: g.session_expires_at().map(|t| t.to_rfc3339()), vault_locked })
 }
 
 #[tauri::command]
@@ -195,7 +198,33 @@ pub async fn unlock(window: WebviewWindow, state: State<'_, AppState>) -> Res<()
 #[tauri::command]
 pub async fn lock(state: State<'_, AppState>) -> Res<()> {
     state.gate.lock().unwrap().lock();
+    // A master-passphrase vault locks too, so the session really ends.
+    keylo_platform::lock_store();
     Ok(())
+}
+
+/// Whether the vault is protected by a master passphrase (for Settings → Security).
+#[tauri::command]
+pub async fn vault_has_passphrase() -> Res<bool> {
+    keylo_platform::vault_has_passphrase().map_err(err)
+}
+
+/// Opens a master-passphrase vault. Wrong passphrase returns an error for the screen to show.
+#[tauri::command]
+pub async fn vault_unlock(passphrase: String) -> Res<()> {
+    let passphrase = Zeroizing::new(passphrase);
+    keylo_platform::unlock_vault(Some(&passphrase)).map(|_| ()).map_err(err)
+}
+
+/// Sets, changes or removes the master passphrase. Changing how the vault is protected asks for the
+/// identity check first.
+#[tauri::command]
+pub async fn set_vault_passphrase(window: WebviewWindow, state: State<'_, AppState>, current: Option<String>, new: Option<String>) -> Res<()> {
+    confirm(&window, "Keylo: change the master passphrase").await?;
+    let _ = &state;
+    let current = current.map(Zeroizing::new);
+    let new = new.map(Zeroizing::new);
+    keylo_platform::set_vault_passphrase(current.as_ref().map(|z| z.as_str()), new.as_ref().map(|z| z.as_str())).map_err(err)
 }
 
 /// User activity: slides the session so it lasts while someone is at the keyboard.

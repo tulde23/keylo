@@ -578,8 +578,10 @@ keylo sync rename NAME | forget DEVICE | leave
 ### Session and settings
 
 ```bash
-keylo unlock            # verify now and start a session (and unlock Linux's vault file)
-keylo lock              # end the session (and forget Linux's vault key)
+keylo unlock            # verify now and start a session (and open a passphrase-protected vault)
+keylo lock              # end the session (and lock a passphrase-protected vault)
+keylo passphrase set | change | remove   # a master passphrase for the vault (Windows), on top of
+                        # your Windows account; needed to open the vault on a copied disk
 keylo status            # version, session, data folder, store
 keylo config            # show settings
 keylo config hello session|always|never
@@ -996,6 +998,11 @@ never deletes anything, and brings the secrets back.
   this version runs, it copies them into the vault, checks each copy, and only then removes the
   originals, freeing that space for other programs. (With `KEYLO_HOME` set on its own, for an
   experiment, nothing is moved.)
+- **Optional master passphrase:** you can add a passphrase (Argon2id) *on top of* your Windows
+  account, in **Settings → General** or with `keylo passphrase set`. The vault key is then wrapped by
+  both, so the vault can't be opened on a copied disk, or by other code running as you, without the
+  passphrase. You enter it when Keylo starts; one unlock is shared with the `keylo` command and the
+  MCP server for a while (`KEYLO_VAULT_CACHE_MINUTES`, 15 by default), and `keylo lock` ends it.
 
 **With sync on,** each synced secret is also in every syncing device's file in the sync folder,
 encrypted with AES-256-GCM under the sync vault key (see
@@ -1155,6 +1162,7 @@ None of these files hold secret values in readable form; `keylo.db` holds secret
 | AWS: "no region chosen" | Pass `--region`, set one (`keylo provider set aws region …`), or give your profile a region. |
 | AWS: credentials expired | `aws sso login --profile NAME`. |
 | Linux: "Keylo's vault is locked" | `keylo unlock` in a terminal, or set `KEYLO_PASSPHRASE_FILE`. |
+| Windows: "Keylo's vault is locked" (a master passphrase is set) | Open the Keylo app and enter it, run `keylo unlock`, or set `KEYLO_PASSPHRASE` for headless use. |
 | Linux: the keyring isn't available | Use Keylo from your desktop session, unlock the keyring, or switch to the vault file with `KEYLO_STORE=file`. |
 | macOS: "keylo-mac isn't installed" | Run `keylo` from inside Keylo.app (or the link to it), not a copy elsewhere. |
 | macOS keeps asking for keychain access | Choose **Always Allow**. Builds before 1.4.14 weren't signed with a Developer ID and may ask again after an update; current ones don't. |

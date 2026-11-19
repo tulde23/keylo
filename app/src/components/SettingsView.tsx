@@ -6,6 +6,7 @@ import TypesSection from "./TypesSection";
 import BackupSection from "./BackupSection";
 import SyncSection from "./SyncSection";
 import VaultsSection from "./VaultsSection";
+import VaultSecuritySection from "./VaultSecuritySection";
 import AppearanceSection from "./AppearanceSection";
 import { autoCheck, setAutoCheck, SHOW_UPDATE } from "./UpdateNotice";
 import type { Run } from "../App";
@@ -165,6 +166,7 @@ export default function SettingsView(props: {
         )}
       </section>
       )}
+      {tab === "general" && <VaultSecuritySection run={run} platform={info.platform} />}
 
       {tab === "appearance" && <AppearanceSection run={run} />}
 
