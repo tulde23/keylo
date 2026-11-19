@@ -1,6 +1,6 @@
 //! Uploaded icon images, stored as icons/{hash}.png (a 128×128 PNG, made by the app). A secret,
 //! category or type refers to one by the icon name "img" + hash, which stays a plain alphanumeric
-//! icon name in the OS store. Same files and names as the C# build.
+//! icon name in the OS store.
 
 use std::fs;
 use std::path::PathBuf;

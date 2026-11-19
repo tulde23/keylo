@@ -1,8 +1,8 @@
 //! Decides when the identity check (Windows Hello, Touch ID, polkit) must run before a secret is used.
 //!
 //! This is a presence check, not encryption: values are protected by the OS store and readable by
-//! any process running as this user. session.bin holds the session's expiry (UTC .NET ticks,
-//! little-endian), protected by the platform's data protector: the same file as the C# build.
+//! any process running as this user. session.bin holds the session's expiry (UTC ticks of
+//! 100 ns since 0001-01-01, little-endian), protected by the platform's data protector.
 
 use std::fs;
 use std::path::PathBuf;
@@ -14,7 +14,7 @@ use crate::platform::{self, VerificationResult};
 use crate::{paths, Error, Result};
 
 const SESSION_ENTROPY: &[u8] = b"keylo:session:v1";
-/// .NET ticks (100 ns since 0001-01-01) at the Unix epoch.
+/// Ticks (100 ns since 0001-01-01) at the Unix epoch.
 const UNIX_EPOCH_TICKS: i64 = 621_355_968_000_000_000;
 
 pub struct AccessGate {

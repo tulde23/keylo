@@ -5,7 +5,7 @@ import { IS_MAC, shortcut } from "./ui";
 export const TAGLINE = "Agents use them. Never see them.";
 
 /**
- * The bar across the top, ported from the C# app: the brand over the sidebar, search over the list,
+ * The bar across the top: the brand over the sidebar, search over the list,
  * action tiles over the detail area. Its columns follow the panes below (CSS subgrid), so the search
  * box stays above the list. The window keeps the system's own title bar and buttons.
  */

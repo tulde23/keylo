@@ -1,4 +1,4 @@
-// The colour theme and light/dark mode (Settings → Appearance), shared with the C# app through
+// The colour theme and light/dark mode (Settings → Appearance), kept in
 // ui.json. Applied as data attributes on <html>; the colours are in themes.css.
 import { invoke } from "@tauri-apps/api/core";
 

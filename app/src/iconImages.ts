@@ -1,6 +1,6 @@
 // Icon images: uploaded, pasted or downloaded pictures used as icons. Each is resized here to fit a
-// 128×128 transparent square (aspect ratio kept, centred, never cropped, at most 2× enlarged), as
-// the C# app does, then stored by Rust as icons/{hash}.png and named "img" + hash.
+// 128×128 transparent square (aspect ratio kept, centred, never cropped, at most 2× enlarged),
+// then stored by Rust as icons/{hash}.png and named "img" + hash.
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 

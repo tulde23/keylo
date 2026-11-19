@@ -3,7 +3,6 @@
 //! whenever the secret is used, so they're never copied and changes there apply at once. Access
 //! keys, approvals, redaction and the audit log apply exactly as for Keylo's own secrets.
 //!
-//! The stored form is the C# Keylo's, so links made by either build work in both.
 
 pub mod aws;
 pub mod onepassword;
@@ -44,7 +43,7 @@ const FIELDS_KEY: &str = "link_fields";
 const ONLY_FIELD_KEY: &str = "link_field";
 const ENV_NAMES_KEY: &str = "link_env_names";
 
-/// A setting, trimmed, when it's there and not blank (keys match case-insensitively, as in C#).
+/// A setting, trimmed, when it's there and not blank (keys match case-insensitively).
 pub fn setting<'a>(settings: &'a Settings, key: &str) -> Option<&'a str> {
     settings
         .iter()
@@ -628,7 +627,7 @@ mod tests {
     }
 
     #[test]
-    fn draft_round_trips_in_the_csharp_format() {
+    fn draft_round_trips_in_the_stored_format() {
         let d = draft("orders-db", &sample(), Some("AWS"), None, None, None);
         assert_eq!(d.fields["link_fields"], "username|username|0;password|password|1");
         assert_eq!(d.fields["link_env_names"], "prod=orders/db-prod");

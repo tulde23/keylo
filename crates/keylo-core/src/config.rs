@@ -1,5 +1,5 @@
 //! config.json: the identity-check mode, timeouts, access keys and provider settings. Fields this
-//! build doesn't know are kept as they are, so the C# and Rust builds can share one file.
+//! version doesn't know are kept as they are, so older and newer versions can share one file.
 
 use std::collections::BTreeMap;
 use std::fs;

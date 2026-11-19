@@ -31,7 +31,7 @@ name: release
 on:
   push:
     branches: [main]
-    # Only when something that's built and shipped changes: docs, tests, the C# code and
+    # Only when something that's built and shipped changes: docs, tests and
     # workflow-only edits don't build or publish a release.
     paths:
       - 'Cargo.toml'

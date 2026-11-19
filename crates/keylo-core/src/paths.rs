@@ -3,7 +3,7 @@ use std::path::PathBuf;
 pub const DEFAULT_PREFIX: &str = "Keylo:";
 
 /// The data folder: KEYLO_HOME, else the per-user local data folder + "Keylo"
-/// (%LOCALAPPDATA%\Keylo, ~/Library/Application Support/Keylo, ~/.local/share/Keylo), as the C# build.
+/// (%LOCALAPPDATA%\Keylo, ~/Library/Application Support/Keylo, ~/.local/share/Keylo).
 pub fn data_dir() -> PathBuf {
     match std::env::var("KEYLO_HOME") {
         Ok(home) if !home.is_empty() => PathBuf::from(home),

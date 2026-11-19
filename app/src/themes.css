@@ -1,5 +1,5 @@
 /* Keylo's colour themes. <html data-theme="quietviolet|graphite|ocean|evergreen|ember"
-   data-mode="system|light|dark">. Quiet violet's colours match the C# app's Themes.cs. */
+   data-mode="system|light|dark">. */
 
 :root[data-theme="quietviolet"][data-mode="light"],
 :root[data-theme="quietviolet"][data-mode="system"] {

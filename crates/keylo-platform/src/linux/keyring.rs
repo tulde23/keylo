@@ -1,7 +1,7 @@
 //! The desktop keyring (Secret Service: GNOME Keyring, KWallet, KeePassXC…) as Keylo's credential
 //! store. Each secret is an item in the default collection, labelled "Keylo: TARGET" and found by
-//! the attributes service + account (plus libsecret's xdg:schema, so the C# build, which uses
-//! libsecret, finds the same items). Everything else (value, username, notes, attributes) is inside
+//! the attributes service + account (plus libsecret's xdg:schema, so
+//! libsecret clients find the same items). Everything else (value, username, notes, attributes) is inside
 //! the encrypted secret as JSON, so nothing about it is readable without unlocking the keyring.
 
 use std::collections::{BTreeMap, HashMap};
@@ -19,7 +19,7 @@ use zeroize::Zeroizing;
 pub const DEFAULT_SERVICE: &str = "Keylo";
 const SCHEMA: &str = "io.github.tulde23.keylo";
 
-/// The JSON inside each item, as the C# build writes it (System.Text.Json defaults: PascalCase).
+/// The JSON inside each item (PascalCase).
 #[derive(Serialize, Deserialize)]
 struct Payload {
     #[serde(rename = "Value")]

@@ -90,8 +90,8 @@ vaultKey   = 256 random bits, wrapped by accountKey in vault.json
 - **Why a secret key as well as the password:** a copy of the folder leaked from the sync
   provider can't be attacked with password guesses alone, because the secret key adds 128 bits of
   entropy. It's the same idea as 1Password's Secret Key.
-- **Why PBKDF2:** the secret key already makes offline guessing infeasible, and PBKDF2 is built
-  into .NET, so no native crypto dependency (Argon2) is needed. The `kdf` field leaves room to
+- **Why PBKDF2:** the secret key already makes offline guessing infeasible, and PBKDF2 is widely
+  available, so no extra crypto dependency (Argon2) is needed. The `kdf` field leaves room to
   change this later.
 - **Day to day,** joining a device stores `vaultKey` in the OS store (`Keylo:#vault`). It sits
   behind the same Windows Hello or Touch ID gate (`AccessGate`) as today. The password and secret

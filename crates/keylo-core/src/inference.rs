@@ -1,6 +1,5 @@
 //! Guesses a secret type for an imported file from its name, extension and (text) content. Only
-//! confident guesses are made; anything else stays a plain secret, which is always safe. The same
-//! rules as the C# build's SecretTypeInference.
+//! confident guesses are made; anything else stays a plain secret, which is always safe.
 
 use std::collections::BTreeMap;
 use std::collections::HashSet;
@@ -20,7 +19,7 @@ fn guess(type_id: &str, fields: &[(&str, String)]) -> Option<InferredType> {
     Some(InferredType { type_id: type_id.into(), fields: fields.iter().map(|(k, v)| (k.to_string(), v.clone())).collect() })
 }
 
-/// "notes.txt" → ("notes", ".txt"); ".env" → ("", ".env"), as .NET's Path does.
+/// "notes.txt" → ("notes", ".txt"); ".env" → ("", ".env").
 pub fn split_file_name(path: &str) -> (String, String) {
     let file = path.rsplit(['/', '\\']).next().unwrap_or(path);
     match file.rfind('.') {
@@ -147,7 +146,7 @@ pub fn parse_database_url(value: &str) -> Option<BTreeMap<String, String>> {
         Some(at) => (Some(&authority[..at]), &authority[at + 1..]),
         None => (None, authority),
     };
-    // .NET's Uri rejects a host list ("h1,h2") and spaces; so do we.
+    // A host list ("h1,h2") and spaces aren't valid hosts.
     if host_port.contains([',', ' ']) {
         return None;
     }
@@ -235,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn file_names_split_like_dotnet() {
+    fn file_names_split_into_stem_and_extension() {
         assert_eq!(split_file_name("dir/.env"), (String::new(), ".env".into()));
         assert_eq!(split_file_name("a.b.txt"), ("a.b".into(), ".txt".into()));
         assert_eq!(split_file_name("token"), ("token".into(), String::new()));

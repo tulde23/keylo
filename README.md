@@ -41,7 +41,6 @@ OneDrive, iCloud Drive, Dropbox or Syncthing.
 - [Security model](#security-model)
 - [Configuration](#configuration)
 - [Platform notes](#platform-notes)
-- [Upgrading from the C# Keylo](#upgrading-from-the-c-keylo)
 - [Troubleshooting](#troubleshooting)
 - [Building from source](#building-from-source)
 - [Security](#security)
@@ -883,8 +882,8 @@ keylo restore ~/keylo-2026-11-17.keylo [--overwrite]
 - Creating a backup always asks for your identity check, because it exports every value.
 - Restoring skips secrets you already have, unless you choose to replace them (`--overwrite`, or the
   checkbox in the app's preview).
-- Backups work across Windows, macOS and Linux, and between this and the earlier C# Keylo. Linked
-  secrets need that vault's CLI signed in on the new machine.
+- Backups work across Windows, macOS and Linux. Linked secrets need that vault's CLI signed in on
+  the new machine.
 - **There is no recovery.** Keep the password somewhere other than Keylo.
 
 In the app: **Settings → Backup**.
@@ -1107,25 +1106,6 @@ None of these files hold secret values in readable form.
 
 ---
 
-## Upgrading from the C# Keylo
-
-This Keylo replaces the earlier C# version (its code is in this repository's git history). Both read and write
-the same data, so nothing needs migrating: secrets, settings, access keys, types, categories, links,
-the audit log and backups all carry over.
-
-On Windows:
-
-1. Uninstall the C# Keylo: run its `install.ps1 -Uninstall`, or delete
-   `%LOCALAPPDATA%\Programs\Keylo` (close Keylo and any Claude Code sessions first).
-2. Install this one with the zip's `install.ps1`. It goes to the same folder, so Claude Code's existing
-   Keylo registration keeps working with the same access key.
-3. Restart Claude Code sessions, or run `/mcp`.
-
-The 9 newer secret types (password, server and the rest) are unknown to the C# Keylo, which shows
-those secrets as plain values.
-
----
-
 ## Troubleshooting
 
 | Symptom | What to do |
@@ -1185,7 +1165,6 @@ cargo test -p keylo-core -p keylo-platform -p keylo-cli
 
 | Script | Checks |
 |---|---|
-| `tests/windows-compat.sh` | The Rust and C# builds read each other's secrets, keys, backups, imports and links, and the MCP server, in a throwaway store |
 | `tests/links.sh` | Linked secrets, push, environments and `--add-to-claude`, against fake `op`, `aws` and `claude` (build `tests/fakevault`) |
 | `tests/linux-compat.sh` | The Linux vault file and desktop keyring (in a container, or in CI) |
 | `tests/macos-ci.sh` | The macOS Keychain store, against a throwaway keychain |

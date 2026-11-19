@@ -1,5 +1,4 @@
-//! Imports files (e.g. the contents of a .secrets folder) as secrets, one secret per file. The same
-//! rules as the C# build's SecretImporter.
+//! Imports files (e.g. the contents of a .secrets folder) as secrets, one secret per file.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;

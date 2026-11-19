@@ -2,10 +2,10 @@
 //!
 //! Each item's blob starts with a one-byte kind tag:
 //!   0x01 inline: the remaining bytes are the value.
-//!   0x02 file:   a 16-byte id (.NET Guid byte order) and a 4-byte little-endian length; the value
+//!   0x02 file:   a 16-byte id (GUID, mixed-endian byte order) and a 4-byte little-endian length; the value
 //!                is an encrypted file blobs/{id}.bin, for values too large for the OS store.
 //! Username and notes use the item's own user name and comment; category, icon, colour, type and
-//! non-secret fields are attributes. Identical to the C# Keylo's format.
+//! non-secret fields are attributes.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -330,7 +330,7 @@ fn entropy(id: Uuid) -> Vec<u8> {
     format!("keylo:blob:{}", id.simple()).into_bytes()
 }
 
-/// Length as .NET counts it (UTF-16 code units), so limits match the C# build.
+/// Length in UTF-16 code units, as the OS stores count it.
 fn utf16_len(s: &str) -> usize {
     s.encode_utf16().count()
 }
