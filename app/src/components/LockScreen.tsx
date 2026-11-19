@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Fingerprint } from "lucide-react";
 import { message, type AppInfo } from "../api";
 
@@ -18,13 +18,7 @@ export default function LockScreen({ info, onUnlock }: { info: AppInfo; onUnlock
     }
   };
 
-  // Ask straight away on open, as the C# app does (once, though React may run effects twice).
-  const asked = useRef(false);
-  useEffect(() => {
-    if (asked.current) return;
-    asked.current = true;
-    unlock();
-  }, []);
+  // No automatic prompt: Hello asks only when Unlock is clicked (or Enter pressed — it has focus).
 
   return (
     <main className="lock-screen">

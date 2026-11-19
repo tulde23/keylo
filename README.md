@@ -428,8 +428,8 @@ are removed (`keylo config audit-days 365`, or `forever`).
 Open **Keylo** from the Start menu, Applications or your desktop's menu. Only one copy runs at a
 time: starting it again brings the open window forward.
 
-- **Lock screen**: unlock with your identity check. Keylo locks itself when your screen locks and
-  when the session ends.
+- **Lock screen**: click **Unlock** (or press Enter) for your identity check; it never prompts on its
+  own. Keylo locks itself when your screen locks and when the session ends.
 - **Top bar**: search everything (**Ctrl+K**, **Ctrl+F** or **/**), **+** new secret (**Ctrl+N**),
   **Import files**, **Import folder**, **Link from a vault**, **Activity** (the audit log),
   **Settings** and **Lock** (**Ctrl+L**). On a Mac the shortcuts use **⌘** instead of Ctrl.
