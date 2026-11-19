@@ -9,7 +9,7 @@ export default function AppearanceSection({ run }: { run: Run }) {
   const [current, setCurrent] = useState<Appearance | null>(null);
 
   useEffect(() => {
-    invoke<Appearance>("ui_theme").then(setCurrent).catch(() => setCurrent({ theme: "Twilight", mode: "System" }));
+    invoke<Appearance>("ui_theme").then(setCurrent).catch(() => setCurrent({ theme: "QuietViolet", mode: "System" }));
   }, []);
 
   const pick = async (change: Partial<Appearance>) => {

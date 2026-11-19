@@ -1,5 +1,5 @@
-/* Keylo's colour themes, generated from the C# app's Themes.cs (same colours, so both apps look
-   alike). <html data-theme="twilight|quietviolet|aurora" data-mode="system|light|dark">. */
+/* Keylo's colour themes. <html data-theme="quietviolet|graphite|ocean|evergreen|ember"
+   data-mode="system|light|dark">. Quiet violet's colours match the C# app's Themes.cs. */
 
 :root[data-theme="quietviolet"][data-mode="light"],
 :root[data-theme="quietviolet"][data-mode="system"] {
@@ -14,38 +14,6 @@
   --accent-soft: #F1ECFD;
   --row-hover: #EFEDF4;
   --row-selected: #ECE6FB;
-  color-scheme: light;
-}
-
-:root[data-theme="aurora"][data-mode="light"],
-:root[data-theme="aurora"][data-mode="system"] {
-  --bg: #FAF9FB;
-  --surface: #FFFFFF;
-  --sidebar: #FFFFFF;
-  --border: #E7E5EC;
-  --text: #1B1A20;
-  --muted: #6C6977;
-  --accent: #9333EA;
-  --accent-hover: #9333EA;
-  --accent-soft: #F3E8FF;
-  --row-hover: #F2F1F5;
-  --row-selected: #F3E8FF;
-  color-scheme: light;
-}
-
-:root[data-theme="twilight"][data-mode="light"],
-:root[data-theme="twilight"][data-mode="system"] {
-  --bg: #F6F2FD;
-  --surface: #FFFFFF;
-  --sidebar: #FBF9FE;
-  --border: #E2D8F4;
-  --text: #1E1630;
-  --muted: #6B5F86;
-  --accent: #9333EA;
-  --accent-hover: #5B21B6;
-  --accent-soft: #EDE5FA;
-  --row-hover: #EEE6FB;
-  --row-selected: #E2D3FA;
   color-scheme: light;
 }
 
@@ -64,36 +32,6 @@
   color-scheme: dark;
 }
 
-:root[data-theme="aurora"][data-mode="dark"] {
-  --bg: #18171C;
-  --surface: #24232A;
-  --sidebar: #1C1B21;
-  --border: #34323B;
-  --text: #F5F4F7;
-  --muted: #8B8894;
-  --accent: #C084FC;
-  --accent-hover: #C084FC;
-  --accent-soft: #2A2236;
-  --row-hover: #26252C;
-  --row-selected: #2C2238;
-  color-scheme: dark;
-}
-
-:root[data-theme="twilight"][data-mode="dark"] {
-  --bg: #13101B;
-  --surface: #211A30;
-  --sidebar: #161220;
-  --border: #31284A;
-  --text: #F5F1FF;
-  --muted: #9086AB;
-  --accent: #9333EA;
-  --accent-hover: #6D28D9;
-  --accent-soft: #2D2147;
-  --row-hover: #231B33;
-  --row-selected: #2D2147;
-  color-scheme: dark;
-}
-
 @media (prefers-color-scheme: dark) {
   :root[data-theme="quietviolet"][data-mode="system"] {
     --bg: #1B1A21;
@@ -109,32 +47,189 @@
     --row-selected: #2E2A3D;
     color-scheme: dark;
   }
-  :root[data-theme="aurora"][data-mode="system"] {
-    --bg: #18171C;
-    --surface: #24232A;
-    --sidebar: #1C1B21;
-    --border: #34323B;
-    --text: #F5F4F7;
-    --muted: #8B8894;
-    --accent: #C084FC;
-    --accent-hover: #C084FC;
-    --accent-soft: #2A2236;
-    --row-hover: #26252C;
-    --row-selected: #2C2238;
+}
+
+/* Themes that aren't violet (only the logo keeps its colours). Same tokens as above. */
+
+:root[data-theme="graphite"][data-mode="light"],
+:root[data-theme="graphite"][data-mode="system"] {
+  --bg: #F5F5F6;
+  --surface: #FFFFFF;
+  --sidebar: #FAFAFB;
+  --border: #E4E4E7;
+  --text: #18181B;
+  --muted: #6B6B74;
+  --accent: #3F3F46;
+  --accent-hover: #27272A;
+  --accent-soft: #EDEDEF;
+  --row-hover: #EFEFF1;
+  --row-selected: #E5E5E8;
+  color-scheme: light;
+}
+
+:root[data-theme="graphite"][data-mode="dark"] {
+  --bg: #161618;
+  --surface: #222225;
+  --sidebar: #1B1B1D;
+  --border: #333337;
+  --text: #F4F4F5;
+  --muted: #8E8E96;
+  --accent: #7A7A84;
+  --accent-hover: #8A8A94;
+  --accent-soft: #2E2E33;
+  --row-hover: #26262A;
+  --row-selected: #303036;
+  color-scheme: dark;
+}
+
+:root[data-theme="ocean"][data-mode="light"],
+:root[data-theme="ocean"][data-mode="system"] {
+  --bg: #F3F6FB;
+  --surface: #FFFFFF;
+  --sidebar: #F9FBFE;
+  --border: #DDE4F0;
+  --text: #141B2D;
+  --muted: #5F6B82;
+  --accent: #2563EB;
+  --accent-hover: #1D4ED8;
+  --accent-soft: #E6EEFD;
+  --row-hover: #EBF0F8;
+  --row-selected: #DFE8FB;
+  color-scheme: light;
+}
+
+:root[data-theme="ocean"][data-mode="dark"] {
+  --bg: #0F141D;
+  --surface: #1A2230;
+  --sidebar: #121924;
+  --border: #2A3446;
+  --text: #EEF3FB;
+  --muted: #8592A8;
+  --accent: #3B82F6;
+  --accent-hover: #5B95F7;
+  --accent-soft: #1C2B45;
+  --row-hover: #1D2636;
+  --row-selected: #1F3050;
+  color-scheme: dark;
+}
+
+:root[data-theme="evergreen"][data-mode="light"],
+:root[data-theme="evergreen"][data-mode="system"] {
+  --bg: #F3F7F5;
+  --surface: #FFFFFF;
+  --sidebar: #F9FCFA;
+  --border: #DCE7E1;
+  --text: #13201A;
+  --muted: #5E6E66;
+  --accent: #047857;
+  --accent-hover: #065F46;
+  --accent-soft: #E3F5EE;
+  --row-hover: #EAF2EE;
+  --row-selected: #D9EFE5;
+  color-scheme: light;
+}
+
+:root[data-theme="evergreen"][data-mode="dark"] {
+  --bg: #0F1714;
+  --surface: #1A2420;
+  --sidebar: #131C18;
+  --border: #2A3832;
+  --text: #EDF5F1;
+  --muted: #869890;
+  --accent: #0E9467;
+  --accent-hover: #12A574;
+  --accent-soft: #173329;
+  --row-hover: #1D2925;
+  --row-selected: #1B3A2F;
+  color-scheme: dark;
+}
+
+:root[data-theme="ember"][data-mode="light"],
+:root[data-theme="ember"][data-mode="system"] {
+  --bg: #FAF6F3;
+  --surface: #FFFFFF;
+  --sidebar: #FDFAF8;
+  --border: #EDE3DC;
+  --text: #22180F;
+  --muted: #75685E;
+  --accent: #C2410C;
+  --accent-hover: #9A3412;
+  --accent-soft: #FCEBE1;
+  --row-hover: #F4EDE8;
+  --row-selected: #F8E1D3;
+  color-scheme: light;
+}
+
+:root[data-theme="ember"][data-mode="dark"] {
+  --bg: #18130F;
+  --surface: #251D18;
+  --sidebar: #1C1612;
+  --border: #3A2E26;
+  --text: #F8F1EC;
+  --muted: #9E9088;
+  --accent: #D9581C;
+  --accent-hover: #E86A2E;
+  --accent-soft: #3A2418;
+  --row-hover: #2A211B;
+  --row-selected: #3E2719;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="graphite"][data-mode="system"] {
+    --bg: #161618;
+    --surface: #222225;
+    --sidebar: #1B1B1D;
+    --border: #333337;
+    --text: #F4F4F5;
+    --muted: #8E8E96;
+    --accent: #7A7A84;
+    --accent-hover: #8A8A94;
+    --accent-soft: #2E2E33;
+    --row-hover: #26262A;
+    --row-selected: #303036;
     color-scheme: dark;
   }
-  :root[data-theme="twilight"][data-mode="system"] {
-    --bg: #13101B;
-    --surface: #211A30;
-    --sidebar: #161220;
-    --border: #31284A;
-    --text: #F5F1FF;
-    --muted: #9086AB;
-    --accent: #9333EA;
-    --accent-hover: #6D28D9;
-    --accent-soft: #2D2147;
-    --row-hover: #231B33;
-    --row-selected: #2D2147;
+  :root[data-theme="ocean"][data-mode="system"] {
+    --bg: #0F141D;
+    --surface: #1A2230;
+    --sidebar: #121924;
+    --border: #2A3446;
+    --text: #EEF3FB;
+    --muted: #8592A8;
+    --accent: #3B82F6;
+    --accent-hover: #5B95F7;
+    --accent-soft: #1C2B45;
+    --row-hover: #1D2636;
+    --row-selected: #1F3050;
+    color-scheme: dark;
+  }
+  :root[data-theme="evergreen"][data-mode="system"] {
+    --bg: #0F1714;
+    --surface: #1A2420;
+    --sidebar: #131C18;
+    --border: #2A3832;
+    --text: #EDF5F1;
+    --muted: #869890;
+    --accent: #0E9467;
+    --accent-hover: #12A574;
+    --accent-soft: #173329;
+    --row-hover: #1D2925;
+    --row-selected: #1B3A2F;
+    color-scheme: dark;
+  }
+  :root[data-theme="ember"][data-mode="system"] {
+    --bg: #18130F;
+    --surface: #251D18;
+    --sidebar: #1C1612;
+    --border: #3A2E26;
+    --text: #F8F1EC;
+    --muted: #9E9088;
+    --accent: #D9581C;
+    --accent-hover: #E86A2E;
+    --accent-soft: #3A2418;
+    --row-hover: #2A211B;
+    --row-selected: #3E2719;
     color-scheme: dark;
   }
 }
