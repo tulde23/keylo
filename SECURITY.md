@@ -1,0 +1,66 @@
+# Security
+
+## Reporting a vulnerability
+
+Please report security problems privately, not in a public issue:
+**[Report a vulnerability](https://github.com/tulde23/keylo/security/advisories/new)** (GitHub's
+private vulnerability reporting).
+
+Include what you found, how to reproduce it, the Keylo version (`keylo version`) and your operating
+system. You'll get a reply within a few days. Fixes ship in a new release, and the advisory is
+published once people have had a chance to update.
+
+Only the latest release is supported. The app offers updates as they come out (Settings → About to
+check now); on Windows, `keylo update` also installs them.
+
+## Threat model
+
+Keylo keeps API keys, passwords and tokens out of AI agents' context: agents **use** secrets by
+having Keylo run commands with them, and never **read** them. This is a summary; the README's
+[Security model](README.md#security-model) has the details.
+
+### What Keylo protects against
+
+- **Values reaching an agent's context.** No MCP tool returns a value, access keys are run-only, and
+  values that appear in a command's output are replaced with `[keylo:name]` before the agent sees it.
+- **Agents using secrets they shouldn't.** An access key covers chosen categories or secrets; anything
+  else needs your approval, confirmed with Windows Hello, Touch ID or your system password. Approvals
+  show the exact command and the agent's stated reason. Every use is written to an audit log.
+- **Secrets in plain-text files** (`.env`, key folders) being read, committed, synced or shared.
+- **Values in shell history or the process list.** Values are never taken as command-line arguments.
+- **Other users on the computer, and a stolen disk or copied backup.** Secrets live in the operating
+  system's store (Windows Credential Manager, the macOS Keychain, the Linux keyring, or Keylo's
+  encrypted vault), tied to your account.
+- **The sync folder and the service that syncs it.** Synced secrets are encrypted (AES-256-GCM) with a
+  key the service never sees; changed files are rejected.
+
+### What it doesn't protect against
+
+- **An agent, or any program, with unrestricted shell access as you.** Keylo's protection holds for
+  agents that use secrets through Keylo (the MCP server or `keylo run`). It doesn't sandbox the agent.
+  A program running as you can read the same store Keylo uses:
+  - **Windows:** Credential Manager entries (`Keylo:NAME`) and Keylo's DPAPI-protected files can be read
+    by any program running as your user.
+  - **Linux:** an unlocked desktop keyring can be read by any program in your session, and the vault
+    key is cached in your kernel keyring for 15 minutes after unlocking.
+  - **macOS:** the Keychain asks you before a program other than Keylo reads one of its items. Deny it
+    unless you started that program yourself.
+
+  To keep an agent from going around Keylo, limit what its shell can do: run it in a sandbox, a
+  container or dev container, or as a different user account, and use your agent's own permission
+  rules to block commands that read credential stores. `keylo get` always asks for your identity
+  check, so it can't be used silently.
+- **A command you approve.** It receives the real value and can do anything with it, including sending
+  it elsewhere or encoding it so the redactor doesn't recognise it. Redaction catches accidental
+  leaks, not deliberate ones. Don't approve commands you don't understand.
+- **Malware running as you.** The identity check is a presence check, not encryption.
+- **Linked vaults** (1Password, AWS Secrets Manager): Keylo is only as strong as their setup.
+- **A synced device you no longer control,** or anyone with the join code and access to the sync
+  folder.
+
+### What Keylo connects to
+
+Keylo has no server and no account. It goes online only to check for updates (GitHub releases), to
+download an icon from an address you paste, and through the `op` and `aws` command lines for linked
+secrets. Releases are signed: Windows and macOS updates carry a minisign signature that the updater
+checks, and the macOS app is signed with a Developer ID and notarized by Apple.

@@ -86,8 +86,11 @@ pub(crate) fn install() {
 // ---------------------------------------------------------------------------- keylo-mac
 
 /// keylo-mac, next to this program (or, in the app bundle, next to keylow in Contents/MacOS).
+/// The real program, not a symlink to it (Homebrew's `keylo` is one): current_exe can return the
+/// path it was started by.
 fn helper() -> Result<PathBuf> {
-    let path = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("keylo-mac"))).unwrap_or_else(|| "keylo-mac".into());
+    let exe = std::env::current_exe().ok().map(|e| std::fs::canonicalize(&e).unwrap_or(e));
+    let path = exe.and_then(|e| e.parent().map(|d| d.join("keylo-mac"))).unwrap_or_else(|| "keylo-mac".into());
     if !path.is_file() {
         bail!("keylo-mac (Keylo's macOS helper) isn't installed next to keylo ({}). Re-run the build.", path.display());
     }

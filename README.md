@@ -34,7 +34,7 @@ OneDrive, iCloud Drive, Dropbox or Syncthing.
 - [AI agents: the MCP server](#ai-agents-the-mcp-server)
 - [Linked secrets: 1Password and AWS Secrets Manager](#linked-secrets-1password-and-aws-secrets-manager)
 - [Pushing secrets to another vault](#pushing-secrets-to-another-vault)
-- [Import, backup and restore](#import-backup-and-restore)
+- [Import, export, backup and restore](#import-export-backup-and-restore)
 - [Sync between your devices](#sync-between-your-devices)
 - [Security model](#security-model)
 - [Configuration](#configuration)
@@ -42,6 +42,7 @@ OneDrive, iCloud Drive, Dropbox or Syncthing.
 - [Upgrading from the C# Keylo](#upgrading-from-the-c-keylo)
 - [Troubleshooting](#troubleshooting)
 - [Building from source](#building-from-source)
+- [Security](#security)
 - [License](#license)
 
 ---
@@ -119,6 +120,8 @@ There is no tool that returns a value. An agent can use a secret, but it can't r
 - **Import** files and folders as secrets, with type detection (SSH keys, database URLs, tokens).
 - **Import from another password manager:** CSV exports from Chrome, Edge, Firefox, Bitwarden,
   1Password, LastPass, KeePassXC and Apple Passwords, with folders, notes and one-time codes.
+- **Export to another password manager:** a Bitwarden CSV, or the browser format most password
+  managers import, so you're never locked in.
 - **Encrypted backups** (AES-256-GCM, password-protected) that restore on any OS.
 - **Sync between your own devices** through a folder they already share (OneDrive, iCloud Drive,
   Dropbox, Syncthing), end-to-end encrypted, with conflict copies instead of lost edits.
@@ -181,8 +184,7 @@ Apple silicon (M1 or later).
 
 Keylo.app contains `keylow` (the app), `keylo` (the command) and `keylo-mac`, a small helper for
 Touch ID, the pasteboard and approval alerts. If macOS asks whether Keylo may use an item in your
-keychain, choose **Always Allow**. Because the release isn't signed with a Developer ID, it may ask
-again after an update.
+keychain, choose **Always Allow**.
 
 ### Linux
 
@@ -538,6 +540,7 @@ keylo provider env aws [list | set ENV PROFILE REGION [--ask|--no-ask] | remove 
 ```bash
 keylo import PATH… [--category C | --flat] [--overwrite] [--delete-originals] [--plain]
 keylo import EXPORT.csv [--category C] [--overwrite] [--dry-run] [--delete-originals]   # another password manager's export
+keylo export-passwords FILE.csv [--format bitwarden|browser] [--category C] [--force]  # for another password manager
 keylo backup FILE [--force] [--password-stdin]
 keylo restore FILE [--overwrite] [--dry-run] [--password-stdin]
 ```
@@ -770,7 +773,7 @@ anything is sent, it shows where the secret will go and whether it creates an it
 
 ---
 
-## Import, backup and restore
+## Import, export, backup and restore
 
 ### Import
 
@@ -828,6 +831,30 @@ keylo import ~/Downloads/bitwarden_export.csv --delete-originals
 - **The export file holds every password in plain text.** The preview never shows passwords. Delete
   the file afterwards: `--delete-originals`, or the checkbox in the app. If it was in Downloads or a
   synced folder, empty the recycle bin too.
+
+### To another password manager
+
+Export your secrets as a CSV another password manager can import. In the app: **Settings → Backup &
+import → Export passwords**. From a terminal:
+
+```bash
+keylo export-passwords ~/keylo-bitwarden.csv                      # Bitwarden's format (the default)
+keylo export-passwords ~/keylo-passwords.csv --format browser --category Work
+```
+
+| Format | For | What goes across |
+|---|---|---|
+| `bitwarden` | Bitwarden, and other apps that can import a Bitwarden CSV | name, category (as the folder), website, username, password, one-time code, notes; other fields as custom fields; keys, certificates and notes as secure notes |
+| `browser` | Chrome, Edge, Brave, Firefox, Apple Passwords, KeePassXC and most password managers (the CSV Chrome exports) | name, website, username, password; notes, one-time codes and other fields in the note. Keys and notes are left out |
+
+- **Left out, each listed with the reason:** linked secrets (their values are in 1Password or AWS;
+  export from there), binary values (use a [backup](#backup-and-restore)), and, in the browser
+  format, keys and notes.
+- **Every exported value is in plain text.** Exporting always asks for your identity check. Save the
+  file somewhere that doesn't sync, import it, then delete it and empty the recycle bin.
+- An existing file isn't replaced unless you pass `--force` (the app's save dialog asks).
+- For moving to another computer with Keylo, use a [backup](#backup-and-restore) or
+  [sync](#sync-between-your-devices) instead: they're encrypted and keep everything.
 
 ### Backup and restore
 
@@ -970,6 +997,11 @@ the Linux keyring and vault they're inside the encrypted item. Never put a secre
 
 ### What it doesn't
 
+- **An agent with unrestricted shell access.** Keylo protects secrets an agent uses *through Keylo*;
+  it doesn't sandbox the agent. On Windows and Linux, any program running as you, an agent's shell
+  included, can read the store Keylo uses directly. On macOS the Keychain asks first. Limit what an
+  agent's shell can do (a sandbox, a container, another user account, or your agent's permission
+  rules). See [SECURITY.md](SECURITY.md).
 - **Malware running as you.** It can read the same store and protected files Keylo can. The identity
   check is a presence check, not encryption.
 - **A command you approve.** It receives the real value and can do anything with it, including
@@ -1171,6 +1203,11 @@ publishes a release through `.github/workflows/release.yml`:
 - **Docs and tests:** changes to these alone don't trigger a release.
 
 ---
+
+## Security
+
+Report vulnerabilities privately; see [SECURITY.md](SECURITY.md), which also summarises the threat
+model.
 
 ## License
 
