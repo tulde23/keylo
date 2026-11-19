@@ -245,3 +245,40 @@ pub async fn password_import(
     .await
     .map_err(|e| e.to_string())?
 }
+
+/// Where to save a password export; None when canceled.
+#[tauri::command]
+pub async fn pick_password_export_save(window: WebviewWindow, format: String) -> Option<String> {
+    let name = format!("keylo-{}-{}.csv", format.to_lowercase(), chrono::Local::now().format("%Y-%m-%d"));
+    window
+        .dialog()
+        .file()
+        .set_parent(&window)
+        .set_title("Export passwords")
+        .add_filter("CSV", &["csv"])
+        .set_file_name(name)
+        .blocking_save_file()
+        .and_then(|p| p.into_path().ok())
+        .map(|p| p.display().to_string())
+}
+
+/// Writes secrets as a CSV another password manager imports. Plain text, so it always asks for
+/// the identity check.
+#[tauri::command]
+pub async fn export_passwords(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    path: String,
+    format: String,
+    category: Option<String>,
+) -> Res<keylo_core::pm_export::PasswordExport> {
+    use keylo_core::pm_export::{self, ExportFormat};
+    require_unlocked(&state)?;
+    let format = ExportFormat::parse(&format).ok_or_else(|| format!("Unknown export format '{format}'."))?;
+    confirm(&window, "Keylo: export passwords in plain text").await?;
+    tauri::async_runtime::spawn_blocking(move || {
+        pm_export::export(Path::new(&path), format, category.as_deref(), &SecretStore::default(), &SecretTypeCatalog::default()).map_err(err)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

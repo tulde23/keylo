@@ -342,6 +342,14 @@ export interface PasswordImport {
   imported: number;
 }
 
+export type ExportFormat = "bitwarden" | "browser";
+export interface PasswordExport {
+  path: string;
+  format: string;
+  exported: number;
+  skipped: { name: string; reason: string }[];
+}
+
 /** One device in the sync folder. */
 export interface SyncDevice {
   id: string;
@@ -395,6 +403,9 @@ export const api = {
   passwordImportPlan: (path: string, category: string | null) => invoke<PasswordImport>("password_import_plan", { path, category }),
   passwordImport: (path: string, category: string | null, overwrite: boolean, deleteFile: boolean) =>
     invoke<PasswordImport>("password_import", { path, category, overwrite, deleteFile }),
+  pickPasswordExportSave: (format: ExportFormat) => invoke<string | null>("pick_password_export_save", { format }),
+  exportPasswords: (path: string, format: ExportFormat, category: string | null) =>
+    invoke<PasswordExport>("export_passwords", { path, format, category }),
   syncStatus: () => invoke<SyncStatus | null>("sync_status"),
   syncDeviceName: () => invoke<string>("sync_device_name"),
   pickSyncFolder: () => invoke<string | null>("pick_sync_folder"),

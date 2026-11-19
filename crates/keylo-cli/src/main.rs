@@ -74,6 +74,9 @@ keylo import PATH... [--category C | --flat] [--overwrite] [--delete-originals] 
                                         categories; types are guessed unless --plain)
 keylo import EXPORT.csv [--category C] [--overwrite] [--dry-run] [--delete-originals]
                                         Import another password manager's CSV export as logins
+keylo export-passwords FILE.csv [--format bitwarden|browser] [--category C] [--force]
+                                        Export as a CSV another password manager imports (plain
+                                        text: delete it after importing)
 keylo backup FILE [--force] [--password-stdin]
                                         Encrypted, password-protected backup of everything
 keylo restore FILE [--overwrite] [--dry-run] [--password-stdin]
@@ -165,6 +168,7 @@ fn run(argv: &[String]) -> CliResult<i32> {
         "import" => import_cmd(&mut c, &args),
         "backup" | "export" => backup_cmd(&mut c, &args),
         "restore" => restore_cmd(&mut c, &args),
+        "export-passwords" => export_passwords_cmd(&mut c, &args),
         "link" => vaults::link(&mut c, &args),
         "push" => vaults::push(&mut c, &args),
         "provider" | "providers" => vaults::provider_cmd(&mut c, &args),
@@ -871,6 +875,40 @@ fn backup_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
         s.secrets, s.categories, s.icons, s.path, s.bytes as f64 / 1024.0
     ));
     info("Keep the password somewhere other than Keylo. Without it the backup can't be opened.");
+    Ok(0)
+}
+
+fn export_passwords_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
+    use keylo_core::pm_export::{self, ExportFormat};
+    let mut path = std::path::PathBuf::from(absolute(&args.positional(0, "export file")?));
+    if path.extension().is_none() {
+        path.set_extension("csv");
+    }
+    let format = match args.option("format") {
+        None => ExportFormat::Bitwarden,
+        Some(f) => match ExportFormat::parse(&f) {
+            Some(f) => f,
+            None => usage!("Unknown format '{f}'. Use bitwarden or browser."),
+        },
+    };
+    let category = args.option("category");
+    let force = args.flag("force");
+    args.throw_on_unknown(Some(1))?;
+    if path.exists() && !force {
+        usage!("{} exists. Use --force to replace it.", path.display());
+    }
+
+    // Writes values in plain text, so it always verifies: no session shortcut.
+    c.gate.confirm(0, "Keylo: export passwords in plain text")?;
+    let result = pm_export::export(&path, format, category.as_deref(), &c.store, &c.types)?;
+    info(&format!("Exported {} secrets to {} ({} format).", result.exported, result.path, result.format));
+    if !result.skipped.is_empty() {
+        info(&format!("Left out {}:", result.skipped.len()));
+        for s in &result.skipped {
+            info(&format!("  {}: {}", s.name, s.reason));
+        }
+    }
+    info("The file holds every exported password in plain text. Delete it once it's imported.");
     Ok(0)
 }
 

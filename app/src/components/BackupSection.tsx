@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { ArchiveRestore, FileUp, HardDriveDownload } from "lucide-react";
-import { api, type BackupPreview, type CategorySummary } from "../api";
+import { ArchiveRestore, FileDown, FileUp, HardDriveDownload } from "lucide-react";
+import { api, type BackupPreview, type CategorySummary, type ExportFormat, type PasswordExport } from "../api";
 import PasswordImportDialog from "./PasswordImportDialog";
 import type { Run } from "../App";
 import { Modal, useToast } from "./ui";
@@ -16,6 +16,7 @@ export default function BackupSection({ run, verifierName, categories, onRestore
   onRestored: () => void;
 }) {
   const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [backingUp, setBackingUp] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
 
@@ -33,17 +34,20 @@ export default function BackupSection({ run, verifierName, categories, onRestore
     <section className="card">
       <div className="card-header">
         <div>
-          <h2>Import from another password manager</h2>
+          <h2>Other password managers</h2>
           <p className="muted">
             Bring your logins over from Chrome, Edge, Firefox, Bitwarden, 1Password, LastPass, KeePassXC or Apple Passwords: export
-            them as CSV there, then choose the file. You'll see every login before anything is imported.
+            them as CSV there, then choose the file. You'll see every login before anything is imported. Or export your secrets as
+            a CSV that another password manager can import.
           </p>
         </div>
       </div>
       <div className="form-actions start">
         <button className="button primary" onClick={() => setImporting(true)}><FileUp size={16} /> Import passwords…</button>
+        <button className="button" onClick={() => setExporting(true)}><FileDown size={16} /> Export passwords…</button>
       </div>
       {importing && <PasswordImportDialog initialPath={null} categories={categories} run={run} onClose={() => setImporting(false)} onImported={onRestored} />}
+      {exporting && <PasswordExportDialog categories={categories} run={run} onClose={() => setExporting(false)} />}
     </section>
     <section className="card">
       <div className="card-header">
@@ -107,6 +111,85 @@ function BackupDialog({ path, run, onClose }: { path: string; run: Run; onClose:
         <p className="muted small-text">Without this password the backup can't be opened, by you or anyone else.</p>
         <button type="submit" hidden />
       </form>
+    </Modal>
+  );
+}
+
+const EXPORT_FORMATS: { value: ExportFormat; label: string; description: string }[] = [
+  {
+    value: "bitwarden",
+    label: "Bitwarden",
+    description: "For Bitwarden, and other apps that can import a Bitwarden CSV. Keeps categories as folders, one-time codes and extra fields; keys and notes become secure notes.",
+  },
+  {
+    value: "browser",
+    label: "Browser and others",
+    description: "The CSV Chrome exports: for Chrome, Edge, Brave, Firefox, Apple Passwords, KeePassXC and most password managers. Passwords only: keys and notes are left out, and one-time codes and extra fields go in the note.",
+  },
+];
+
+function PasswordExportDialog({ categories, run, onClose }: { categories: CategorySummary[]; run: Run; onClose: () => void }) {
+  const toast = useToast();
+  const [format, setFormat] = useState<ExportFormat>("bitwarden");
+  const [category, setCategory] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<PasswordExport | null>(null);
+
+  const save = async () => {
+    const path = await run(() => api.pickPasswordExportSave(format));
+    if (!path) return;
+    setBusy(true);
+    const r = await run(() => api.exportPasswords(path, format, category || null));
+    setBusy(false);
+    if (!r) return;
+    if (r.skipped.length) setResult(r);
+    else {
+      toast(`Exported ${plural(r.exported, "secret")} to ${fileName(r.path)}. Delete it once it's imported.`);
+      onClose();
+    }
+  };
+
+  if (result) {
+    return (
+      <Modal title="Exported" onClose={onClose} footer={<button className="button primary" onClick={onClose}>Done</button>}>
+        <p>Exported {plural(result.exported, "secret")} to <span className="mono small-text">{result.path}</span>.</p>
+        <p>Left out:</p>
+        <ul className="import-results">{result.skipped.map((s) => <li key={s.name}><strong>{s.name}</strong>: {s.reason}</li>)}</ul>
+        <p className="muted small-text">The file holds every exported password in plain text. Delete it once it's imported, and empty the recycle bin.</p>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal title="Export passwords" onClose={onClose}
+      footer={<>
+        <button className="button" onClick={onClose}>Cancel</button>
+        <button className="button primary" disabled={busy} onClick={save}>{busy ? "Exporting…" : "Export…"}</button>
+      </>}>
+      <div className="form">
+        <div className="theme-grid" role="radiogroup" aria-label="Format">
+          {EXPORT_FORMATS.map((f) => (
+            <button key={f.value} type="button" role="radio" aria-checked={format === f.value}
+              className={`theme-option${format === f.value ? " active" : ""}`} onClick={() => setFormat(f.value)}>
+              <span>
+                <strong>{f.label}</strong>
+                <small className="muted">{f.description}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+        <label className="form-row">
+          <span>Secrets</span>
+          <select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Which secrets">
+            <option value="">All secrets</option>
+            {categories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+          </select>
+        </label>
+        <p className="notice small-text">
+          The file holds the passwords in <strong>plain text</strong>, readable by anyone who gets it. Save it somewhere that
+          doesn't sync, import it, then delete it. Linked secrets (1Password, AWS) are left out.
+        </p>
+      </div>
     </Modal>
   );
 }
