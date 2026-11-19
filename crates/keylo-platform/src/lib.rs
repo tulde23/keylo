@@ -5,6 +5,8 @@
 mod crypto;
 #[cfg(windows)]
 mod sqlite_vault;
+#[cfg(windows)]
+mod hello_prf;
 
 #[cfg(windows)]
 mod windows_platform;
@@ -102,6 +104,22 @@ pub fn set_vault_passphrase(current: Option<&str>, new: Option<&str>) -> keylo_c
         let _ = (current, new);
         keylo_core::bail!("A master passphrase isn't available on this platform yet.")
     }
+}
+
+/// Whether Windows Hello can be used as a key source (WebAuthn hmac-secret/PRF).
+pub fn hello_prf_available() -> bool {
+    #[cfg(windows)]
+    return hello_prf::available();
+    #[cfg(not(windows))]
+    false
+}
+
+/// Enrols, derives twice and checks stability, to confirm Hello PRF works on this machine.
+pub fn hello_selftest() -> keylo_core::Result<String> {
+    #[cfg(windows)]
+    return hello_prf::selftest();
+    #[cfg(not(windows))]
+    keylo_core::bail!("Windows Hello PRF is only on Windows.")
 }
 
 /// An approval dialog for the MCP server when the app isn't installed (macOS and Linux; Windows
