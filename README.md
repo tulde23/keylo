@@ -6,6 +6,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-6D28D9)
 
+<p align="center"><img src="docs/images/keylo-mcp-demo.gif" alt="An agent using Keylo's MCP server: it finds the orders-db secret by name, runs the migrations with the connection string in DATABASE_URL, and when it echoes the variable the output shows [keylo:orders-db:connection_string] instead of the value" width="900"></p>
+
 Keylo is a secrets manager for developers working with AI agents. Agents use your API keys,
 passwords and tokens without ever seeing their values: secrets go straight into the commands that
 need them and are redacted from the output, so they don't end up in conversation logs or get pasted
@@ -424,6 +426,8 @@ are removed (`keylo config audit-days 365`, or `forever`).
 ---
 
 ## The desktop app
+
+<p align="center"><img src="docs/images/keylo-demo.gif" alt="A tour of the Keylo app: searching for a secret, a database secret's fields and the copyable keylo run commands, an API key, the Activity page with usage cards, and switching colour themes" width="900"></p>
 
 Open **Keylo** from the Start menu, Applications or your desktop's menu. Only one copy runs at a
 time: starting it again brings the open window forward.
