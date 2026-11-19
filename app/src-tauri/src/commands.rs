@@ -103,14 +103,15 @@ pub struct AppInfo {
 // ---------------------------------------------------------------------------- appearance
 
 /// The colour theme and light/dark mode, kept in ui.json with the C# app's window layout (same
-/// names, so both apps share them): Theme = Twilight | QuietViolet | Aurora, Mode = System | Light | Dark.
+/// names, so both apps share them): Theme = QuietViolet (the default) | Graphite | Ocean | Evergreen | Ember,
+/// Mode = System | Light | Dark. A theme that's gone (Twilight, Aurora) reads as the default.
 #[derive(Serialize)]
 pub struct UiTheme {
     theme: String,
     mode: String,
 }
 
-const THEMES: &[&str] = &["Twilight", "QuietViolet", "Aurora"];
+const THEMES: &[&str] = &["QuietViolet", "Graphite", "Ocean", "Evergreen", "Ember"];
 const MODES: &[&str] = &["System", "Light", "Dark"];
 
 fn ui_json() -> serde_json::Map<String, serde_json::Value> {

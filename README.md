@@ -451,7 +451,8 @@ time: starting it again brings the open window forward.
 - **Link panel**: search 1Password or AWS Secrets Manager, choose one item or several, and link them.
 - **Settings** (a dialog with tabs):
   - **General**: the identity check, session length, clipboard timeout and audit-log retention.
-  - **Appearance**: Twilight, Quiet violet or Aurora; match system, light or dark.
+  - **Appearance**: Quiet violet (the default), Graphite, Ocean, Evergreen or Ember; match system,
+    light or dark.
   - **Agents**: access keys and whether Claude Code is connected.
   - **Secret types**: your custom types, and built-in types' icons and colours.
   - **Vault providers**: 1Password and AWS settings, and AWS environments.

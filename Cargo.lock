@@ -2283,7 +2283,7 @@ dependencies = [
 
 [[package]]
 name = "keylo-app"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2302,7 +2302,7 @@ dependencies = [
 
 [[package]]
 name = "keylo-cli"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "chrono",
  "keylo-core",
@@ -2316,7 +2316,7 @@ dependencies = [
 
 [[package]]
 name = "keylo-core"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
@@ -2343,7 +2343,7 @@ dependencies = [
 
 [[package]]
 name = "keylo-platform"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
