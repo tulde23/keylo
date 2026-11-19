@@ -130,6 +130,8 @@ fn main() {
             transfer::password_export_format,
             transfer::password_import_plan,
             transfer::password_import,
+            transfer::pick_password_export_save,
+            transfer::export_passwords,
             updates::check_update,
             updates::install_update,
             updates::open_releases,

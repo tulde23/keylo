@@ -18,6 +18,7 @@ pub mod links;
 pub mod password;
 pub mod paths;
 pub mod platform;
+pub mod pm_export;
 pub mod pm_import;
 pub mod redactor;
 pub mod refs;
