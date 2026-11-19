@@ -1,0 +1,122 @@
+# Publishes a Keylo release to Chocolatey and winget.
+#
+# Runs after each release (release.yml calls it with the new version), or by hand from the Actions
+# tab for a release that's already on GitHub.
+#
+# Secrets:
+#   CHOCO_API_KEY  API key from community.chocolatey.org (Account → API Keys)
+#   WINGET_TOKEN   a GitHub token (classic, public_repo) for opening PRs on microsoft/winget-pkgs
+# A missing secret skips that step with a notice; it doesn't fail the release.
+name: packages
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      chocolatey:
+        type: boolean
+        default: true
+      winget:
+        type: boolean
+        default: true
+    secrets:
+      CHOCO_API_KEY:
+        required: false
+      WINGET_TOKEN:
+        required: false
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version already released on GitHub, e.g. 1.7.18
+        required: true
+      chocolatey:
+        description: Publish to Chocolatey
+        type: boolean
+        default: true
+      winget:
+        description: Submit to winget
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  chocolatey:
+    if: inputs.chocolatey
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ inputs.version }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the package
+        run: |
+          $base = "https://github.com/tulde23/keylo/releases/download/v$env:VERSION"
+          $setup = "Keylo_$($env:VERSION)_x64-setup.exe"
+          $sums = (Invoke-WebRequest -UseBasicParsing "$base/SHA256SUMS.txt").Content
+          $line = ($sums -split "`n") | Where-Object { $_ -match "\s\*?$([regex]::Escape($setup))\s*$" } | Select-Object -First 1
+          if (-not $line) { throw "$setup isn't in the release's SHA256SUMS.txt." }
+          $sum = ($line -split '\s+')[0].ToUpper()
+
+          $dir = 'packaging/chocolatey'
+          $nuspec = Join-Path $dir 'keylo.nuspec'
+          $install = Join-Path $dir 'tools/chocolateyinstall.ps1'
+          (Get-Content $nuspec -Raw) -replace '<version>[^<]*</version>', "<version>$env:VERSION</version>" `
+            -replace 'releases/tag/v[0-9.]+', "releases/tag/v$env:VERSION" | Set-Content $nuspec -NoNewline
+          (Get-Content $install -Raw) -replace "url64bit\s*=\s*'[^']*'", "url64bit       = '$base/$setup'" `
+            -replace "checksum64\s*=\s*'[^']*'", "checksum64     = '$sum'" | Set-Content $install -NoNewline
+          Get-Content $install
+          choco pack $nuspec --out out
+
+      - name: Test install and uninstall
+        run: |
+          choco install keylo --source "$PWD\out" -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco install failed ($LASTEXITCODE)." }
+          $keylo = Join-Path $env:LOCALAPPDATA 'Keylo\keylo.exe'
+          $v = & $keylo version
+          Write-Output $v
+          if ($v -notmatch [regex]::Escape($env:VERSION)) { throw "Installed keylo reports '$v', not $env:VERSION." }
+          $path = [Environment]::GetEnvironmentVariable('Path', 'User') -split ';'
+          if (-not ($path | Where-Object { $_.TrimEnd('\') -eq (Join-Path $env:LOCALAPPDATA 'Keylo') })) { throw "keylo isn't on the user PATH." }
+          choco uninstall keylo -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco uninstall failed ($LASTEXITCODE)." }
+          if (Test-Path $keylo) { throw "keylo.exe is still there after uninstalling." }
+
+      - name: Push to Chocolatey
+        env:
+          CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
+        run: |
+          if (-not $env:CHOCO_API_KEY) { Write-Output "::notice::CHOCO_API_KEY isn't set; not pushing."; exit 0 }
+          choco push "out\keylo.$env:VERSION.nupkg" --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY
+          if ($LASTEXITCODE -ne 0) { throw "choco push failed ($LASTEXITCODE)." }
+
+  winget:
+    if: inputs.winget
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ inputs.version }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Submit the update
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if (-not $env:WINGET_TOKEN) { Write-Output "::notice::WINGET_TOKEN isn't set; not submitting."; exit 0 }
+          # wingetcreate only updates a package that's already in winget-pkgs (the first version went in by hand).
+          gh api repos/microsoft/winget-pkgs/contents/manifests/t/tulde23/Keylo --silent 2>$null
+          if ($LASTEXITCODE -ne 0) { Write-Output "::notice::tulde23.Keylo isn't in winget-pkgs yet; not submitting."; exit 0 }
+          $url = "https://github.com/tulde23/keylo/releases/download/v$env:VERSION/Keylo_$($env:VERSION)_x64-setup.exe"
+          Invoke-WebRequest -UseBasicParsing https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          .\wingetcreate.exe update tulde23.Keylo --version $env:VERSION --urls $url --submit --token $env:WINGET_TOKEN
+          if ($LASTEXITCODE -ne 0) { throw "wingetcreate failed ($LASTEXITCODE)." }

@@ -156,7 +156,17 @@ Windows 10 or 11, x64. The app uses Microsoft Edge WebView2, which Windows 11 in
 install the [WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/) if the app
 doesn't open (the setup `.exe` installs it for you).
 
-**Recommended: the installer.** Run `Keylo_<version>_x64-setup.exe`. It installs the app and
+**With a package manager:**
+
+```powershell
+winget install tulde23.Keylo
+choco install keylo
+```
+
+Both install the setup .exe below and add `keylo` to your PATH. (Keylo's first versions are still
+in review at winget and Chocolatey; until they're approved, use the installer.)
+
+**Or the installer.** Run `Keylo_<version>_x64-setup.exe`. It installs the app and
 `keylo.exe` for your account in `%LOCALAPPDATA%\Keylo`, adds that folder to your user PATH (open a
 new terminal for `keylo`), and adds **Keylo** to the Start menu. No admin rights needed. Uninstall
 it from Settings → Apps; that removes the PATH entry too and leaves your secrets.
@@ -1183,7 +1193,12 @@ publishes a release through `.github/workflows/release.yml`:
   `latest.json` lists them. The matching public key is `plugins.updater.pubkey` in
   `app/src-tauri/tauri.conf.json`. Losing the private key means installed copies can't update
   themselves any more; a new key needs a manual install of a build that has its public key.
-- **Docs and tests:** changes to these alone don't trigger a release.
+- **Package managers:** after each release, `.github/workflows/packages.yml` builds the Chocolatey
+  package from `packaging/chocolatey`, test-installs and uninstalls it, and pushes it with the
+  `CHOCO_API_KEY` secret. It then submits the new version to winget with `wingetcreate` and the
+  `WINGET_TOKEN` secret (a GitHub token with `public_repo`, for the PR to microsoft/winget-pkgs).
+  A missing secret skips that step. Run it by hand (Actions → packages) for an existing release.
+- **Docs and tests:** changes to these alone, or to the package manifests, don't trigger a release.
 
 ---
 
