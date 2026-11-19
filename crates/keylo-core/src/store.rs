@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-use crate::platform::{self, CredentialStore, RawCredential};
+use crate::platform::{self, CredentialDetails, CredentialStore, RawCredential};
 use crate::secrets::{Secret, SecretDraft, SecretInfo, StorageKind};
 use crate::{bail, eq_ic, paths, Error, Result};
 
@@ -62,9 +62,9 @@ impl SecretStore {
 
     pub fn list(&self) -> Result<Vec<SecretInfo>> {
         let mut list: Vec<SecretInfo> = creds()
-            .enumerate(&self.prefix)?
+            .enumerate_details(&self.prefix)?
             .iter()
-            .filter_map(|raw| self.to_info(raw))
+            .filter_map(|d| self.to_info(d))
             .collect();
         list.sort_by_key(|s| s.name.to_lowercase());
         Ok(list)
@@ -82,7 +82,7 @@ impl SecretStore {
     }
 
     pub fn find(&self, name: &str) -> Result<Option<SecretInfo>> {
-        Ok(creds().read(&self.target(name))?.and_then(|raw| self.to_info(&raw)))
+        Ok(creds().read_details(&self.target(name))?.and_then(|d| self.to_info(&d)))
     }
 
     pub fn exists(&self, name: &str) -> Result<bool> {
@@ -92,7 +92,7 @@ impl SecretStore {
     pub fn get(&self, name: &str) -> Result<Secret> {
         let raw = creds().read(&self.target(name))?.ok_or_else(|| Error::NotFound(name.to_string()))?;
         let info = self
-            .to_info(&raw)
+            .to_info(&CredentialDetails::of(&raw))
             .ok_or_else(|| Error::msg(format!("'{name}' is not a Keylo secret or is corrupt.")))?;
 
         if raw.blob[0] == KIND_INLINE {
@@ -220,9 +220,9 @@ impl SecretStore {
         icon: Option<&str>,
         color: Option<&str>,
     ) -> Result<SecretInfo> {
-        let raw = creds().read(&self.target(name))?.ok_or_else(|| Error::NotFound(name.to_string()))?;
+        let details = creds().read_details(&self.target(name))?.ok_or_else(|| Error::NotFound(name.to_string()))?;
         let info = self
-            .to_info(&raw)
+            .to_info(&details)
             .ok_or_else(|| Error::msg(format!("'{name}' is not a Keylo secret or is corrupt.")))?;
 
         let category = match category {
@@ -239,7 +239,10 @@ impl SecretStore {
         };
         let mut attributes = base_attributes(category.as_deref(), icon, color);
         add_type_attributes(&mut attributes, info.type_id.as_deref(), &info.fields)?;
-        creds().write(&raw.target, &raw.blob, raw.user_name.as_deref(), raw.comment.as_deref(), &attributes)?;
+        // Changes details only: the value isn't read or rewritten.
+        if !creds().update_details(&details.target, details.user_name.as_deref(), details.comment.as_deref(), &attributes)? {
+            return Err(Error::NotFound(name.to_string()));
+        }
         self.find(name)?.ok_or_else(|| Error::NotFound(name.to_string()))
     }
 
@@ -258,10 +261,10 @@ impl SecretStore {
     }
 
     pub fn delete(&self, name: &str) -> Result<bool> {
-        let Some(raw) = creds().read(&self.target(name))? else { return Ok(false) };
-        creds().delete(&raw.target)?;
-        if raw.blob.first() == Some(&KIND_FILE) && raw.blob.len() == 21 {
-            let _ = fs::remove_file(self.blob_path(read_file_reference(&raw.blob).0));
+        let Some(details) = creds().read_details(&self.target(name))? else { return Ok(false) };
+        creds().delete(&details.target)?;
+        if details.summary.first() == Some(&KIND_FILE) && details.summary.len() == 21 {
+            let _ = fs::remove_file(self.blob_path(read_file_reference(&details.summary).0));
         }
         Ok(true)
     }
@@ -270,13 +273,15 @@ impl SecretStore {
         format!("{}{}", self.prefix, name.trim())
     }
 
-    fn to_info(&self, raw: &RawCredential) -> Option<SecretInfo> {
-        if raw.blob.is_empty() || !starts_with_ic(&raw.target, &self.prefix) {
+    fn to_info(&self, raw: &CredentialDetails) -> Option<SecretInfo> {
+        if !starts_with_ic(&raw.target, &self.prefix) {
             return None;
         }
-        let (size, storage) = match raw.blob[0] {
-            KIND_INLINE => (raw.blob.len() - 1, StorageKind::CredentialManager),
-            KIND_FILE if raw.blob.len() == 21 => (read_file_reference(&raw.blob).1, StorageKind::EncryptedFile),
+        let (size, storage) = match raw.summary.first() {
+            Some(&KIND_INLINE) if raw.summary.len() == 5 => {
+                (u32::from_le_bytes(raw.summary[1..5].try_into().unwrap()) as usize, StorageKind::CredentialManager)
+            }
+            Some(&KIND_FILE) if raw.summary.len() == 21 => (read_file_reference(&raw.summary).1, StorageKind::EncryptedFile),
             _ => return None,
         };
         let non_empty = |name: &str| raw.attribute(name).filter(|v| !v.is_empty()).map(str::to_string);
@@ -312,6 +317,20 @@ impl SecretStore {
         fs::write(&temp, platform::current().data_protector().protect(value, &entropy(id))?)?;
         fs::rename(&temp, &path)?;
         Ok(())
+    }
+}
+
+/// What a stored blob is, without its value: an inline value's kind tag and length (5 bytes), or a
+/// file reference as it is (21 bytes: tag, file id, length; no secret in it). Empty for anything else.
+pub fn summarize(blob: &[u8]) -> Vec<u8> {
+    match blob.first() {
+        Some(&KIND_INLINE) => {
+            let mut s = vec![KIND_INLINE];
+            s.extend_from_slice(&((blob.len() - 1) as u32).to_le_bytes());
+            s
+        }
+        Some(&KIND_FILE) if blob.len() == 21 => blob.to_vec(),
+        _ => Vec::new(),
     }
 }
 

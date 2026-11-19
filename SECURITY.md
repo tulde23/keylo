@@ -28,9 +28,12 @@ having Keylo run commands with them, and never **read** them. This is a summary;
   show the exact command and the agent's stated reason. Every use is written to an audit log.
 - **Secrets in plain-text files** (`.env`, key folders) being read, committed, synced or shared.
 - **Values in shell history or the process list.** Values are never taken as command-line arguments.
-- **Other users on the computer, and a stolen disk or copied backup.** Secrets live in the operating
-  system's store (Windows Credential Manager, the macOS Keychain, the Linux keyring, or Keylo's
-  encrypted vault), tied to your account.
+- **Other users on the computer, and a stolen disk or copied backup.** Secret values live in Keylo's
+  vault, each encrypted under a key protected by the OS (DPAPI on Windows), or in the macOS Keychain
+  or the Linux keyring or vault, all tied to your account. On Windows and macOS, secrets' details
+  (names, categories, usernames, websites, notes) are readable by programs running as you, as
+  Credential Manager and Keychain attributes always were; Keylo detects changes made to them outside
+  Keylo.
 - **The sync folder and the service that syncs it.** Synced secrets are encrypted (AES-256-GCM) with a
   key the service never sees; changed files are rejected.
 
@@ -39,8 +42,9 @@ having Keylo run commands with them, and never **read** them. This is a summary;
 - **An agent, or any program, with unrestricted shell access as you.** Keylo's protection holds for
   agents that use secrets through Keylo (the MCP server or `keylo run`). It doesn't sandbox the agent.
   A program running as you can read the same store Keylo uses:
-  - **Windows:** Credential Manager entries (`Keylo:NAME`) and Keylo's DPAPI-protected files can be read
-    by any program running as your user.
+  - **Windows:** the vault's key is protected with DPAPI, which any program running as your user can
+    ask Windows to decrypt, so such a program can decrypt the vault's values (as it could read
+    Credential Manager).
   - **Linux:** an unlocked desktop keyring can be read by any program in your session, and the vault
     key is cached in your kernel keyring for 15 minutes after unlocking.
   - **macOS:** the Keychain asks you before a program other than Keylo reads one of its items. Deny it

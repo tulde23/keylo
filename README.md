@@ -14,9 +14,9 @@ need them and are redacted from the output, so they don't end up in conversation
 into your code and commit history.
 
 It runs on your own computers, with a desktop app (`keylow`), a command line (`keylo`) and an MCP
-server for agents (`keylo mcp`). On each computer, secrets live in the operating system's own secure
-store: Windows Credential Manager, the macOS Keychain, or the Linux desktop keyring. There's no Keylo
-server and no account. To use the same secrets on several computers, Keylo can
+server for agents (`keylo mcp`). On each computer, secrets live in an encrypted vault whose key the
+operating system protects (on Windows, with your Windows account), or in the macOS Keychain or the
+Linux desktop keyring. There's no Keylo server and no account. To use the same secrets on several computers, Keylo can
 [sync them](#sync-between-your-devices) end-to-end encrypted, through a folder you already sync with
 OneDrive, iCloud Drive, Dropbox or Syncthing.
 
@@ -226,6 +226,11 @@ own on a server, without any of these.
 
 Keylo checks for a newer release a few seconds after it starts and every 6 hours. When there is one,
 a card in the corner says so; nothing is installed until you choose to.
+
+**Updating to 2.0 on Windows** moves your secrets from Credential Manager into Keylo's vault the first
+time 2.0 runs (see [Where secrets are stored](#where-secrets-are-stored)). It copies and checks every
+secret before removing the originals, but make a backup first (**Settings → Backup**) so the move can
+always be undone. Afterwards, restart any Claude Code sessions still running an older `keylo mcp`.
 
 - **Windows and macOS:** **Install and restart** downloads the update, checks its signature, installs
   it and restarts Keylo. The `keylo` command is updated with it.
@@ -829,7 +834,7 @@ keylo import ~/Downloads/bitwarden_export.csv --delete-originals
   the username added: `GitHub (octocat)`.
 - **Existing names:** skipped unless you choose to replace them (`--overwrite`).
 - **Not imported:** cards, identities and rows without a password, each listed with the reason.
-- **Shortened, with a warning:** notes longer than 255 characters (the system store's limit for a
+- **Shortened, with a warning:** notes longer than 255 characters (Keylo's limit for a
   login's notes), web addresses too long to store (cut to the site), and one-time code setups Keylo
   can't use (left out).
 - **The export file holds every password in plain text.** The preview never shows passwords. Delete
@@ -962,10 +967,25 @@ never deletes anything, and brings the secrets back.
 
 | | Windows | macOS | Linux |
 |---|---|---|---|
-| Secrets | Windows Credential Manager, entries `Keylo:NAME` | the login keychain, generic passwords with service `Keylo` | the desktop keyring (Secret Service: GNOME Keyring, KWallet, KeePassXC…), or Keylo's own encrypted vault file |
-| Values kept in the store | up to 2,559 bytes | up to 16 KB | up to 16 KB |
+| Secrets | Keylo's vault, `keylo.db` (SQLite) in the data folder: values encrypted, key protected by DPAPI | the login keychain, generic passwords with service `Keylo` | the desktop keyring (Secret Service: GNOME Keyring, KWallet, KeePassXC…), or Keylo's own encrypted vault file |
+| Values kept in the store | up to 64 KB | up to 16 KB | up to 16 KB |
 | Larger values | DPAPI-encrypted files in `blobs\` | AES-256-GCM files, key in the keychain | AES-256-GCM files, key in the keyring or derived from the vault key |
 | Tied to | your Windows account on this PC | your macOS account and its keychain | your keyring, or the vault's passphrase |
+
+**On Windows,** secrets are in Keylo's vault, a SQLite database (`keylo.db`) in the data folder:
+- **Values** are each encrypted with AES-256-GCM and bound to their entry, under a key derived from a
+  random vault key. A value is decrypted only when it's used (shown, copied, exported or run with) and
+  wiped from memory afterwards; listing and searching never decrypt one.
+- **Details** (name, category, type, username, website and other non-secret fields, notes) are stored
+  readable, as Credential Manager stored them, so anything that can read your data folder can see
+  them. Each entry carries an HMAC over its details and encrypted value, and the vault keeps one over
+  all entries, so changes, swaps, deletions or restored copies made outside Keylo are detected.
+- **The vault key** is stored in the database, protected with DPAPI for your Windows account, so the
+  vault opens for you on this PC without a passphrase, with no limit on how many secrets you keep.
+- **Moving in:** earlier versions kept secrets in Credential Manager (`Keylo:NAME`). The first time
+  this version runs, it copies them into the vault, checks each copy, and only then removes the
+  originals, freeing that space for other programs. (With `KEYLO_HOME` set on its own, for an
+  experiment, nothing is moved.)
 
 **With sync on,** each synced secret is also in every syncing device's file in the sync folder,
 encrypted with AES-256-GCM under the sync vault key (see
@@ -982,8 +1002,9 @@ containers, WSL) it keeps `vault.json`:
 - **Choice:** made once and remembered in `store.txt`; `KEYLO_STORE=keyring|file` overrides it.
 
 **Details** (category, username, notes, non-secret fields, icons) are stored with each secret. On
-Windows and macOS they're item attributes, readable by programs running as you without unlocking; in
-the Linux keyring and vault they're inside the encrypted item. Never put a secret in a non-secret field.
+Windows and macOS they're readable by programs running as you without unlocking (in the vault's
+database, or as Keychain item attributes); in the Linux keyring and vault they're inside the encrypted
+item. Never put a secret in a non-secret field or in notes.
 
 ### What it protects against
 
@@ -1048,13 +1069,15 @@ environments) are in the same file, under `providers`.
 |---|---|
 | `KEYLO_ACCESS_KEY` | The access key for `keylo mcp` and `keylo run` (set by your agent's MCP configuration) |
 | `KEYLO_HOME` | A different data folder (tests, experiments) |
-| `KEYLO_PREFIX` | A different prefix for items in the secure store (default `Keylo:`), to keep test secrets apart |
+| `KEYLO_PREFIX` | A different prefix for secrets' entries in the store (default `Keylo:`), to keep test secrets apart |
 | `KEYLO_STORE` | Linux: `keyring` or `file`, overriding the remembered choice |
 | `KEYLO_PASSPHRASE` / `KEYLO_PASSPHRASE_FILE` | Linux vault file: the passphrase, for unattended use |
 | `KEYLO_VAULT_CACHE_MINUTES` | Linux vault file: how long the unlocked key is cached (default 15; 0 turns caching off) |
 | `KEYLO_KEYCHAIN` | macOS: use this keychain file instead of the login keychain (tests, SSH sessions) |
 
-`KEYLO_HOME` with `KEYLO_PREFIX` gives you a completely separate, throwaway Keylo for experiments.
+`KEYLO_HOME` with `KEYLO_PREFIX` gives you a completely separate, throwaway Keylo for experiments. (On
+Windows, a `KEYLO_HOME` set without its own `KEYLO_PREFIX` never moves your real secrets out of
+Credential Manager: only the default data folder, or a setup with its own prefix, does.)
 
 ### Data folder
 
@@ -1073,18 +1096,21 @@ environments) are in the same file, under `providers`.
 | `ui.json` | Theme and window layout |
 | `blobs/` | Encrypted files for large values |
 | `icons/` | Uploaded icon images |
+| `keylo.db` (with `-wal` and `-shm`) | Windows: Keylo's vault |
 | `vault.json`, `store.txt` | Linux: the vault file, and which store is in use |
 | `sync.json`, `sync.key`, `sync-state.bin` | Sync: the folder and device name, the vault key (protected), and what the last sync saw (protected) |
 
-None of these files hold secret values in readable form.
+None of these files hold secret values in readable form; `keylo.db` holds secrets' details readable.
 
 ---
 
 ## Platform notes
 
 **Windows**
-- Credential Manager entries are visible in **Control Panel → Credential Manager → Windows Credentials**
-  as `Keylo:NAME`. Edit them through Keylo, not there.
+- Secrets are in `%LOCALAPPDATA%\Keylo\keylo.db`, not Credential Manager. Earlier versions'
+  `Keylo:NAME` entries are moved into it when this version first runs. Its values only decrypt for
+  your Windows account on this PC, so copy secrets to another computer with a backup or sync, not by
+  copying the file. Don't copy or sync the data folder while Keylo is running.
 - Copied values are excluded from clipboard history and cloud clipboard.
 - If Windows Hello isn't set up, set up a PIN in **Settings → Accounts → Sign-in options**, or use
   `keylo config hello never`.
@@ -1121,7 +1147,8 @@ None of these files hold secret values in readable form.
 | Linux: "Keylo's vault is locked" | `keylo unlock` in a terminal, or set `KEYLO_PASSPHRASE_FILE`. |
 | Linux: the keyring isn't available | Use Keylo from your desktop session, unlock the keyring, or switch to the vault file with `KEYLO_STORE=file`. |
 | macOS: "keylo-mac isn't installed" | Run `keylo` from inside Keylo.app (or the link to it), not a copy elsewhere. |
-| macOS keeps asking for keychain access | Choose **Always Allow**. Unsigned builds may ask again after an update. |
+| macOS keeps asking for keychain access | Choose **Always Allow**. Builds before 1.4.14 weren't signed with a Developer ID and may ask again after an update; current ones don't. |
+| Windows: saving fails with "Not enough memory resources are available to process this command" | Credential Manager is full (Keylo 1.x kept every secret there). Update to Keylo 2.0, which moves your secrets into its own vault and frees that space. Make a backup first. |
 | Copying fails on Linux | Install `wl-clipboard` (Wayland) or `xclip` (X11). Without a desktop there's no clipboard: use `keylo get`. |
 
 `keylo status` shows the version, session, data folder and (on Linux) which store is in use.
@@ -1151,7 +1178,7 @@ cd app && npm ci && npx tauri build         # the app, and an installer for your
 | Path | |
 |---|---|
 | `crates/keylo-core` | Everything OS-neutral: the store format, types, access keys, the identity gate, the audit log, redaction, search, import, backups, linked vaults |
-| `crates/keylo-platform` | The OS layer: Windows (Credential Manager, DPAPI, Windows Hello), macOS (Keychain, Touch ID) and Linux (Secret Service or the vault file, polkit) |
+| `crates/keylo-platform` | The OS layer: Windows (Keylo's vault in `sqlite_vault.rs`, its key protected with DPAPI; Windows Hello), macOS (Keychain, Touch ID) and Linux (Secret Service or the vault file, polkit) |
 | `crates/keylo-cli` | `keylo` and the MCP server |
 | `app/` | The desktop app, `keylow`: Tauri 2, with a React and TypeScript front end in `app/src` |
 | `packaging/` | The install scripts, the macOS helper `keylo-mac` (Swift), the polkit policy, and the Homebrew and winget manifests |

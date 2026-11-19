@@ -1,12 +1,14 @@
-//! Keylo on Windows: Credential Manager, DPAPI, Windows Hello, a clipboard kept out of history and
-//! cloud sync, and Toolhelp32 process ancestry.
+//! Keylo on Windows: Keylo's vault (SQLite, values sealed with a key protected by DPAPI; secrets kept
+//! in Credential Manager by earlier versions are moved into it), Windows Hello, a clipboard kept out of history
+//! and cloud sync, and Toolhelp32 process ancestry.
 
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
+use std::sync::Mutex;
 
 use chrono::{DateTime, TimeZone, Utc};
 use keylo_core::platform::*;
-use keylo_core::{Error, Result};
+use keylo_core::{paths, Error, Result};
 use windows::core::{HSTRING, PCWSTR, PWSTR};
 use windows::Security::Credentials::UI::{
     UserConsentVerificationResult, UserConsentVerifier, UserConsentVerifierAvailability,
@@ -28,8 +30,10 @@ use windows::Win32::System::WinRT::IUserConsentVerifierInterop;
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, IsWindowVisible};
 use zeroize::Zeroizing;
 
+use crate::sqlite_vault::{OsKey, SqliteVault};
+
 pub struct WindowsPlatform {
-    credentials: CredentialManager,
+    credentials: VaultStore,
     protector: Dpapi,
     verifier: WindowsHello,
     clipboard: Clipboard,
@@ -39,7 +43,10 @@ pub struct WindowsPlatform {
 impl WindowsPlatform {
     pub fn new() -> Self {
         WindowsPlatform {
-            credentials: CredentialManager,
+            credentials: VaultStore {
+                vault: SqliteVault::new(paths::data_dir().join("keylo.db"), Box::new(DpapiKey)),
+                moved: Mutex::new(false),
+            },
             protector: Dpapi,
             verifier: WindowsHello,
             clipboard: Clipboard,
@@ -71,7 +78,7 @@ impl Platform for WindowsPlatform {
         "Windows Hello".into()
     }
     fn store_name(&self) -> String {
-        "Windows Credential Manager".into()
+        "Keylo's vault".into()
     }
     fn file_protection_name(&self) -> String {
         "DPAPI".into()
@@ -97,6 +104,118 @@ unsafe fn from_wide(p: PWSTR) -> Option<String> {
         None
     } else {
         p.to_string().ok()
+    }
+}
+
+// ---------------------------------------------------------------------------- the vault
+
+/// The vault key, protected with DPAPI for this Windows account (as Credential Manager items are).
+struct DpapiKey;
+
+const VAULT_KEY_ENTROPY: &[u8] = b"keylo-vault-key:v1";
+
+impl OsKey for DpapiKey {
+    fn kind(&self) -> &'static str {
+        "dpapi"
+    }
+    fn protect(&self, key: &[u8]) -> Result<Vec<u8>> {
+        Dpapi.protect(key, VAULT_KEY_ENTROPY)
+    }
+    fn unprotect(&self, stored: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
+        Dpapi.unprotect(stored, VAULT_KEY_ENTROPY)
+    }
+}
+
+/// Keylo's vault, after moving in any secrets an earlier Keylo kept in Credential Manager.
+struct VaultStore {
+    vault: SqliteVault,
+    /// Whether the move has been done (or wasn't needed). A failed move is tried again next time.
+    moved: Mutex<bool>,
+}
+
+impl VaultStore {
+    fn ready(&self) -> Result<&SqliteVault> {
+        let mut moved = self.moved.lock().unwrap();
+        if !*moved {
+            if migrates_here() {
+                move_from_credential_manager(&self.vault, &CredentialManager, &paths::credential_prefix()).map_err(Error::msg)?;
+            }
+            *moved = true;
+        }
+        Ok(&self.vault)
+    }
+}
+
+/// Moves Credential Manager items only into the real vault: the default data folder, or a test
+/// setup that names its own prefix too. A KEYLO_HOME set on its own (an experiment, a throwaway
+/// folder) must never take the real `Keylo:` secrets with it.
+fn migrates_here() -> bool {
+    let var = |v: &str| std::env::var(v).ok();
+    migrates_for(var("KEYLO_HOME").as_deref(), var("KEYLO_PREFIX").as_deref())
+}
+
+fn migrates_for(home: Option<&str>, prefix: Option<&str>) -> bool {
+    let set = |v: Option<&str>| v.is_some_and(|s| !s.is_empty());
+    !set(home) || set(prefix)
+}
+
+/// Moves Credential Manager items named `prefix`… into the vault: copies them all in one transaction
+/// (keeping a vault copy that's newer), reads each back, and only then deletes the original. Items
+/// whose copy doesn't match stay where they are and are tried again next time, so nothing is lost if
+/// it's interrupted.
+fn move_from_credential_manager(vault: &SqliteVault, legacy: &dyn CredentialStore, prefix: &str) -> std::result::Result<(), String> {
+    let old = legacy.enumerate(prefix).map_err(|e| format!("Couldn't read Credential Manager to move your secrets into Keylo's vault: {e}"))?;
+    if old.is_empty() {
+        return Ok(());
+    }
+    vault.import(&old).map_err(|e| format!("Couldn't move your secrets into Keylo's vault: {e}"))?;
+    for c in &old {
+        let copied = match vault.read(&c.target) {
+            Ok(Some(v)) => v.last_written > c.last_written || same(&v, c),
+            _ => false,
+        };
+        if copied {
+            let _ = legacy.delete(&c.target);
+        }
+    }
+    Ok(())
+}
+
+fn same(a: &RawCredential, b: &RawCredential) -> bool {
+    let attrs = |c: &RawCredential| c.attributes.iter().filter(|(_, v)| !v.is_empty()).map(|(k, v)| (k.clone(), v.clone())).collect::<BTreeMap<_, _>>();
+    a.blob.as_slice() == b.blob.as_slice() && a.user_name == b.user_name && a.comment == b.comment && attrs(a) == attrs(b)
+}
+
+impl CredentialStore for VaultStore {
+    fn max_blob_bytes(&self) -> usize {
+        self.vault.max_blob_bytes()
+    }
+    fn max_attribute_bytes(&self) -> usize {
+        self.vault.max_attribute_bytes()
+    }
+    fn max_attributes(&self) -> usize {
+        self.vault.max_attributes()
+    }
+    fn read(&self, target: &str) -> Result<Option<RawCredential>> {
+        self.ready()?.read(target)
+    }
+    fn enumerate(&self, prefix: &str) -> Result<Vec<RawCredential>> {
+        self.ready()?.enumerate(prefix)
+    }
+    fn write(&self, target: &str, blob: &[u8], user_name: Option<&str>, comment: Option<&str>, attributes: &BTreeMap<String, String>) -> Result<()> {
+        self.ready()?.write(target, blob, user_name, comment, attributes)
+    }
+    fn delete(&self, target: &str) -> Result<bool> {
+        self.ready()?.delete(target)
+    }
+    fn enumerate_details(&self, prefix: &str) -> Result<Vec<CredentialDetails>> {
+        self.ready()?.enumerate_details(prefix)
+    }
+    fn read_details(&self, target: &str) -> Result<Option<CredentialDetails>> {
+        self.ready()?.read_details(target)
+    }
+    fn update_details(&self, target: &str, user_name: Option<&str>, comment: Option<&str>, attributes: &BTreeMap<String, String>) -> Result<bool> {
+        self.ready()?.update_details(target, user_name, comment, attributes)
     }
 }
 
@@ -484,5 +603,108 @@ pub fn is_screen_locked() -> bool {
             }
             Err(_) => true,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// Credential Manager stand-in: an in-memory list.
+    #[derive(Default)]
+    struct Memory(Mutex<Vec<RawCredential>>);
+
+    impl CredentialStore for Memory {
+        fn max_blob_bytes(&self) -> usize {
+            2560
+        }
+        fn max_attribute_bytes(&self) -> usize {
+            256
+        }
+        fn max_attributes(&self) -> usize {
+            64
+        }
+        fn read(&self, target: &str) -> Result<Option<RawCredential>> {
+            Ok(self.0.lock().unwrap().iter().find(|c| c.target == target).cloned())
+        }
+        fn enumerate(&self, prefix: &str) -> Result<Vec<RawCredential>> {
+            Ok(self.0.lock().unwrap().iter().filter(|c| c.target.starts_with(prefix)).cloned().collect())
+        }
+        fn write(&self, _: &str, _: &[u8], _: Option<&str>, _: Option<&str>, _: &BTreeMap<String, String>) -> Result<()> {
+            unreachable!()
+        }
+        fn delete(&self, target: &str) -> Result<bool> {
+            let mut v = self.0.lock().unwrap();
+            let before = v.len();
+            v.retain(|c| c.target != target);
+            Ok(v.len() != before)
+        }
+    }
+
+    fn cred(target: &str, value: &str, days_ago: i64) -> RawCredential {
+        RawCredential {
+            target: target.into(),
+            user_name: Some("octocat".into()),
+            comment: Some("notes".into()),
+            last_written: Utc::now() - chrono::Duration::days(days_ago),
+            blob: Zeroizing::new(value.as_bytes().to_vec()),
+            attributes: BTreeMap::from([("category".to_string(), "dev".to_string()), ("empty".to_string(), String::new())]),
+        }
+    }
+
+    fn temp_vault(name: &str) -> (std::path::PathBuf, SqliteVault) {
+        let dir = std::env::temp_dir().join(format!("keylo-winvault-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("keylo.db");
+        (dir, SqliteVault::new(path, Box::new(DpapiKey)))
+    }
+
+    #[test]
+    fn moves_credential_manager_items_into_a_dpapi_vault() {
+        let (dir, vault) = temp_vault("move");
+        let legacy = Memory::default();
+        legacy.0.lock().unwrap().extend([cred("Test:a", "one", 5), cred("Test:b", "two", 4), cred("Other:c", "not mine", 1)]);
+
+        move_from_credential_manager(&vault, &legacy, "Test:").unwrap();
+        // Ours moved (values, details and times kept); someone else's left alone.
+        let left: Vec<String> = legacy.0.lock().unwrap().iter().map(|c| c.target.clone()).collect();
+        assert_eq!(left, vec!["Other:c".to_string()]);
+        let a = vault.read("Test:a").unwrap().unwrap();
+        assert_eq!(a.blob.as_slice(), b"one");
+        assert_eq!(a.user_name.as_deref(), Some("octocat"));
+        assert_eq!(a.attribute("category"), Some("dev"));
+        assert_eq!(vault.enumerate("Test:").unwrap().len(), 2);
+
+        // Another process opens the same vault with DPAPI.
+        let again = SqliteVault::new(dir.join("keylo.db"), Box::new(DpapiKey));
+        assert_eq!(again.read("Test:b").unwrap().unwrap().blob.as_slice(), b"two");
+        drop(again);
+        drop(vault);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn real_secrets_only_move_into_the_real_vault() {
+        assert!(migrates_for(None, None)); // the default data folder
+        assert!(migrates_for(Some(""), None));
+        assert!(!migrates_for(Some("C:/tmp/experiment"), None)); // a throwaway folder: never the real Keylo: items
+        assert!(!migrates_for(Some("C:/tmp/experiment"), Some("")));
+        assert!(migrates_for(Some("C:/tmp/test"), Some("KeyloTest:"))); // a test with its own prefix
+    }
+
+    #[test]
+    fn an_older_credential_manager_copy_never_replaces_the_vaults() {
+        let (dir, vault) = temp_vault("newer");
+        let fresh = cred("Test:a", "fresh", 0);
+        vault.import(std::slice::from_ref(&fresh)).unwrap();
+        let legacy = Memory::default();
+        legacy.0.lock().unwrap().push(cred("Test:a", "stale", 9));
+        move_from_credential_manager(&vault, &legacy, "Test:").unwrap();
+        assert_eq!(vault.read("Test:a").unwrap().unwrap().blob.as_slice(), b"fresh");
+        // The stale original is still removed: the vault's copy is newer.
+        assert!(legacy.0.lock().unwrap().is_empty());
+        drop(vault);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

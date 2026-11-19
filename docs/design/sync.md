@@ -14,9 +14,10 @@ leaves room for these (see *Later*), but nothing here depends on them.
 
 ## Where things stand
 
-- `SecretStore` keeps each secret as one OS-store item: Credential Manager on Windows, the Keychain
-  on macOS. Category, type and fields are attributes; large values are `IDataProtector` files under
-  `blobs/`. All of it is bound to one user on one machine.
+- `SecretStore` keeps each secret as one store item: in Keylo's vault on Windows (SQLite, values
+  sealed under a DPAPI-protected key; Credential Manager before 2.0), the Keychain on macOS.
+  Category, type and fields are readable details; large values are protected files under `blobs/`.
+  All of it is bound to one user on one machine.
 - Settings beside it are plain JSON in the data directory: `categories.json`, `types.json`,
   `icons/`, `pins.json`, `recent.json`, `config.json`, `ui.json`.
 - `KeyloBackup` already has portable crypto: PBKDF2-SHA256, then AES-256-GCM over a JSON payload
