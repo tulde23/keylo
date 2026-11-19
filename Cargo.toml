@@ -21,6 +21,7 @@ zeroize = "1"
 dirs = "6"
 aes-gcm = "0.10"
 pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+argon2 = "0.5"
 flate2 = "1"
 keylo-core = { path = "crates/keylo-core" }
 keylo-platform = { path = "crates/keylo-platform" }
