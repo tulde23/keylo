@@ -83,6 +83,8 @@ keylo restore FILE [--overwrite] [--dry-run] [--password-stdin]
                                         Restore a backup (existing secrets are skipped unless --overwrite)
 keylo mcp                               The MCP server for AI agents
 keylo unlock | lock | status | version
+keylo passphrase set | change | remove  Master passphrase for the vault (Windows), on top of your
+                                        Windows account; needed to open it on a copied disk
 keylo sync [status | code]              Sync now with your other devices (a shared folder; see status)
 keylo sync create FOLDER [--name N]     Start syncing: a new vault in a folder your devices share
 keylo sync join FOLDER [--name N]       Join it from another device (asks for the code)
@@ -153,6 +155,7 @@ fn run(argv: &[String]) -> CliResult<i32> {
             }
         }
         "unlock" => unlock(&mut c, &args),
+        "passphrase" => passphrase_cmd(&mut c, &args),
         "lock" => {
             args.throw_on_unknown(None)?;
             c.gate.lock();
@@ -1120,10 +1123,17 @@ pub fn self_path() -> String {
 }
 
 fn unlock(c: &mut Context, args: &Args) -> CliResult<i32> {
+    let from_stdin = args.flag("password-stdin");
     args.throw_on_unknown(None)?;
     // A store with its own passphrase (Linux's vault file) first.
     if let Some(message) = keylo_platform::unlock_store()? {
         info(&message);
+    }
+    // A master passphrase (the Windows vault): ask for it when the vault isn't already unlocked.
+    if keylo_platform::vault_has_passphrase()? && !keylo_platform::unlock_vault(None)? {
+        let pass = terminal::read_password("Master passphrase: ", false, from_stdin)?;
+        keylo_platform::unlock_vault(Some(&pass))?;
+        info("Vault unlocked.");
     }
     if c.gate.mode() == HelloMode::Never {
         info(&format!("{} is off (hello = never); nothing to unlock.", verifier_name()));
@@ -1153,6 +1163,45 @@ fn status(c: &Context, args: &Args) -> CliResult<i32> {
     println!("Data:  {}", paths::data_dir().display());
     if let Some(store) = keylo_platform::store_status() {
         println!("Store: {store}");
+    }
+    Ok(0)
+}
+
+fn passphrase_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
+    let action = args.positional(0, "set, change or remove")?.to_lowercase();
+    let from_stdin = args.flag("password-stdin");
+    args.throw_on_unknown(Some(1))?;
+    // Changing how the vault is protected always verifies your identity first.
+    c.gate.confirm(0, "Keylo: change the master passphrase")?;
+    let has = keylo_platform::vault_has_passphrase()?;
+    match action.as_str() {
+        "set" => {
+            if has {
+                usage!("A master passphrase is already set. Use 'keylo passphrase change'.");
+            }
+            let new = terminal::read_password("New master passphrase: ", true, from_stdin)?;
+            keylo_platform::set_vault_passphrase(None, Some(&new))?;
+            info("Master passphrase set. The vault now needs it, plus your Windows account, to open.");
+            info("Keep it somewhere safe: without it the vault can't be opened on another machine.");
+        }
+        "change" => {
+            if !has {
+                usage!("No master passphrase is set. Use 'keylo passphrase set'.");
+            }
+            let current = terminal::read_password("Current master passphrase: ", false, from_stdin)?;
+            let new = terminal::read_password("New master passphrase: ", true, from_stdin)?;
+            keylo_platform::set_vault_passphrase(Some(&current), Some(&new))?;
+            info("Master passphrase changed.");
+        }
+        "remove" => {
+            if !has {
+                usage!("No master passphrase is set.");
+            }
+            let current = terminal::read_password("Current master passphrase: ", false, from_stdin)?;
+            keylo_platform::set_vault_passphrase(Some(&current), None)?;
+            info("Master passphrase removed. The vault now opens with your Windows account alone.");
+        }
+        _ => usage!("passphrase set | change | remove"),
     }
     Ok(0)
 }

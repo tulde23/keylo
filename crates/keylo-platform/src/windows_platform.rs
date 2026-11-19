@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use chrono::{DateTime, TimeZone, Utc};
 use keylo_core::platform::*;
@@ -32,6 +32,47 @@ use zeroize::Zeroizing;
 
 use crate::sqlite_vault::{OsKey, SqliteVault};
 
+/// The one vault for this process, so `keylo unlock`/`lock` and the passphrase commands can reach it.
+static VAULT: OnceLock<&'static SqliteVault> = OnceLock::new();
+
+pub(crate) fn unlock(passphrase: Option<&str>) -> Result<bool> {
+    match VAULT.get() {
+        Some(v) => match passphrase {
+            Some(p) => v.unlock(p).map(|()| true),
+            None => v.try_unlock_quietly(),
+        },
+        None => Ok(true),
+    }
+}
+
+pub(crate) fn lock() {
+    if let Some(v) = VAULT.get() {
+        v.lock();
+    }
+}
+
+pub(crate) fn has_passphrase() -> Result<bool> {
+    match VAULT.get() {
+        Some(v) => v.has_passphrase(),
+        None => Ok(false),
+    }
+}
+
+pub(crate) fn set_passphrase(current: Option<&str>, new: Option<&str>) -> Result<()> {
+    let &v = VAULT.get().ok_or_else(|| Error::msg("Keylo's vault isn't ready."))?;
+    v.set_passphrase(current, new)
+}
+
+pub(crate) fn status() -> Option<String> {
+    let &v = VAULT.get()?;
+    let locked = v.has_passphrase().unwrap_or(false) && !v.try_unlock_quietly().unwrap_or(true);
+    Some(match (v.has_passphrase().unwrap_or(false), locked) {
+        (false, _) => "Keylo's vault".into(),
+        (true, false) => "Keylo's vault (master passphrase, unlocked)".into(),
+        (true, true) => "Keylo's vault (master passphrase, locked)".into(),
+    })
+}
+
 pub struct WindowsPlatform {
     credentials: VaultStore,
     protector: Dpapi,
@@ -44,7 +85,7 @@ impl WindowsPlatform {
     pub fn new() -> Self {
         WindowsPlatform {
             credentials: VaultStore {
-                vault: SqliteVault::new(paths::data_dir().join("keylo.db"), Box::new(DpapiKey)),
+                vault: *VAULT.get_or_init(|| Box::leak(Box::new(SqliteVault::new(paths::data_dir().join("keylo.db"), Box::new(DpapiKey))))),
                 moved: Mutex::new(false),
             },
             protector: Dpapi,
@@ -128,7 +169,7 @@ impl OsKey for DpapiKey {
 
 /// Keylo's vault, after moving in any secrets an earlier Keylo kept in Credential Manager.
 struct VaultStore {
-    vault: SqliteVault,
+    vault: &'static SqliteVault,
     /// Whether the move has been done (or wasn't needed). A failed move is tried again next time.
     moved: Mutex<bool>,
 }

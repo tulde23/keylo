@@ -53,7 +53,6 @@ pub trait OsKey: Send + Sync {
 
 struct Opened {
     conn: Connection,
-    vault_key: Zeroizing<Vec<u8>>,
     value_key: Zeroizing<Vec<u8>>,
     mac_key: Zeroizing<Vec<u8>>,
 }
@@ -245,7 +244,7 @@ impl SqliteVault {
             },
         }
         tx.commit().map_err(db_err)?;
-        Ok(Opened { conn, vault_key, value_key: opened_keys.0, mac_key: opened_keys.1 })
+        Ok(Opened { conn, value_key: opened_keys.0, mac_key: opened_keys.1 })
     }
 
     /// Adds `credentials` with their original times, keeping a vault item that's newer. Returns how
