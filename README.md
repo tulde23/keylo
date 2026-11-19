@@ -1109,13 +1109,13 @@ None of these files hold secret values in readable form.
 
 ## Upgrading from the C# Keylo
 
-This Keylo replaces the earlier C# version (kept in [`rust_csharp/`](rust_csharp/)). Both read and write
+This Keylo replaces the earlier C# version (its code is in this repository's git history). Both read and write
 the same data, so nothing needs migrating: secrets, settings, access keys, types, categories, links,
 the audit log and backups all carry over.
 
 On Windows:
 
-1. Uninstall the C# Keylo: `rust_csharp/install.ps1 -Uninstall` from this repository, or delete
+1. Uninstall the C# Keylo: run its `install.ps1 -Uninstall`, or delete
    `%LOCALAPPDATA%\Programs\Keylo` (close Keylo and any Claude Code sessions first).
 2. Install this one with the zip's `install.ps1`. It goes to the same folder, so Claude Code's existing
    Keylo registration keeps working with the same access key.
@@ -1164,7 +1164,7 @@ cd app && npm ci && npx tauri build         # the app, and an installer for your
 ```
 
 `npx tauri dev` (in `app/`) runs the app with live reload. On macOS, build `keylo-mac` too:
-`swiftc -O rust_csharp/src/Keylo.Platform.MacOS/helper/keylo-mac.swift -o target/release/keylo-mac`.
+`swiftc -O packaging/macos/keylo-mac.swift -o target/release/keylo-mac`.
 
 ### Layout
 
@@ -1174,9 +1174,8 @@ cd app && npm ci && npx tauri build         # the app, and an installer for your
 | `crates/keylo-platform` | The OS layer: Windows (Credential Manager, DPAPI, Windows Hello), macOS (Keychain, Touch ID) and Linux (Secret Service or the vault file, polkit) |
 | `crates/keylo-cli` | `keylo` and the MCP server |
 | `app/` | The desktop app, `keylow`: Tauri 2, with a React and TypeScript front end in `app/src` |
-| `packaging/` | The install scripts and the polkit policy shipped in releases |
+| `packaging/` | The install scripts, the macOS helper `keylo-mac` (Swift), the polkit policy, and the Homebrew and winget manifests |
 | `tests/` | Integration tests and the fake `op`, `aws` and `claude` used by them |
-| `rust_csharp/` | The earlier C# Keylo |
 
 ### Tests
 
