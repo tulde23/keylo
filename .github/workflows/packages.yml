@@ -60,8 +60,9 @@ jobs:
         run: |
           $base = "https://github.com/tulde23/keylo/releases/download/v$env:VERSION"
           $setup = "Keylo_$($env:VERSION)_x64-setup.exe"
-          $sums = (Invoke-WebRequest -UseBasicParsing "$base/SHA256SUMS.txt").Content
-          $line = ($sums -split "`n") | Where-Object { $_ -match "\s\*?$([regex]::Escape($setup))\s*$" } | Select-Object -First 1
+          # .Content is a Byte[] in PowerShell 7, so decode it to text before matching.
+          $sums = [System.Text.Encoding]::UTF8.GetString((Invoke-WebRequest -UseBasicParsing "$base/SHA256SUMS.txt").Content)
+          $line = ($sums -split "`n") | Where-Object { $_ -match "\s+\*?$([regex]::Escape($setup))\s*$" } | Select-Object -First 1
           if (-not $line) { throw "$setup isn't in the release's SHA256SUMS.txt." }
           $sum = ($line -split '\s+')[0].ToUpper()
 
