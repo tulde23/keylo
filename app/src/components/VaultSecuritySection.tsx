@@ -6,11 +6,12 @@ import { BackupDialog } from "./BackupSection";
 import { Modal, useToast } from "./ui";
 
 /**
- * Settings → General: an optional master passphrase on top of the OS protection. Without it the vault
- * opens with your OS account alone; with it, the vault can't be opened on a copied disk, or by other
- * code running as you, without the passphrase. Windows only for now.
+ * Settings → General: an optional master passphrase on top of the OS protection, and a biometric
+ * unlock (Windows Hello / Touch ID) on top of that. Without the passphrase the vault opens with your
+ * OS account alone; with it, the vault can't be opened on a copied disk, or by other code running as
+ * you, without the passphrase. Windows and macOS.
  */
-export default function VaultSecuritySection({ run, platform }: { run: Run; platform: string }) {
+export default function VaultSecuritySection({ run, platform, verifierName }: { run: Run; platform: string; verifierName: string }) {
   const [has, setHas] = useState<boolean | null>(null);
   const [dialog, setDialog] = useState<"set" | "change" | "remove" | null>(null);
   const [helloOk, setHelloOk] = useState(false);
@@ -33,7 +34,7 @@ export default function VaultSecuritySection({ run, platform }: { run: Run; plat
     const ok = await run(() => api.setVaultHello(turningOn, null));
     setHelloBusy(false);
     if (ok !== undefined) {
-      toast(turningOn ? "Windows Hello unlock turned on." : "Windows Hello unlock turned off.");
+      toast(turningOn ? `${verifierName} unlock turned on.` : `${verifierName} unlock turned off.`);
       setHelloOn(turningOn);
       if (turningOn) setNudge(true);
     }
@@ -46,7 +47,9 @@ export default function VaultSecuritySection({ run, platform }: { run: Run; plat
     if (path) setBackupPath(path);
   };
 
-  if (platform !== "Windows" || has === null) return null;
+  if ((platform !== "Windows" && platform !== "macOS") || has === null) return null;
+  // Where the biometric unlock key is bound, for the explanatory copy.
+  const boundTo = platform === "macOS" ? "this Mac's Secure Enclave" : "this PC's TPM";
 
   return (
     <section className="card">
@@ -73,16 +76,16 @@ export default function VaultSecuritySection({ run, platform }: { run: Run; plat
       {has && helloOk && (
         <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid var(--border, rgba(128,128,128,0.25))" }}>
           <h3 style={{ display: "flex", alignItems: "center", gap: 6, margin: "0 0 4px" }}>
-            <ScanFace size={16} /> Unlock with Windows Hello
+            <ScanFace size={16} /> Unlock with {verifierName}
           </h3>
           <p className="muted">
             {helloOn
-              ? "Open the vault with your PIN or fingerprint instead of typing the passphrase. Your passphrase still works and stays your recovery key."
-              : "Skip typing the passphrase: unlock with your PIN or fingerprint. The key is bound to this PC's TPM; your passphrase remains the way to recover if the Hello key is ever lost."}
+              ? `Open the vault with ${verifierName} instead of typing the passphrase. Your passphrase still works and stays your recovery key.`
+              : `Skip typing the passphrase: unlock with ${verifierName}. The key is bound to ${boundTo}; your passphrase remains the way to recover if the ${verifierName} key is ever lost.`}
           </p>
           <div className="form-actions start">
             <button className={`button ${helloOn ? "" : "primary"}`} disabled={helloBusy} onClick={toggleHello}>
-              {helloBusy ? "Working…" : helloOn ? "Turn off Windows Hello unlock" : "Turn on…"}
+              {helloBusy ? "Working…" : helloOn ? `Turn off ${verifierName} unlock` : "Turn on…"}
             </button>
           </div>
         </div>
@@ -93,7 +96,7 @@ export default function VaultSecuritySection({ run, platform }: { run: Run; plat
           <div style={{ flex: 1 }}>
             <strong>Make a recovery backup — your emergency kit.</strong>
             <p className="muted small-text" style={{ margin: "4px 0 8px" }}>
-              Your vault is tied to this {platform} account, so the file can't be opened on another PC. If you forget the
+              Your vault is tied to this {platform} account, so the file can't be opened on another computer. If you forget the
               passphrase or lose this machine, a password-protected backup kept somewhere else (not Keylo) is the only way back in.
             </p>
             <button className="button primary" onClick={startBackup}><LifeBuoy size={16} /> Create recovery backup…</button>
