@@ -29,13 +29,13 @@ having Keylo run commands with them, and never **read** them. This is a summary;
 - **Secrets in plain-text files** (`.env`, key folders) being read, committed, synced or shared.
 - **Values in shell history or the process list.** Values are never taken as command-line arguments.
 - **Other users on the computer, and a stolen disk or copied backup.** Secret values live in Keylo's
-  vault, each encrypted under a key protected by the OS (DPAPI on Windows), or in the macOS Keychain
-  or the Linux keyring or vault, all tied to your account. On Windows and macOS, secrets' details
-  (names, categories, usernames, websites, notes) are readable by programs running as you, as
-  Credential Manager and Keychain attributes always were. Keylo authenticates the whole vault (every
-  value, every detail and the set of entries) under its key and checks it before every read and
-  change, so a secret added, removed, altered or rolled back to an older copy by anything **without
-  the key** is refused. This detection assumes the attacker never had the key: code running as you
+  vault (`keylo.db`), each encrypted under a key the OS protects — DPAPI on Windows, the macOS
+  Keychain on macOS — or, on Linux, in the keyring or Keylo's vault file, all tied to your account. On
+  Windows and macOS, secrets' details (names, categories, usernames, websites, notes) are readable by
+  programs running as you, as Credential Manager and Keychain attributes always were. Keylo
+  authenticates the whole vault (every value, every detail and the set of entries) under its key and
+  checks it before every read and change, so a secret added, removed, altered or rolled back to an
+  older copy by anything **without the key** is refused. This detection assumes the attacker never had the key: code running as you
   can read the key and so could also re-sign the vault, and replacing the entire vault file with a
   complete older copy can't be caught without an anchor outside the file — both are the same-user
   case below.
@@ -68,8 +68,9 @@ having Keylo run commands with them, and never **read** them. This is a summary;
     Credential Manager).
   - **Linux:** an unlocked desktop keyring can be read by any program in your session, and the vault
     key is cached in your kernel keyring for 15 minutes after unlocking.
-  - **macOS:** the Keychain asks you before a program other than Keylo reads one of its items. Deny it
-    unless you started that program yourself.
+  - **macOS:** the vault's key is a single Keychain item on Keylo's access list; the Keychain asks you
+    before any program other than Keylo reads it (a program that reads it can then decrypt the vault's
+    values). Deny the prompt unless you started that program yourself.
 
   To keep an agent from going around Keylo, limit what its shell can do: run it in a sandbox, a
   container or dev container, or as a different user account, and use your agent's own permission

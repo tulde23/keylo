@@ -15,8 +15,8 @@ into your code and commit history.
 
 It runs on your own computers, with a desktop app (`keylow`), a command line (`keylo`) and an MCP
 server for agents (`keylo mcp`). On each computer, secrets live in an encrypted vault whose key the
-operating system protects (on Windows, with your Windows account), or in the macOS Keychain or the
-Linux desktop keyring. There's no Keylo server and no account. To use the same secrets on several computers, Keylo can
+operating system protects — your Windows account on Windows, your login Keychain on macOS — or, on
+Linux, in the desktop keyring. There's no Keylo server and no account. To use the same secrets on several computers, Keylo can
 [sync them](#sync-between-your-devices) end-to-end encrypted, through a folder you already sync with
 OneDrive, iCloud Drive, Dropbox or Syncthing.
 
@@ -983,8 +983,8 @@ never deletes anything, and brings the secrets back.
 
 | | Windows | macOS | Linux |
 |---|---|---|---|
-| Secrets | Keylo's vault, `keylo.db` (SQLite) in the data folder: values encrypted, key protected by DPAPI | the login keychain, generic passwords with service `Keylo` | the desktop keyring (Secret Service: GNOME Keyring, KWallet, KeePassXC…), or Keylo's own encrypted vault file |
-| Values kept in the store | up to 64 KB | up to 16 KB | up to 16 KB |
+| Secrets | Keylo's vault, `keylo.db` (SQLite) in the data folder: values encrypted, key protected by DPAPI | Keylo's vault, `keylo.db` (SQLite): values encrypted, key sealed by a Keychain-stored master key | the desktop keyring (Secret Service: GNOME Keyring, KWallet, KeePassXC…), or Keylo's own encrypted vault file |
+| Values kept in the store | up to 64 KB | up to 64 KB | up to 16 KB |
 | Larger values | DPAPI-encrypted files in `blobs\` | AES-256-GCM files, key in the keychain | AES-256-GCM files, key in the keyring or derived from the vault key |
 | Tied to | your Windows account on this PC | your macOS account and its keychain | your keyring, or the vault's passphrase |
 
@@ -1008,6 +1008,14 @@ never deletes anything, and brings the secrets back.
   passphrase. You enter it when Keylo starts; one unlock is shared with the `keylo` command and the
   MCP server for a while (`KEYLO_VAULT_CACHE_MINUTES`, 15 by default), and `keylo lock` ends it.
 
+**On macOS,** secrets are in the same vault (`keylo.db`), with values encrypted and bound to their
+entry, and details stored readable, exactly as on Windows. The difference is the vault key: it's
+sealed with AES-256-GCM under a master key kept in your **login Keychain** (one item, on Keylo's access
+list), so the vault opens for you without a passphrase. Earlier versions kept each secret as its own
+login-Keychain item (service `Keylo`); the first run of this version moves them into the vault, checks
+each copy, and only then removes the Keychain originals. The optional master passphrase works the same
+way as on Windows (**Settings → General** or `keylo passphrase set`).
+
 **With sync on,** each synced secret is also in every syncing device's file in the sync folder,
 encrypted with AES-256-GCM under the sync vault key (see
 [How it's protected](#sync-between-your-devices)). Each device then also keeps the secret in its own
@@ -1024,8 +1032,8 @@ containers, WSL) it keeps `vault.json`:
 
 **Details** (category, username, notes, non-secret fields, icons) are stored with each secret. On
 Windows and macOS they're readable by programs running as you without unlocking (in the vault's
-database, or as Keychain item attributes); in the Linux keyring and vault they're inside the encrypted
-item. Never put a secret in a non-secret field or in notes.
+database); in the Linux keyring and vault they're inside the encrypted item. Never put a secret in a
+non-secret field or in notes.
 
 ### What it protects against
 
@@ -1137,10 +1145,11 @@ None of these files hold secret values in readable form; `keylo.db` holds secret
   `keylo config hello never`.
 
 **macOS**
-- Secrets appear in Keychain Access under the name `Keylo`. Keylo's file-sealing key is stored
-  separately, under `Keylo.Internal`.
-- The login keychain is locked in SSH sessions. Use `KEYLO_KEYCHAIN=/path/to.keychain-db` for a
-  keychain you can unlock there.
+- Secrets live in Keylo's vault (`keylo.db`); the only Keychain item is Keylo's master key, under
+  `Keylo.Internal`, which seals the vault key and local files. (Older per-secret items under `Keylo`
+  are moved into the vault on first run.)
+- The login keychain is locked in SSH sessions, so the vault can't open there. Use
+  `KEYLO_KEYCHAIN=/path/to.keychain-db` for a keychain you can unlock.
 - Copied values are marked concealed and transient, so clipboard managers and Universal Clipboard
   skip them.
 
@@ -1200,7 +1209,7 @@ cd app && npm ci && npx tauri build         # the app, and an installer for your
 | Path | |
 |---|---|
 | `crates/keylo-core` | Everything OS-neutral: the store format, types, access keys, the identity gate, the audit log, redaction, search, import, backups, linked vaults |
-| `crates/keylo-platform` | The OS layer: Windows (Keylo's vault in `sqlite_vault.rs`, its key protected with DPAPI; Windows Hello), macOS (Keychain, Touch ID) and Linux (Secret Service or the vault file, polkit) |
+| `crates/keylo-platform` | The OS layer: Windows and macOS share Keylo's vault (`sqlite_vault.rs`), its key protected by DPAPI or the login Keychain (Windows Hello, Touch ID); Linux uses Secret Service or the vault file (polkit) |
 | `crates/keylo-cli` | `keylo` and the MCP server |
 | `app/` | The desktop app, `keylow`: Tauri 2, with a React and TypeScript front end in `app/src` |
 | `packaging/` | The install scripts, the macOS helper `keylo-mac` (Swift), the polkit policy, and the Homebrew and winget manifests |
