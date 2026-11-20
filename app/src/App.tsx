@@ -8,6 +8,7 @@ import ImportPanel from "./components/ImportPanel";
 import LinkPanel from "./components/LinkPanel";
 import LockScreen from "./components/LockScreen";
 import VaultUnlock from "./components/VaultUnlock";
+import VaultLoading from "./components/VaultLoading";
 import Sidebar, { type View } from "./components/Sidebar";
 import SecretList from "./components/SecretList";
 import SecretDetail from "./components/SecretDetail";
@@ -47,6 +48,9 @@ function Shell() {
   const [linking, setLinking] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [dropping, setDropping] = useState(false);
+  // False from unlock until the first load finishes, so a slow vault (e.g. just after a reinstall)
+  // shows a splash instead of flashing an empty "no secrets" screen.
+  const [loaded, setLoaded] = useState(false);
 
   /** Runs a backend call; a "locked" error shows the lock screen, others a toast. */
   const run = useCallback(async <T,>(call: () => Promise<T>): Promise<T | undefined> => {
@@ -99,15 +103,19 @@ function Shell() {
   }, [reloadFromOutside]);
 
   // Reload on unlock, and when Settings opens (it counts secrets per type; the CLI may have added some).
+  // The splash stays up until this first load settles (success or caught error), never flashing empty.
   useEffect(() => {
-    if (status?.unlocked) run(refresh);
+    if (status?.unlocked) run(refresh).then(() => setLoaded(true));
   }, [status?.unlocked, refresh, run]);
   useEffect(() => {
     if (settingsOpen && status?.unlocked) run(refresh);
   }, [settingsOpen, status?.unlocked, refresh, run]);
-  // Locking closes Settings; unlocking starts back at the secrets.
+  // Locking closes Settings; unlocking starts back at the secrets (and shows the splash again).
   useEffect(() => {
-    if (status && !status.unlocked) setSettingsOpen(false);
+    if (status && !status.unlocked) {
+      setSettingsOpen(false);
+      setLoaded(false);
+    }
   }, [status]);
 
   // Esc clears the selection (back to "Select a secret"), unless something else wants it.
@@ -200,6 +208,9 @@ function Shell() {
         }}
       />
     );
+  }
+  if (!loaded) {
+    return <VaultLoading info={info} />;
   }
 
   const lock = async () => {
