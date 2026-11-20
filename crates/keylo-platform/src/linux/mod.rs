@@ -11,17 +11,18 @@ pub mod vault;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use hkdf::Hkdf;
 use keylo_core::platform::{
-    AncestorProcess, CredentialStore, DataProtector, Platform, ProcessAncestry, RawCredential, SecureClipboard, UserVerifier,
-    VerificationResult,
+    AncestorProcess, CredentialDetails, CredentialStore, DataProtector, Platform, ProcessAncestry, RawCredential,
+    SecureClipboard, UserVerifier, VerificationResult,
 };
 use keylo_core::{bail, paths, Error, Result};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
+use crate::sqlite_vault::{OsKey, SqliteVault};
 use crate::unix::{self, AesKeyProtector};
 use keyring::SecretServiceStore;
 use vault::FileVault;
@@ -36,7 +37,8 @@ struct Shared {
     data_dir: PathBuf,
     vault: FileVault,
     kind: OnceLock<std::result::Result<StoreKind, String>>,
-    keyring: SecretServiceStore,
+    /// The keyring store, the SQLite vault with its key kept in the desktop keyring.
+    keyring_vault: KeyringVaultStore,
 }
 
 impl Shared {
@@ -46,7 +48,7 @@ impl Shared {
 
     fn store(&self) -> Result<&dyn CredentialStore> {
         Ok(match self.kind()? {
-            StoreKind::Keyring => &self.keyring,
+            StoreKind::Keyring => &self.keyring_vault,
             StoreKind::File => &self.vault,
         })
     }
@@ -123,11 +125,13 @@ pub struct LinuxPlatform {
 impl LinuxPlatform {
     pub fn new() -> Self {
         let data_dir = paths::data_dir();
+        let vault_path = data_dir.join("vault.json");
+        let db_path = data_dir.join("keylo.db");
         let shared: &'static Shared = Box::leak(Box::new(Shared {
-            vault: FileVault::new(data_dir.join("vault.json")),
+            vault: FileVault::new(vault_path),
+            keyring_vault: KeyringVaultStore { sqlite: SqliteVault::new(db_path, Box::new(KeyringKey)), moved: Mutex::new(false) },
             data_dir,
             kind: OnceLock::new(),
-            keyring: SecretServiceStore::new(keyring::DEFAULT_SERVICE),
         }));
         let protector = AesKeyProtector::new(move || match shared.kind()? {
             StoreKind::Keyring => keyring_master_key(),
@@ -161,6 +165,87 @@ fn keyring_master_key() -> Result<Zeroizing<Vec<u8>>> {
     Ok(key)
 }
 
+const VAULT_KEY_ENTROPY: &[u8] = b"keylo-vault-key:v1";
+
+/// The vault key, sealed under Keylo's keyring-stored master key — so the vault opens whenever the
+/// desktop keyring is unlocked, as DPAPI/Keychain do for Windows/macOS.
+struct KeyringKey;
+
+impl OsKey for KeyringKey {
+    fn kind(&self) -> &'static str {
+        "keyring"
+    }
+    fn protect(&self, key: &[u8]) -> Result<Vec<u8>> {
+        crate::crypto::seal(&keyring_master_key()?, key, VAULT_KEY_ENTROPY)
+    }
+    fn unprotect(&self, stored: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
+        crate::crypto::open(&keyring_master_key()?, stored, VAULT_KEY_ENTROPY)
+            .ok_or_else(|| Error::msg("Couldn't open Keylo's vault: its key didn't unseal (the keyring master key changed?)."))
+    }
+}
+
+/// The keyring store: the SQLite vault, after moving in any secrets an earlier Keylo kept as keyring
+/// items. Headless machines use the file vault instead (see [`FileVault`]).
+struct KeyringVaultStore {
+    sqlite: SqliteVault,
+    /// Whether the move from keyring items has been done (or wasn't needed).
+    moved: Mutex<bool>,
+}
+
+/// Move keyring items into the vault only for the real setup, or a test that names its own prefix —
+/// never drag the real keyring into a throwaway KEYLO_HOME vault.
+fn keyring_migrates() -> bool {
+    let set = |v: &str| std::env::var(v).is_ok_and(|s| !s.is_empty());
+    !set("KEYLO_HOME") || set("KEYLO_PREFIX")
+}
+
+impl KeyringVaultStore {
+    fn ready(&self) -> Result<&SqliteVault> {
+        let mut moved = self.moved.lock().unwrap();
+        if !*moved {
+            if keyring_migrates() {
+                let legacy = SecretServiceStore::new(keyring::DEFAULT_SERVICE);
+                crate::sqlite_vault::absorb(&self.sqlite, &legacy, &paths::credential_prefix()).map_err(Error::msg)?;
+            }
+            *moved = true;
+        }
+        Ok(&self.sqlite)
+    }
+}
+
+impl CredentialStore for KeyringVaultStore {
+    fn max_blob_bytes(&self) -> usize {
+        self.sqlite.max_blob_bytes()
+    }
+    fn max_attribute_bytes(&self) -> usize {
+        self.sqlite.max_attribute_bytes()
+    }
+    fn max_attributes(&self) -> usize {
+        self.sqlite.max_attributes()
+    }
+    fn read(&self, target: &str) -> Result<Option<RawCredential>> {
+        self.ready()?.read(target)
+    }
+    fn enumerate(&self, prefix: &str) -> Result<Vec<RawCredential>> {
+        self.ready()?.enumerate(prefix)
+    }
+    fn write(&self, target: &str, blob: &[u8], user_name: Option<&str>, comment: Option<&str>, attributes: &BTreeMap<String, String>) -> Result<()> {
+        self.ready()?.write(target, blob, user_name, comment, attributes)
+    }
+    fn delete(&self, target: &str) -> Result<bool> {
+        self.ready()?.delete(target)
+    }
+    fn enumerate_details(&self, prefix: &str) -> Result<Vec<CredentialDetails>> {
+        self.ready()?.enumerate_details(prefix)
+    }
+    fn read_details(&self, target: &str) -> Result<Option<CredentialDetails>> {
+        self.ready()?.read_details(target)
+    }
+    fn update_details(&self, target: &str, user_name: Option<&str>, comment: Option<&str>, attributes: &BTreeMap<String, String>) -> Result<bool> {
+        self.ready()?.update_details(target, user_name, comment, attributes)
+    }
+}
+
 impl Platform for LinuxPlatform {
     fn name(&self) -> &str {
         "Linux"
@@ -180,7 +265,7 @@ impl Platform for LinuxPlatform {
     fn store_name(&self) -> String {
         match self.shared.kind() {
             Ok(StoreKind::File) => "Keylo's encrypted vault".into(),
-            _ => "the desktop keyring".into(),
+            _ => "Keylo's vault (key in the desktop keyring)".into(),
         }
     }
     fn file_protection_name(&self) -> String {
@@ -232,7 +317,7 @@ pub(crate) fn lock_store() {
 pub(crate) fn store_status() -> Option<String> {
     let shared = INSTALLED.get()?;
     Some(match shared.kind() {
-        Ok(StoreKind::Keyring) => "the desktop keyring".into(),
+        Ok(StoreKind::Keyring) => "Keylo's vault (key in the desktop keyring)".into(),
         Ok(StoreKind::File) => {
             let state = if shared.vault.try_unlock_quietly().unwrap_or(false) { "unlocked" } else { "locked" };
             format!("Keylo's encrypted vault ({}, {state})", shared.vault.path().display())

@@ -19,6 +19,10 @@
 //! Every change is one SQLite transaction (WAL, synchronous=FULL): durable when it returns, and
 //! serialized between the app, the CLI and the MCP server by SQLite's own locking.
 
+// On Linux the vault is used only as the keyring store (read/write); its passphrase/lock API is
+// wired on Windows and macOS, so several methods are legitimately unused here.
+#![cfg_attr(target_os = "linux", allow(dead_code))]
+
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;

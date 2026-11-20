@@ -372,9 +372,14 @@ jobs:
           Check downloads against SHA256SUMS.txt."
 
   # Chocolatey and winget (see packages.yml). A failure here doesn't undo the release.
+  # Temporarily disabled: the Chocolatey push has been failing (community-repo moderation). Set these
+  # back to true (or drop them) to publish to the package managers again; packages.yml can also be run
+  # by hand from the Actions tab for a release that's already out.
   packages:
     needs: release
     uses: ./.github/workflows/packages.yml
     with:
       version: ${{ needs.release.outputs.version }}
+      chocolatey: false
+      winget: false
     secrets: inherit
