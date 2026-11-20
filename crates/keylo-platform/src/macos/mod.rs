@@ -235,54 +235,79 @@ pub(crate) fn hello_available() -> bool {
     matches!(run_helper(&["bio-available"], None), Ok((0, _)))
 }
 
-/// Whether "unlock with Touch ID" is set up for the vault.
+/// Whether "unlock with Touch ID" is set up for the vault (the wrap and the Secure Enclave blob).
 pub(crate) fn has_hello() -> Result<bool> {
-    vault().has_hello()
+    Ok(vault().has_hello()? && touchid_blob_path().is_file())
 }
 
-/// Turns Touch ID unlock on (stores a random key behind biometrics and wraps the vault key under it)
-/// or off. Enabling needs a live session or `passphrase` to reach the vault key.
+/// Where Keylo keeps the Secure Enclave blob (opaque key material + peer public key) for Touch ID
+/// unlock. Not secret: it's useless without this Mac's Secure Enclave and a Touch ID gesture.
+fn touchid_blob_path() -> PathBuf {
+    paths::data_dir().join("touchid.bin")
+}
+
+/// Turns Touch ID unlock on (creates a Secure Enclave key and wraps the vault key under what it
+/// yields) or off. Enabling prompts Touch ID, and needs a live session or `passphrase` to reach the
+/// vault key.
 pub(crate) fn set_hello(enable: bool, passphrase: Option<&str>) -> Result<()> {
-    use base64::Engine;
     if enable {
-        let kek = unix::random_key();
-        let arr: &[u8; 32] = kek.as_slice().try_into().map_err(|_| Error::msg("Couldn't generate a Touch ID key."))?;
-        let b64 = base64::engine::general_purpose::STANDARD.encode(kek.as_slice());
-        match run_helper(&["bio-store"], Some(&b64))? {
-            (0, _) => {}
-            (_, out) => bail!("Couldn't store the Touch ID key{}.", if out.is_empty() { String::new() } else { format!(": {out}") }),
+        let (code, out) = run_helper(&["bio-enroll"], None)?;
+        match code {
+            0 => {}
+            1 => bail!("Touch ID was cancelled."),
+            2 => bail!("Touch ID or the Secure Enclave isn't available on this Mac."),
+            _ => bail!("Couldn't set up Touch ID unlock{}.", if out.is_empty() { String::new() } else { format!(": {out}") }),
         }
-        // Wrap the vault key under it; undo the stored key if that fails, so the two stay in step.
+        let mut lines = out.lines();
+        let blob = lines.next().unwrap_or("").trim().to_string();
+        let kek = decode_kek(lines.next().unwrap_or(""))?;
+        let arr: &[u8; 32] = kek.as_slice().try_into().map_err(|_| Error::msg("Touch ID returned an unexpected key."))?;
+        if blob.is_empty() {
+            bail!("Touch ID setup returned no key material.");
+        }
+        // Store the blob, then wrap the vault key; undo both if either fails, so they stay in step.
+        std::fs::write(touchid_blob_path(), blob.as_bytes())?;
         if let Err(e) = vault().set_hello(true, passphrase, Some(arr)) {
-            let _ = run_helper(&["bio-remove"], None);
+            let _ = std::fs::remove_file(touchid_blob_path());
             return Err(e);
         }
         Ok(())
     } else {
         vault().set_hello(false, None, None)?;
-        let _ = run_helper(&["bio-remove"], None);
+        let _ = std::fs::remove_file(touchid_blob_path());
         Ok(())
     }
 }
 
-/// Unlocks the vault with Touch ID (prompts the gesture).
+/// Unlocks the vault with Touch ID (prompts the gesture): re-derives the key from the stored blob.
 pub(crate) fn unlock_hello() -> Result<()> {
-    use base64::Engine;
-    let (code, out) = run_helper(&["bio-get", "unlock your Keylo vault"], None)?;
+    let blob = std::fs::read_to_string(touchid_blob_path()).map_err(|_| Error::msg("Touch ID unlock isn't set up for this vault."))?;
+    let blob = blob.trim();
+    if blob.is_empty() {
+        bail!("Touch ID unlock isn't set up for this vault.");
+    }
+    let (code, out) = run_helper(&["bio-derive", blob], None)?;
     match code {
         0 => {
-            let bytes = Zeroizing::new(
-                base64::engine::general_purpose::STANDARD
-                    .decode(out.trim())
-                    .map_err(|_| Error::msg("Touch ID returned an unreadable key."))?,
-            );
-            let arr: &[u8; 32] = bytes.as_slice().try_into().map_err(|_| Error::msg("Touch ID returned an unexpected key."))?;
+            let kek = decode_kek(out.trim())?;
+            let arr: &[u8; 32] = kek.as_slice().try_into().map_err(|_| Error::msg("Touch ID returned an unexpected key."))?;
             vault().unlock_hello(arr)
         }
         1 => bail!("Touch ID was cancelled."),
-        2 => bail!("Touch ID unlock isn't set up on this Mac (no stored key or biometrics)."),
+        2 => bail!("Touch ID or the Secure Enclave isn't available."),
         _ => bail!("Touch ID unlock failed{}.", if out.is_empty() { String::new() } else { format!(": {out}") }),
     }
+}
+
+fn decode_kek(b64: &str) -> Result<Zeroizing<Vec<u8>>> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64.trim())
+        .map_err(|_| Error::msg("Touch ID returned an unreadable key."))?;
+    if bytes.len() != 32 {
+        bail!("Touch ID returned an unexpected key length.");
+    }
+    Ok(Zeroizing::new(bytes))
 }
 
 // ---------------------------------------------------------------------------- keylo-mac

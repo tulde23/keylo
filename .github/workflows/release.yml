@@ -262,8 +262,7 @@ jobs:
           app=target/release/bundle/macos/Keylo.app
           sign() { codesign --force --timestamp --options runtime --keychain "$SIGN_KEYCHAIN" --sign "$SIGN_IDENTITY" "$@"; }
           sign --identifier io.github.tulde23.keylo.cli "$app/Contents/MacOS/keylo"
-          # keylo-mac needs the keychain-access-group entitlement for the Touch ID (biometric) unlock key.
-          sign --identifier io.github.tulde23.keylo.helper --entitlements packaging/macos/keylo-mac.entitlements "$app/Contents/MacOS/keylo-mac"
+          sign --identifier io.github.tulde23.keylo.helper "$app/Contents/MacOS/keylo-mac"
           sign "$app"
           codesign --verify --strict --deep --verbose=2 "$app"
 
