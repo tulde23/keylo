@@ -169,13 +169,15 @@ pub fn unlock_vault_hello() -> keylo_core::Result<bool> {
     keylo_core::bail!("A biometric unlock isn't available on this platform.")
 }
 
-/// Creates/opens the Hello key, signs twice and checks stability, to confirm Hello works as a key
-/// source on this machine.
+/// Confirms the biometric unlock works on this machine: Windows Hello signs a stable key; macOS Touch
+/// ID runs an end-to-end vault round-trip on a throwaway KEYLO_HOME.
 pub fn hello_selftest() -> keylo_core::Result<String> {
     #[cfg(windows)]
     return hello_key::selftest();
-    #[cfg(not(windows))]
-    keylo_core::bail!("Windows Hello is only on Windows.")
+    #[cfg(target_os = "macos")]
+    return macos::touchid_selftest();
+    #[cfg(not(any(windows, target_os = "macos")))]
+    keylo_core::bail!("A biometric unlock isn't available on this platform.")
 }
 
 /// An approval dialog for the MCP server when the app isn't installed (macOS and Linux; Windows

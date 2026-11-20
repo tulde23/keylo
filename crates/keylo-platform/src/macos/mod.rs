@@ -310,6 +310,41 @@ fn decode_kek(b64: &str) -> Result<Zeroizing<Vec<u8>>> {
     Ok(Zeroizing::new(bytes))
 }
 
+/// End-to-end Touch ID check for `keylo __hello-selftest`: on a throwaway vault (KEYLO_HOME), set a
+/// passphrase, turn Touch ID on (gesture), lock, unlock with Touch ID (gesture), and read a secret
+/// back. Leaves the throwaway vault empty again.
+pub(crate) fn touchid_selftest() -> Result<String> {
+    if std::env::var("KEYLO_HOME").map(|h| h.is_empty()).unwrap_or(true) {
+        bail!("Set KEYLO_HOME to a throwaway folder first — this self-test sets a passphrase and Touch ID on that vault.");
+    }
+    if !hello_available() {
+        bail!("Touch ID or the Secure Enclave isn't available here (run it in a desktop session, not over SSH).");
+    }
+    let v = vault();
+    let target = "KeyloTouchIDSelftest:probe";
+    let value: &[u8] = b"\x01touch-id-selftest-value";
+    let pass = "touch id selftest passphrase";
+
+    v.write(target, value, None, None, &BTreeMap::new())?;
+    v.set_passphrase(None, Some(pass))?;
+    set_hello(true, Some(pass))?; // Touch ID gesture (enrol)
+    v.lock();
+    unlock_hello()?; // Touch ID gesture (derive)
+    let got = v.read(target)?.ok_or_else(|| Error::msg("the secret was missing after the Touch ID unlock"))?;
+    let ok = got.blob.as_slice() == value;
+
+    // Put the throwaway vault back the way it was.
+    let _ = set_hello(false, None);
+    let _ = v.set_passphrase(Some(pass), None);
+    let _ = v.delete(target);
+
+    if ok {
+        Ok("Touch ID unlock WORKS: set a passphrase, enabled Touch ID, locked, unlocked with Touch ID, and read the secret back.".into())
+    } else {
+        bail!("Unlocked with Touch ID, but the secret's value didn't match.")
+    }
+}
+
 // ---------------------------------------------------------------------------- keylo-mac
 
 /// keylo-mac, next to this program (or, in the app bundle, next to keylow in Contents/MacOS).
