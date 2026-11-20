@@ -15,8 +15,8 @@ into your code and commit history.
 
 It runs on your own computers, with a desktop app (`keylow`), a command line (`keylo`) and an MCP
 server for agents (`keylo mcp`). On each computer, secrets live in an encrypted vault whose key the
-operating system protects — your Windows account on Windows, your login Keychain on macOS — or, on
-Linux, in the desktop keyring. There's no Keylo server and no account. To use the same secrets on several computers, Keylo can
+operating system protects — your Windows account on Windows, your login Keychain on macOS, your desktop
+keyring on Linux. There's no Keylo server and no account. To use the same secrets on several computers, Keylo can
 [sync them](#sync-between-your-devices) end-to-end encrypted, through a folder you already sync with
 OneDrive, iCloud Drive, Dropbox or Syncthing.
 
@@ -124,8 +124,8 @@ There is no tool that returns a value. An agent can use a secret, but it can't r
   1Password, LastPass, KeePassXC and Apple Passwords, with folders, notes and one-time codes.
 - **Export to another password manager:** a Bitwarden CSV, or the browser format most password
   managers import, so you're never locked in.
-- **Protect the vault** with an optional **master passphrase** (Windows), and unlock it with a
-  **Windows Hello** gesture (PIN or fingerprint, bound to this PC's TPM) instead of typing it — the
+- **Protect the vault** with an optional **master passphrase** (Windows and macOS), and unlock it with
+  **Windows Hello** (TPM) or **Touch ID** (Secure Enclave) — a gesture instead of typing it — while the
   passphrase stays your recovery key. A built-in generator offers a strong, memorable passphrase.
 - **Encrypted backups** (AES-256-GCM, password-protected) that restore on any OS — your portable
   recovery kit if you forget the passphrase or lose the machine.
@@ -986,10 +986,10 @@ never deletes anything, and brings the secrets back.
 
 | | Windows | macOS | Linux |
 |---|---|---|---|
-| Secrets | Keylo's vault, `keylo.db` (SQLite) in the data folder: values encrypted, key protected by DPAPI | Keylo's vault, `keylo.db` (SQLite): values encrypted, key sealed by a Keychain-stored master key | the desktop keyring (Secret Service: GNOME Keyring, KWallet, KeePassXC…), or Keylo's own encrypted vault file |
-| Values kept in the store | up to 64 KB | up to 64 KB | up to 16 KB |
+| Secrets | Keylo's vault, `keylo.db` (SQLite) in the data folder: values encrypted, key protected by DPAPI | Keylo's vault, `keylo.db` (SQLite): values encrypted, key sealed by a Keychain-stored master key | with a desktop keyring: Keylo's vault, `keylo.db`, key kept in the keyring (Secret Service: GNOME Keyring, KWallet, KeePassXC…). Headless: Keylo's own encrypted vault file |
+| Values kept in the store | up to 64 KB | up to 64 KB | keyring vault: up to 64 KB; file vault: up to 16 KB |
 | Larger values | DPAPI-encrypted files in `blobs\` | AES-256-GCM files, key in the keychain | AES-256-GCM files, key in the keyring or derived from the vault key |
-| Tied to | your Windows account on this PC | your macOS account and its keychain | your keyring, or the vault's passphrase |
+| Tied to | your Windows account on this PC | your macOS account and its keychain | your keyring (desktop) or the vault's passphrase (headless) |
 
 **On Windows,** secrets are in Keylo's vault, a SQLite database (`keylo.db`) in the data folder:
 - **Values** are each encrypted with AES-256-GCM and bound to their entry, under a key derived from a
@@ -1024,8 +1024,10 @@ encrypted with AES-256-GCM under the sync vault key (see
 [How it's protected](#sync-between-your-devices)). Each device then also keeps the secret in its own
 store as above.
 
-**On Linux,** Keylo uses the desktop keyring when there is one that can store items. Otherwise (servers,
-containers, WSL) it keeps `vault.json`:
+**On Linux,** where there's a **desktop keyring**, Keylo keeps secrets in the same SQLite vault
+(`keylo.db`) as Windows and macOS, with the vault's key held in the keyring — so the vault opens
+whenever your keyring is unlocked. An earlier Keylo's keyring *items* are moved into the vault on first
+use. Otherwise (servers, containers, WSL) Keylo keeps its own **encrypted vault file** `vault.json`:
 - **Encryption:** AES-256-GCM under a random key, wrapped with your passphrase (PBKDF2-SHA256,
   600,000 iterations).
 - **Unlocking:** the passphrase is asked for on the terminal, or read from `KEYLO_PASSPHRASE` or
@@ -1034,9 +1036,9 @@ containers, WSL) it keeps `vault.json`:
 - **Choice:** made once and remembered in `store.txt`; `KEYLO_STORE=keyring|file` overrides it.
 
 **Details** (category, username, notes, non-secret fields, icons) are stored with each secret. On
-Windows and macOS they're readable by programs running as you without unlocking (in the vault's
-database); in the Linux keyring and vault they're inside the encrypted item. Never put a secret in a
-non-secret field or in notes.
+Windows, macOS and the Linux keyring vault they're readable by programs running as you without
+unlocking (in the vault's database); in the Linux **file** vault they're inside the encrypted file.
+Never put a secret in a non-secret field or in notes.
 
 ### What it protects against
 
