@@ -394,6 +394,7 @@ impl SqliteVault {
     }
 
     /// Whether an "unlock with Windows Hello" wrap is stored for this vault.
+    #[cfg_attr(not(windows), allow(dead_code))] // macOS Touch ID will reuse this (Phase 2).
     pub fn has_hello(&self) -> Result<bool> {
         if !self.path.is_file() {
             return Ok(false);
@@ -404,6 +405,7 @@ impl SqliteVault {
     }
 
     /// The unlocked vault key right now, from the shared session or by opening with `passphrase`.
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn vault_key_now(&self, passphrase: Option<&str>) -> Result<Zeroizing<Vec<u8>>> {
         if let Some(k) = self.session_key()? {
             return Ok(k);
@@ -418,6 +420,7 @@ impl SqliteVault {
     /// gesture. Enabling stores the vault key sealed under that key (and the OS key) beside the
     /// passphrase, so Hello becomes a second way in and the passphrase stays the recovery factor.
     /// Requires a master passphrase, so a lost Hello key never loses the vault.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn set_hello(&self, enable: bool, passphrase: Option<&str>, hello_kek: Option<&[u8; 32]>) -> Result<()> {
         if !self.path.is_file() {
             bail!("There's no Keylo vault yet.");
@@ -446,6 +449,7 @@ impl SqliteVault {
 
     /// Unlocks with a Windows Hello-derived key (the gesture happened in the caller). Caches the
     /// session so the CLI and MCP server follow, exactly as a passphrase unlock does.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn unlock_hello(&self, hello_kek: &[u8; 32]) -> Result<()> {
         let conn = Connection::open_with_flags(&self.path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)
             .map_err(|e| Error::msg(format!("Couldn't open Keylo's vault ({}): {e}", self.path.display())))?;
