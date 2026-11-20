@@ -83,8 +83,8 @@ keylo restore FILE [--overwrite] [--dry-run] [--password-stdin]
                                         Restore a backup (existing secrets are skipped unless --overwrite)
 keylo mcp                               The MCP server for AI agents
 keylo unlock | lock | status | version
-keylo passphrase set | change | remove  Master passphrase for the vault (Windows), on top of your
-                                        Windows account; needed to open it on a copied disk
+keylo passphrase set | change | remove  Master passphrase for the vault (Windows/macOS), on top of
+                                        your OS account; needed to open it on a copied disk
 keylo sync [status | code]              Sync now with your other devices (a shared folder; see status)
 keylo sync create FOLDER [--name N]     Start syncing: a new vault in a folder your devices share
 keylo sync join FOLDER [--name N]       Join it from another device (asks for the code)
@@ -1186,7 +1186,7 @@ fn passphrase_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
             }
             let new = terminal::read_password("New master passphrase: ", true, from_stdin)?;
             keylo_platform::set_vault_passphrase(None, Some(&new))?;
-            info("Master passphrase set. The vault now needs it, plus your Windows account, to open.");
+            info(&format!("Master passphrase set. The vault now needs it, plus your {} account, to open.", platform::current().name()));
             info("Keep it somewhere safe: without it the vault can't be opened on another machine.");
         }
         "change" => {
@@ -1204,7 +1204,7 @@ fn passphrase_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
             }
             let current = terminal::read_password("Current master passphrase: ", false, from_stdin)?;
             keylo_platform::set_vault_passphrase(Some(&current), None)?;
-            info("Master passphrase removed. The vault now opens with your Windows account alone.");
+            info(&format!("Master passphrase removed. The vault now opens with your {} account alone.", platform::current().name()));
         }
         _ => usage!("passphrase set | change | remove"),
     }

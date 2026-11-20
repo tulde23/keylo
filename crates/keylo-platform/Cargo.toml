@@ -27,12 +27,15 @@ hex.workspace = true
 core-foundation = "0.10"
 core-foundation-sys = "0.8"
 
-[target.'cfg(windows)'.dependencies]
-windows-future = "0.3"
+# The SQLite vault and its crypto, shared by Windows and macOS.
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 rusqlite = { version = "0.37", features = ["bundled"] }
 argon2.workspace = true
 hkdf = "0.12"
 hmac = "0.12"
+
+[target.'cfg(windows)'.dependencies]
+windows-future = "0.3"
 sha2.workspace = true
 
 [target.'cfg(windows)'.dependencies.windows]

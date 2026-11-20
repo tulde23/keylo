@@ -3,7 +3,8 @@
 //! once at startup.
 
 mod crypto;
-#[cfg(windows)]
+// The SQLite vault is shared by Windows and macOS (Linux still uses the keyring / vault file).
+#[cfg(any(windows, target_os = "macos"))]
 mod sqlite_vault;
 #[cfg(windows)]
 mod hello_key;
@@ -56,12 +57,14 @@ pub fn unlock_store() -> keylo_core::Result<Option<String>> {
     Ok(None)
 }
 
-/// `keylo lock`: forgets a store's unlocked key (Linux's vault file, or a Windows master passphrase).
+/// `keylo lock`: forgets a store's unlocked key (Linux's vault file, or a Windows/macOS master passphrase).
 pub fn lock_store() {
     #[cfg(target_os = "linux")]
     linux::lock_store();
     #[cfg(windows)]
     windows_platform::lock();
+    #[cfg(target_os = "macos")]
+    macos::lock();
 }
 
 /// Where secrets are kept, with its state, for `keylo status` (None: nothing to add).
@@ -70,15 +73,19 @@ pub fn store_status() -> Option<String> {
     return linux::store_status();
     #[cfg(windows)]
     return windows_platform::status();
-    #[cfg(not(any(target_os = "linux", windows)))]
+    #[cfg(target_os = "macos")]
+    return macos::status();
+    #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
     None
 }
 
-/// Whether the vault is unlocked with a master passphrase (Windows). False where there's none.
+/// Whether the vault is unlocked with a master passphrase (Windows/macOS). False where there's none.
 pub fn vault_has_passphrase() -> keylo_core::Result<bool> {
     #[cfg(windows)]
     return windows_platform::has_passphrase();
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    return macos::has_passphrase();
+    #[cfg(not(any(windows, target_os = "macos")))]
     Ok(false)
 }
 
@@ -87,19 +94,23 @@ pub fn vault_has_passphrase() -> keylo_core::Result<bool> {
 pub fn unlock_vault(passphrase: Option<&str>) -> keylo_core::Result<bool> {
     #[cfg(windows)]
     return windows_platform::unlock(passphrase);
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    return macos::unlock(passphrase);
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = passphrase;
         Ok(true)
     }
 }
 
-/// Sets, changes or removes the vault's master passphrase (Windows). `current` must match when one
-/// is set; `new` of None removes it.
+/// Sets, changes or removes the vault's master passphrase (Windows/macOS). `current` must match when
+/// one is set; `new` of None removes it.
 pub fn set_vault_passphrase(current: Option<&str>, new: Option<&str>) -> keylo_core::Result<()> {
     #[cfg(windows)]
     return windows_platform::set_passphrase(current, new);
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    return macos::set_passphrase(current, new);
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = (current, new);
         keylo_core::bail!("A master passphrase isn't available on this platform yet.")
