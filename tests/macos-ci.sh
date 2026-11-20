@@ -28,12 +28,18 @@ printf 'mac-value' | "$keylo" set plain --category dev --username alice >/dev/nu
 check "value round-trips" "mac-value" "$("$keylo" get plain)"
 check "username" "alice" "$("$keylo" get plain --field username)"
 check "category" "plain" "$("$keylo" list cat:dev)"
-check "item is in the test keychain" "KeyloCiTest:plain" "$(security dump-keychain "$keychain" 2>/dev/null | grep -o 'KeyloCiTest:plain' | head -1)"
+# Secrets live in the SQLite vault now, not as individual Keychain items.
+check "secret is in the vault file" "keylo.db" "$(ls "$KEYLO_HOME")"
+if security dump-keychain "$keychain" 2>/dev/null | grep -q 'KeyloCiTest:plain'; then
+  echo "  FAIL secret leaked into the Keychain as an item"; exit 1
+else
+  pass=$((pass + 1)); echo "  ok   secret is not a Keychain item (it's in the vault)"
+fi
 
 head -c 40000 /dev/urandom | base64 > "$KEYLO_HOME/big.txt"
 "$keylo" set big --file "$KEYLO_HOME/big.txt" >/dev/null
 check "large value (sealed file, master key in the keychain)" "$(cat "$KEYLO_HOME/big.txt")" "$("$keylo" get big)"
-check "master key kept apart from secrets" "Keylo.Internal" "$(security dump-keychain "$keychain" 2>/dev/null | grep -o 'Keylo.Internal' | head -1)"
+check "master key (vault + files) in the keychain" "Keylo.Internal" "$(security dump-keychain "$keychain" 2>/dev/null | grep -o 'Keylo.Internal' | head -1)"
 
 printf 'pw-1' | "$keylo" set db --type database --field engine=postgres --field host=db.local --field username=bob >/dev/null
 check "typed field" "postgresql://bob:pw-1@db.local/" "$("$keylo" get db --field connection_string)"
