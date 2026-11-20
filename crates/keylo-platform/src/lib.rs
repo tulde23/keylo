@@ -117,52 +117,67 @@ pub fn set_vault_passphrase(current: Option<&str>, new: Option<&str>) -> keylo_c
     }
 }
 
-/// Whether Windows Hello can be used as a key source (TPM key via KeyCredentialManager).
+/// Whether a biometric unlock is available as a key source: Windows Hello (TPM via
+/// KeyCredentialManager) or macOS Touch ID (a key behind biometrics in the Keychain).
 pub fn hello_available() -> bool {
     #[cfg(windows)]
     return hello_key::available();
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    return macos::hello_available();
+    #[cfg(not(any(windows, target_os = "macos")))]
     false
 }
 
-/// Whether "unlock with Windows Hello" is set up for the vault.
+/// Whether a biometric unlock (Windows Hello / Touch ID) is set up for the vault.
 pub fn vault_has_hello() -> keylo_core::Result<bool> {
     #[cfg(windows)]
     return windows_platform::has_hello();
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    return macos::has_hello();
+    #[cfg(not(any(windows, target_os = "macos")))]
     Ok(false)
 }
 
-/// Turns "unlock with Windows Hello" on (needs the Hello gesture and, if no session is live, the
-/// current passphrase to bind the key) or off (Windows).
+/// Turns the biometric unlock (Windows Hello / Touch ID) on (needs the gesture and, if no session is
+/// live, the current passphrase to bind the key) or off.
 pub fn set_vault_hello(enable: bool, passphrase: Option<&str>) -> keylo_core::Result<()> {
     #[cfg(windows)]
     return windows_platform::set_hello(enable, passphrase);
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    return macos::set_hello(enable, passphrase);
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = (enable, passphrase);
-        keylo_core::bail!("Windows Hello unlock is only on Windows.")
+        keylo_core::bail!("A biometric unlock isn't available on this platform.")
     }
 }
 
-/// Unlocks the vault with Windows Hello (asks for the gesture). Returns whether it's unlocked after.
+/// Unlocks the vault with the biometric unlock (Windows Hello / Touch ID; asks for the gesture).
+/// Returns whether it's unlocked after.
 pub fn unlock_vault_hello() -> keylo_core::Result<bool> {
     #[cfg(windows)]
     {
         windows_platform::unlock_hello()?;
         return Ok(true);
     }
-    #[cfg(not(windows))]
-    keylo_core::bail!("Windows Hello unlock is only on Windows.")
+    #[cfg(target_os = "macos")]
+    {
+        macos::unlock_hello()?;
+        return Ok(true);
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    keylo_core::bail!("A biometric unlock isn't available on this platform.")
 }
 
-/// Creates/opens the Hello key, signs twice and checks stability, to confirm Hello works as a key
-/// source on this machine.
+/// Confirms the biometric unlock works on this machine: Windows Hello signs a stable key; macOS Touch
+/// ID runs an end-to-end vault round-trip on a throwaway KEYLO_HOME.
 pub fn hello_selftest() -> keylo_core::Result<String> {
     #[cfg(windows)]
     return hello_key::selftest();
-    #[cfg(not(windows))]
-    keylo_core::bail!("Windows Hello is only on Windows.")
+    #[cfg(target_os = "macos")]
+    return macos::touchid_selftest();
+    #[cfg(not(any(windows, target_os = "macos")))]
+    keylo_core::bail!("A biometric unlock isn't available on this platform.")
 }
 
 /// An approval dialog for the MCP server when the app isn't installed (macOS and Linux; Windows

@@ -226,6 +226,12 @@ kbd { font-size: 11px; border: 1px solid var(--border); border-radius: 4px; padd
 .about dt { color: var(--muted); }
 .about dd { margin: 0; overflow-wrap: anywhere; }
 
+.help-block { margin: 18px 0 0; padding-top: 16px; border-top: 1px solid var(--border, rgba(128,128,128,0.2)); }
+.help-block:first-of-type { margin-top: 12px; }
+.help-block h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 6px; font-size: 14px; }
+.help-block p { margin: 0 0 6px; line-height: 1.5; }
+.help-list { margin: 6px 0; padding-left: 18px; display: flex; flex-direction: column; gap: 7px; line-height: 1.5; }
+
 /* ------------------------------------------------------------------ forms */
 .form { display: flex; flex-direction: column; gap: 14px; }
 .form-row { display: flex; flex-direction: column; gap: 5px; }

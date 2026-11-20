@@ -9,11 +9,10 @@ export default function VaultUnlock({ info, onUnlocked }: { info: AppInfo; onUnl
   const [error, setError] = useState<string | null>(null);
   const [hello, setHello] = useState(false);
 
-  // Offer "Unlock with Windows Hello" only when it's set up for this vault.
+  // Offer the biometric unlock (Windows Hello / Touch ID) only when it's set up for this vault.
   useEffect(() => {
-    if (info.platform !== "Windows") return;
     api.vaultHasHello().then(setHello).catch(() => setHello(false));
-  }, [info.platform]);
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,7 +59,7 @@ export default function VaultUnlock({ info, onUnlocked }: { info: AppInfo; onUnl
         </form>
         {hello && (
           <button className="button large" type="button" onClick={unlockHello} disabled={busy} style={{ marginTop: 10 }}>
-            <ScanFace size={18} /> Unlock with Windows Hello
+            <ScanFace size={18} /> Unlock with {info.verifierName}
           </button>
         )}
         {error && <p className="error-text">{error}</p>}
