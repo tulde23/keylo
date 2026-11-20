@@ -223,6 +223,68 @@ pub(crate) fn status() -> Option<String> {
     })
 }
 
+// ---------------------------------------------------------------------------- Touch ID vault unlock
+
+// Touch ID unlock: keylo-mac keeps a random 32-byte key behind biometrics in the data-protection
+// keychain; the vault key is wrapped under it, beside the master passphrase. A Touch ID gesture
+// releases the key to open the vault without typing the passphrase. (Needs the signed keylo-mac with
+// its keychain-access-group entitlement; an unsigned build can't use that keychain.)
+
+/// Whether Touch ID can be a vault key source here (biometrics enrolled, helper present).
+pub(crate) fn hello_available() -> bool {
+    matches!(run_helper(&["bio-available"], None), Ok((0, _)))
+}
+
+/// Whether "unlock with Touch ID" is set up for the vault.
+pub(crate) fn has_hello() -> Result<bool> {
+    vault().has_hello()
+}
+
+/// Turns Touch ID unlock on (stores a random key behind biometrics and wraps the vault key under it)
+/// or off. Enabling needs a live session or `passphrase` to reach the vault key.
+pub(crate) fn set_hello(enable: bool, passphrase: Option<&str>) -> Result<()> {
+    use base64::Engine;
+    if enable {
+        let kek = unix::random_key();
+        let arr: &[u8; 32] = kek.as_slice().try_into().map_err(|_| Error::msg("Couldn't generate a Touch ID key."))?;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(kek.as_slice());
+        match run_helper(&["bio-store"], Some(&b64))? {
+            (0, _) => {}
+            (_, out) => bail!("Couldn't store the Touch ID key{}.", if out.is_empty() { String::new() } else { format!(": {out}") }),
+        }
+        // Wrap the vault key under it; undo the stored key if that fails, so the two stay in step.
+        if let Err(e) = vault().set_hello(true, passphrase, Some(arr)) {
+            let _ = run_helper(&["bio-remove"], None);
+            return Err(e);
+        }
+        Ok(())
+    } else {
+        vault().set_hello(false, None, None)?;
+        let _ = run_helper(&["bio-remove"], None);
+        Ok(())
+    }
+}
+
+/// Unlocks the vault with Touch ID (prompts the gesture).
+pub(crate) fn unlock_hello() -> Result<()> {
+    use base64::Engine;
+    let (code, out) = run_helper(&["bio-get", "unlock your Keylo vault"], None)?;
+    match code {
+        0 => {
+            let bytes = Zeroizing::new(
+                base64::engine::general_purpose::STANDARD
+                    .decode(out.trim())
+                    .map_err(|_| Error::msg("Touch ID returned an unreadable key."))?,
+            );
+            let arr: &[u8; 32] = bytes.as_slice().try_into().map_err(|_| Error::msg("Touch ID returned an unexpected key."))?;
+            vault().unlock_hello(arr)
+        }
+        1 => bail!("Touch ID was cancelled."),
+        2 => bail!("Touch ID unlock isn't set up on this Mac (no stored key or biometrics)."),
+        _ => bail!("Touch ID unlock failed{}.", if out.is_empty() { String::new() } else { format!(": {out}") }),
+    }
+}
+
 // ---------------------------------------------------------------------------- keylo-mac
 
 /// keylo-mac, next to this program (or, in the app bundle, next to keylow in Contents/MacOS).

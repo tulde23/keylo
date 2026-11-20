@@ -209,6 +209,13 @@ export default function SettingsView(props: {
             ))}
           </ul>
         )}
+        <p className="notice small-text" style={{ marginTop: 14 }}>
+          <strong>When can an agent use its key?</strong> Without a master passphrase, the vault opens with your {info.platform} account,
+          so an agent's keys always work — no action from you. <strong>With a master passphrase set</strong> (Settings → General),
+          an agent can use secrets only while the vault is unlocked: after you unlock it once it stays open for about 15 minutes,
+          shared with <code>keylo</code> and <code>keylo mcp</code>, and <code>keylo lock</code> ends it. {info.verifierName} unlock is
+          only a convenience for unlocking — it doesn't change what an agent can reach, and an access key never needs {info.verifierName}.
+        </p>
       </section>
       )}
 
