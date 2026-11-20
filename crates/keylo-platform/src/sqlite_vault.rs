@@ -857,6 +857,35 @@ fn derive_kek(passphrase: &[u8], kdf: &Kdf) -> Result<Zeroizing<Vec<u8>>> {
     Ok(out)
 }
 
+/// Moves every secret named `prefix`… from `legacy` into `vault`: imports them in one transaction
+/// (keeping a newer vault copy), reads each back, and only then deletes the original — so nothing is
+/// lost if it's interrupted. For moving an earlier store (Credential Manager, the Keychain) in.
+#[cfg_attr(windows, allow(dead_code))]
+pub(crate) fn absorb(vault: &SqliteVault, legacy: &dyn CredentialStore, prefix: &str) -> std::result::Result<(), String> {
+    let old = legacy
+        .enumerate(prefix)
+        .map_err(|e| format!("Couldn't read your old secrets to move them into Keylo's vault: {e}"))?;
+    if old.is_empty() {
+        return Ok(());
+    }
+    vault.import(&old).map_err(|e| format!("Couldn't move your secrets into Keylo's vault: {e}"))?;
+    for c in &old {
+        let copied = matches!(vault.read(&c.target), Ok(Some(v)) if v.last_written > c.last_written || same(&v, c));
+        if copied {
+            let _ = legacy.delete(&c.target);
+        }
+    }
+    Ok(())
+}
+
+#[cfg_attr(windows, allow(dead_code))]
+fn same(a: &RawCredential, b: &RawCredential) -> bool {
+    let attrs = |c: &RawCredential| {
+        c.attributes.iter().filter(|(_, v)| !v.is_empty()).map(|(k, v)| (k.clone(), v.clone())).collect::<BTreeMap<_, _>>()
+    };
+    a.blob.as_slice() == b.blob.as_slice() && a.user_name == b.user_name && a.comment == b.comment && attrs(a) == attrs(b)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1083,6 +1112,57 @@ mod tests {
         byp.unlock(PASS).unwrap();
         byp.set_passphrase(Some(PASS), None).unwrap();
         assert!(!byp.has_hello().unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn absorb_moves_secrets_from_an_old_store_and_empties_it() {
+        struct Legacy {
+            items: Mutex<Vec<RawCredential>>,
+        }
+        impl CredentialStore for Legacy {
+            fn max_blob_bytes(&self) -> usize {
+                16 * 1024
+            }
+            fn max_attribute_bytes(&self) -> usize {
+                1024
+            }
+            fn max_attributes(&self) -> usize {
+                64
+            }
+            fn read(&self, target: &str) -> Result<Option<RawCredential>> {
+                Ok(self.items.lock().unwrap().iter().find(|c| c.target.eq_ignore_ascii_case(target)).cloned())
+            }
+            fn enumerate(&self, prefix: &str) -> Result<Vec<RawCredential>> {
+                let p = prefix.to_lowercase();
+                Ok(self.items.lock().unwrap().iter().filter(|c| c.target.to_lowercase().starts_with(&p)).cloned().collect())
+            }
+            fn write(&self, _t: &str, _b: &[u8], _u: Option<&str>, _c: Option<&str>, _a: &BTreeMap<String, String>) -> Result<()> {
+                Ok(())
+            }
+            fn delete(&self, target: &str) -> Result<bool> {
+                let mut v = self.items.lock().unwrap();
+                let before = v.len();
+                v.retain(|c| !c.target.eq_ignore_ascii_case(target));
+                Ok(v.len() != before)
+            }
+        }
+        let (dir, vault) = temp("absorb");
+        let cred = |t: &str, val: &[u8]| RawCredential {
+            target: t.into(),
+            user_name: Some("bob".into()),
+            comment: None,
+            last_written: Utc::now(),
+            blob: Zeroizing::new(inline(val)),
+            attributes: attrs("dev"),
+        };
+        let legacy = Legacy { items: Mutex::new(vec![cred("Keylo:a", b"one"), cred("Keylo:b", b"two")]) };
+        super::absorb(&vault, &legacy, "Keylo:").unwrap();
+        // The vault now has them (and read is case-insensitive)...
+        assert_eq!(vault.read("Keylo:a").unwrap().unwrap().blob.as_slice(), inline(b"one").as_slice());
+        assert_eq!(vault.read("keylo:B").unwrap().unwrap().user_name.as_deref(), Some("bob"));
+        // ...and the old store has been emptied.
+        assert!(legacy.items.lock().unwrap().is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

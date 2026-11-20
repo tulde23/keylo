@@ -7,28 +7,37 @@ mod keychain;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 
 use keylo_core::platform::{
-    AncestorProcess, CredentialStore, DataProtector, Platform, ProcessAncestry, SecureClipboard, UserVerifier, VerificationResult,
+    AncestorProcess, CredentialDetails, CredentialStore, DataProtector, Platform, ProcessAncestry, RawCredential,
+    SecureClipboard, UserVerifier, VerificationResult,
 };
-use keylo_core::{bail, Result};
+use keylo_core::{bail, paths, Error, Result};
 use zeroize::Zeroizing;
 
+use crate::sqlite_vault::{OsKey, SqliteVault};
 use crate::unix::{self, AesKeyProtector};
 use keychain::KeychainStore;
 
+/// The Keychain scope: KEYLO_KEYCHAIN (a throwaway keychain for tests, or an SSH session where the
+/// login keychain is locked), else the login keychain.
+fn keychain_path() -> Option<String> {
+    std::env::var("KEYLO_KEYCHAIN").ok().filter(|p| !p.is_empty())
+}
+
 pub struct MacPlatform {
-    credentials: KeychainStore,
+    credentials: MacVaultStore,
     protector: AesKeyProtector,
 }
 
 impl MacPlatform {
     pub fn new() -> Self {
-        let path = std::env::var("KEYLO_KEYCHAIN").ok();
-        // The master key sits under its own service so it never shows up among secrets.
-        let internal = KeychainStore::new(&format!("{}.Internal", keychain::DEFAULT_SERVICE), path.as_deref());
+        // The master key sits under its own service so it never shows up among secrets. It seals local
+        // files (large values, the session) and wraps the vault key.
+        let internal = KeychainStore::new(&format!("{}.Internal", keychain::DEFAULT_SERVICE), keychain_path().as_deref());
         let protector = AesKeyProtector::new(move || master_key(&internal));
-        MacPlatform { credentials: KeychainStore::new(keychain::DEFAULT_SERVICE, path.as_deref()), protector }
+        MacPlatform { credentials: MacVaultStore { vault: vault(), moved: Mutex::new(false) }, protector }
     }
 }
 
@@ -66,7 +75,7 @@ impl Platform for MacPlatform {
         "Touch ID".into()
     }
     fn store_name(&self) -> String {
-        "macOS Keychain".into()
+        "Keylo's vault".into()
     }
     fn file_protection_name(&self) -> String {
         "Keychain key".into()
@@ -81,6 +90,137 @@ impl Platform for MacPlatform {
 
 pub(crate) fn install() {
     keylo_core::platform::install(Box::new(MacPlatform::new()));
+}
+
+// ---------------------------------------------------------------------------- the SQLite vault
+
+const VAULT_KEY_ENTROPY: &[u8] = b"keylo-vault-key:v1";
+
+/// Protects the vault key with Keylo's Keychain-stored master key — the same key that seals local
+/// files — so the vault is bound to this user's login keychain, as DPAPI binds it to the Windows
+/// account on Windows.
+struct KeychainKey;
+
+impl KeychainKey {
+    fn master() -> Result<Zeroizing<Vec<u8>>> {
+        let store = KeychainStore::new(&format!("{}.Internal", keychain::DEFAULT_SERVICE), keychain_path().as_deref());
+        master_key(&store)
+    }
+}
+
+impl OsKey for KeychainKey {
+    fn kind(&self) -> &'static str {
+        "keychain"
+    }
+    fn protect(&self, key: &[u8]) -> Result<Vec<u8>> {
+        crate::crypto::seal(&Self::master()?, key, VAULT_KEY_ENTROPY)
+    }
+    fn unprotect(&self, stored: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
+        crate::crypto::open(&Self::master()?, stored, VAULT_KEY_ENTROPY)
+            .ok_or_else(|| Error::msg("Couldn't open Keylo's vault: its key didn't unseal (wrong Keychain?)."))
+    }
+}
+
+/// The one vault for this process, so the platform store and the passphrase/lock commands share it.
+fn vault() -> &'static SqliteVault {
+    static VAULT: OnceLock<&'static SqliteVault> = OnceLock::new();
+    VAULT.get_or_init(|| Box::leak(Box::new(SqliteVault::new(paths::data_dir().join("keylo.db"), Box::new(KeychainKey)))))
+}
+
+/// Keylo's vault, after moving in any secrets an earlier Keylo kept in the login Keychain.
+struct MacVaultStore {
+    vault: &'static SqliteVault,
+    /// Whether the move has been done (or wasn't needed). A failed move is tried again next time.
+    moved: Mutex<bool>,
+}
+
+/// Move the Keychain's secrets into the vault only when it's the real setup, or a test that scopes its
+/// own keychain or prefix — never drag the real login keychain into a throwaway KEYLO_HOME vault.
+fn migrates() -> bool {
+    let set = |v: &str| std::env::var(v).is_ok_and(|s| !s.is_empty());
+    !set("KEYLO_HOME") || set("KEYLO_KEYCHAIN") || set("KEYLO_PREFIX")
+}
+
+impl MacVaultStore {
+    fn ready(&self) -> Result<&SqliteVault> {
+        let mut moved = self.moved.lock().unwrap();
+        if !*moved {
+            if migrates() {
+                let legacy = KeychainStore::new(keychain::DEFAULT_SERVICE, keychain_path().as_deref());
+                crate::sqlite_vault::absorb(self.vault, &legacy, &paths::credential_prefix()).map_err(Error::msg)?;
+            }
+            *moved = true;
+        }
+        Ok(self.vault)
+    }
+}
+
+impl CredentialStore for MacVaultStore {
+    fn max_blob_bytes(&self) -> usize {
+        self.vault.max_blob_bytes()
+    }
+    fn max_attribute_bytes(&self) -> usize {
+        self.vault.max_attribute_bytes()
+    }
+    fn max_attributes(&self) -> usize {
+        self.vault.max_attributes()
+    }
+    fn read(&self, target: &str) -> Result<Option<RawCredential>> {
+        self.ready()?.read(target)
+    }
+    fn enumerate(&self, prefix: &str) -> Result<Vec<RawCredential>> {
+        self.ready()?.enumerate(prefix)
+    }
+    fn write(&self, target: &str, blob: &[u8], user_name: Option<&str>, comment: Option<&str>, attributes: &BTreeMap<String, String>) -> Result<()> {
+        self.ready()?.write(target, blob, user_name, comment, attributes)
+    }
+    fn delete(&self, target: &str) -> Result<bool> {
+        self.ready()?.delete(target)
+    }
+    fn enumerate_details(&self, prefix: &str) -> Result<Vec<CredentialDetails>> {
+        self.ready()?.enumerate_details(prefix)
+    }
+    fn read_details(&self, target: &str) -> Result<Option<CredentialDetails>> {
+        self.ready()?.read_details(target)
+    }
+    fn update_details(&self, target: &str, user_name: Option<&str>, comment: Option<&str>, attributes: &BTreeMap<String, String>) -> Result<bool> {
+        self.ready()?.update_details(target, user_name, comment, attributes)
+    }
+}
+
+/// `keylo lock`: ends the session and locks a master-passphrase vault.
+pub(crate) fn lock() {
+    vault().lock();
+}
+
+/// Whether a master passphrase is set on the vault.
+pub(crate) fn has_passphrase() -> Result<bool> {
+    vault().has_passphrase()
+}
+
+/// Unlocks the vault: `Some` with the passphrase, `None` to try quietly (session or KEYLO_PASSPHRASE).
+pub(crate) fn unlock(passphrase: Option<&str>) -> Result<bool> {
+    match passphrase {
+        Some(p) => vault().unlock(p).map(|()| true),
+        None => vault().try_unlock_quietly(),
+    }
+}
+
+/// Sets, changes or removes the vault's master passphrase.
+pub(crate) fn set_passphrase(current: Option<&str>, new: Option<&str>) -> Result<()> {
+    vault().set_passphrase(current, new)
+}
+
+/// Where secrets are kept, with its state, for `keylo status`.
+pub(crate) fn status() -> Option<String> {
+    let v = vault();
+    let has = v.has_passphrase().unwrap_or(false);
+    let locked = has && !v.try_unlock_quietly().unwrap_or(true);
+    Some(match (has, locked) {
+        (false, _) => "Keylo's vault".into(),
+        (true, false) => "Keylo's vault (master passphrase, unlocked)".into(),
+        (true, true) => "Keylo's vault (master passphrase, locked)".into(),
+    })
 }
 
 // ---------------------------------------------------------------------------- keylo-mac
