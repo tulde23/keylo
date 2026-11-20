@@ -437,6 +437,23 @@ select {
 .lock-card .button { margin-top: 10px; }
 .lock-footer { margin-top: 24px !important; font-size: 12px; color: var(--muted); }
 
+/* The "opening your vault" splash: a breathing logo, expanding rings, a sweeping bar. Themed via --accent. */
+.vault-loading .button { margin-top: 0; }
+.vault-loading-logo { position: relative; width: 104px; height: 104px; margin: 6px auto 18px; display: grid; place-items: center; }
+.vault-loading-logo img { width: 60px; height: 60px; z-index: 1; animation: vault-breathe 2.4s ease-in-out infinite; filter: drop-shadow(0 0 16px var(--accent-soft)); }
+.vault-loading-ring { position: absolute; width: 104px; height: 104px; border-radius: 50%; border: 2px solid var(--accent); opacity: 0; animation: vault-ring 2.4s ease-out infinite; }
+.vault-loading-ring:nth-child(2) { animation-delay: 1.2s; }
+.vault-loading h1 { margin: 0 0 2px; }
+.vault-loading-bar { position: relative; height: 4px; width: 220px; max-width: 72%; margin: 20px auto 0; border-radius: 999px; background: var(--row-hover); overflow: hidden; }
+.vault-loading-bar span { position: absolute; top: 0; left: -45%; height: 100%; width: 45%; border-radius: 999px; background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: vault-sweep 1.3s ease-in-out infinite; }
+@keyframes vault-breathe { 0%, 100% { transform: scale(1); opacity: 0.9; } 50% { transform: scale(1.06); opacity: 1; } }
+@keyframes vault-ring { 0% { transform: scale(0.52); opacity: 0.5; } 100% { transform: scale(1.3); opacity: 0; } }
+@keyframes vault-sweep { 0% { left: -45%; } 100% { left: 100%; } }
+@media (prefers-reduced-motion: reduce) {
+  .vault-loading-logo img, .vault-loading-bar span { animation: none; }
+  .vault-loading-ring { display: none; }
+}
+
 /* ------------------------------------------------------------------ approval window */
 .approve { height: 100%; display: flex; flex-direction: column; gap: 12px; padding: 20px 22px; background: var(--surface); }
 .approve-header { display: flex; gap: 12px; align-items: center; color: #d97706; }
