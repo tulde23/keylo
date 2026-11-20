@@ -3,8 +3,9 @@
 //! once at startup.
 
 mod crypto;
-// The SQLite vault is shared by Windows and macOS (Linux still uses the keyring / vault file).
-#[cfg(any(windows, target_os = "macos"))]
+// The SQLite vault: Windows and macOS always, Linux for the desktop-keyring store (the headless file
+// vault stays in linux/vault.rs).
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 mod sqlite_vault;
 #[cfg(windows)]
 mod hello_key;
