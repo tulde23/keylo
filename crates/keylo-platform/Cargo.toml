@@ -51,6 +51,8 @@ features = [
   "Win32_Networking_WindowsWebServices",
   "Win32_System_WinRT",
   "Win32_UI_WindowsAndMessaging",
+  "Security_Credentials",
   "Security_Credentials_UI",
+  "Storage_Streams",
   "Foundation",
 ]

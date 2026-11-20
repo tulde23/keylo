@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArchiveRestore, FileDown, FileUp, HardDriveDownload } from "lucide-react";
+import { ArchiveRestore, Eye, EyeOff, FileDown, FileUp, HardDriveDownload, Wand2 } from "lucide-react";
 import { api, type BackupPreview, type CategorySummary, type ExportFormat, type PasswordExport } from "../api";
 import PasswordImportDialog from "./PasswordImportDialog";
 import type { Run } from "../App";
@@ -70,13 +70,19 @@ export default function BackupSection({ run, verifierName, categories, onRestore
   );
 }
 
-function BackupDialog({ path, run, onClose }: { path: string; run: Run; onClose: () => void }) {
+export function BackupDialog({ path, run, onClose }: { path: string; run: Run; onClose: () => void }) {
   const toast = useToast();
   const [password, setPassword] = useState("");
   const [again, setAgain] = useState("");
   const [busy, setBusy] = useState(false);
+  const [show, setShow] = useState(false);
   const short = password.length > 0 && password.length < 10;
   const mismatch = again.length > 0 && again !== password;
+
+  const generate = async () => {
+    const p = await run(() => api.generatePassphrase(6));
+    if (p) { setPassword(p); setAgain(p); setShow(true); }
+  };
 
   const create = async () => {
     setBusy(true);
@@ -100,9 +106,13 @@ function BackupDialog({ path, run, onClose }: { path: string; run: Run; onClose:
         <p className="mono small-text">{path}</p>
         <label className="form-row">
           <span>Backup password</span>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus autoComplete="new-password" aria-label="Backup password" />
+          <div style={{ display: "flex", gap: 6 }}>
+            <input style={{ flex: 1 }} type={show ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} autoFocus autoComplete="new-password" aria-label="Backup password" />
+            <button type="button" className="icon-button" onClick={() => setShow(!show)} title={show ? "Hide" : "Show"} aria-label={show ? "Hide" : "Show"}>{show ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+            <button type="button" className="icon-button" onClick={generate} title="Generate a memorable passphrase" aria-label="Generate a memorable passphrase"><Wand2 size={16} /></button>
+          </div>
         </label>
-        {short && <small className="muted">At least 10 characters; a passphrase of a few words is ideal.</small>}
+        {short && <small className="muted">At least 10 characters; a passphrase of a few words is ideal — or use the wand for a strong, memorable one.</small>}
         <label className="form-row">
           <span>Again</span>
           <input type="password" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="new-password" aria-label="Confirm backup password" />

@@ -48,6 +48,18 @@ having Keylo run commands with them, and never **read** them. This is a summary;
   wrapped by an Argon2id key from the passphrase, so a copied disk or same-user code can't open the
   vault while it's locked, and can't open it at all without the passphrase. During an unlocked session
   the key is cached (OS-sealed) so agents can use it, as on Linux; `keylo lock` ends that.
+- **Unlocking with Windows Hello** (opt-in, needs a master passphrase first): the vault key is wrapped
+  a second way, under a key that a Windows Hello gesture releases from a TPM-bound credential
+  (`KeyCredentialManager`), so you unlock with a PIN or fingerprint instead of typing the passphrase.
+  The private key never leaves the TPM and is useless without the gesture, so this wrap can't be undone
+  at rest. It never replaces the passphrase: the passphrase stays your recovery key, so a reset PIN, a
+  cleared TPM or a new PC loses only the Hello shortcut, never the vault. Removing the passphrase
+  removes the Hello wrap too.
+- **Recovering the vault.** The vault file is tied to this OS account (DPAPI on Windows), so copying it
+  to another machine won't open it — even with the passphrase. The portable recovery artifact is an
+  **encrypted backup** (`.keylo`, AES-256-GCM, PBKDF2-SHA256), which opens on any PC or Mac with its
+  password; keep one, and its password, somewhere other than Keylo. Synced installs can also recover
+  from another device with the join code.
 - **An agent, or any program, with unrestricted shell access as you.** Keylo's protection holds for
   agents that use secrets through Keylo (the MCP server or `keylo run`). It doesn't sandbox the agent.
   A program running as you can read the same store Keylo uses:

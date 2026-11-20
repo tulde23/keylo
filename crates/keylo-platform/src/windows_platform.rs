@@ -63,6 +63,32 @@ pub(crate) fn set_passphrase(current: Option<&str>, new: Option<&str>) -> Result
     v.set_passphrase(current, new)
 }
 
+/// Whether "unlock with Windows Hello" is set up for the vault.
+pub(crate) fn has_hello() -> Result<bool> {
+    match VAULT.get() {
+        Some(v) => v.has_hello(),
+        None => Ok(false),
+    }
+}
+
+/// Turns "unlock with Windows Hello" on (asks for the Hello gesture to bind the key) or off.
+pub(crate) fn set_hello(enable: bool, passphrase: Option<&str>) -> Result<()> {
+    let &v = VAULT.get().ok_or_else(|| Error::msg("Keylo's vault isn't ready."))?;
+    if enable {
+        let kek = crate::hello_key::derive()?;
+        v.set_hello(true, passphrase, Some(&kek))
+    } else {
+        v.set_hello(false, None, None)
+    }
+}
+
+/// Unlocks the vault with Windows Hello (asks for the gesture). Caches the session for the CLI/MCP.
+pub(crate) fn unlock_hello() -> Result<()> {
+    let &v = VAULT.get().ok_or_else(|| Error::msg("Keylo's vault isn't ready."))?;
+    let kek = crate::hello_key::derive()?;
+    v.unlock_hello(&kek)
+}
+
 pub(crate) fn status() -> Option<String> {
     let &v = VAULT.get()?;
     let locked = v.has_passphrase().unwrap_or(false) && !v.try_unlock_quietly().unwrap_or(true);

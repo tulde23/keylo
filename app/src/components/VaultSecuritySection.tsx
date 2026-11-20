@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { KeyRound, ShieldPlus, Trash2 } from "lucide-react";
+import { Eye, EyeOff, KeyRound, LifeBuoy, ScanFace, ShieldPlus, Trash2, Wand2, X } from "lucide-react";
 import { api } from "../api";
 import type { Run } from "../App";
+import { BackupDialog } from "./BackupSection";
 import { Modal, useToast } from "./ui";
 
 /**
@@ -12,9 +13,38 @@ import { Modal, useToast } from "./ui";
 export default function VaultSecuritySection({ run, platform }: { run: Run; platform: string }) {
   const [has, setHas] = useState<boolean | null>(null);
   const [dialog, setDialog] = useState<"set" | "change" | "remove" | null>(null);
+  const [helloOk, setHelloOk] = useState(false);
+  const [helloOn, setHelloOn] = useState(false);
+  const [helloBusy, setHelloBusy] = useState(false);
+  const [nudge, setNudge] = useState(false);
+  const [backupPath, setBackupPath] = useState<string | null>(null);
+  const toast = useToast();
 
-  const refresh = () => run(() => api.vaultHasPassphrase()).then((h) => h !== undefined && setHas(h));
+  const refresh = () => {
+    run(() => api.vaultHasPassphrase()).then((h) => h !== undefined && setHas(h));
+    api.helloAvailable().then(setHelloOk).catch(() => setHelloOk(false));
+    api.vaultHasHello().then(setHelloOn).catch(() => setHelloOn(false));
+  };
   useEffect(() => { refresh(); }, []);
+
+  const toggleHello = async () => {
+    setHelloBusy(true);
+    const turningOn = !helloOn;
+    const ok = await run(() => api.setVaultHello(turningOn, null));
+    setHelloBusy(false);
+    if (ok !== undefined) {
+      toast(turningOn ? "Windows Hello unlock turned on." : "Windows Hello unlock turned off.");
+      setHelloOn(turningOn);
+      if (turningOn) setNudge(true);
+    }
+  };
+
+  // Offer a recovery backup after a strong factor is set up: it's the only portable way back in if the
+  // passphrase is forgotten or this PC is lost (the vault file itself is tied to this account).
+  const startBackup = async () => {
+    const path = await run(() => api.pickBackup(true));
+    if (path) setBackupPath(path);
+  };
 
   if (platform !== "Windows" || has === null) return null;
 
@@ -40,17 +70,56 @@ export default function VaultSecuritySection({ run, platform }: { run: Run; plat
           <button className="button primary" onClick={() => setDialog("set")}><ShieldPlus size={16} /> Set a master passphrase…</button>
         )}
       </div>
-      {dialog && <PassphraseDialog mode={dialog} run={run} onClose={() => setDialog(null)} onDone={() => { setDialog(null); refresh(); }} />}
+      {has && helloOk && (
+        <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid var(--border, rgba(128,128,128,0.25))" }}>
+          <h3 style={{ display: "flex", alignItems: "center", gap: 6, margin: "0 0 4px" }}>
+            <ScanFace size={16} /> Unlock with Windows Hello
+          </h3>
+          <p className="muted">
+            {helloOn
+              ? "Open the vault with your PIN or fingerprint instead of typing the passphrase. Your passphrase still works and stays your recovery key."
+              : "Skip typing the passphrase: unlock with your PIN or fingerprint. The key is bound to this PC's TPM; your passphrase remains the way to recover if the Hello key is ever lost."}
+          </p>
+          <div className="form-actions start">
+            <button className={`button ${helloOn ? "" : "primary"}`} disabled={helloBusy} onClick={toggleHello}>
+              {helloBusy ? "Working…" : helloOn ? "Turn off Windows Hello unlock" : "Turn on…"}
+            </button>
+          </div>
+        </div>
+      )}
+      {nudge && (
+        <div className="notice" style={{ marginTop: 16, display: "flex", gap: 10, alignItems: "flex-start" }}>
+          <LifeBuoy size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ flex: 1 }}>
+            <strong>Make a recovery backup — your emergency kit.</strong>
+            <p className="muted small-text" style={{ margin: "4px 0 8px" }}>
+              Your vault is tied to this {platform} account, so the file can't be opened on another PC. If you forget the
+              passphrase or lose this machine, a password-protected backup kept somewhere else (not Keylo) is the only way back in.
+            </p>
+            <button className="button primary" onClick={startBackup}><LifeBuoy size={16} /> Create recovery backup…</button>
+          </div>
+          <button className="icon-button" aria-label="Dismiss" onClick={() => setNudge(false)}><X size={16} /></button>
+        </div>
+      )}
+      {dialog && <PassphraseDialog mode={dialog} run={run} onClose={() => setDialog(null)}
+        onDone={(mode) => { setDialog(null); refresh(); if (mode === "set") setNudge(true); }} />}
+      {backupPath && <BackupDialog path={backupPath} run={run} onClose={() => { setBackupPath(null); setNudge(false); }} />}
     </section>
   );
 }
 
-function PassphraseDialog({ mode, run, onClose, onDone }: { mode: "set" | "change" | "remove"; run: Run; onClose: () => void; onDone: () => void }) {
+function PassphraseDialog({ mode, run, onClose, onDone }: { mode: "set" | "change" | "remove"; run: Run; onClose: () => void; onDone: (mode: "set" | "change" | "remove") => void }) {
   const toast = useToast();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [again, setAgain] = useState("");
   const [busy, setBusy] = useState(false);
+  const [show, setShow] = useState(false);
+
+  const generate = async () => {
+    const p = await run(() => api.generatePassphrase(6));
+    if (p) { setNext(p); setAgain(p); setShow(true); }
+  };
 
   const needsCurrent = mode !== "set";
   const needsNew = mode !== "remove";
@@ -64,7 +133,7 @@ function PassphraseDialog({ mode, run, onClose, onDone }: { mode: "set" | "chang
     setBusy(false);
     if (ok !== undefined) {
       toast(mode === "set" ? "Master passphrase set." : mode === "change" ? "Master passphrase changed." : "Master passphrase removed.");
-      onDone();
+      onDone(mode);
     }
   };
 
@@ -88,9 +157,13 @@ function PassphraseDialog({ mode, run, onClose, onDone }: { mode: "set" | "chang
           <>
             <label className="form-row">
               <span>New passphrase</span>
-              <input type="password" value={next} onChange={(e) => setNext(e.target.value)} autoFocus={!needsCurrent} aria-label="New passphrase" autoComplete="new-password" />
+              <div style={{ display: "flex", gap: 6 }}>
+                <input style={{ flex: 1 }} type={show ? "text" : "password"} value={next} onChange={(e) => setNext(e.target.value)} autoFocus={!needsCurrent} aria-label="New passphrase" autoComplete="new-password" />
+                <button type="button" className="icon-button" onClick={() => setShow(!show)} title={show ? "Hide" : "Show"} aria-label={show ? "Hide" : "Show"}>{show ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+                <button type="button" className="icon-button" onClick={generate} title="Generate a memorable passphrase" aria-label="Generate a memorable passphrase"><Wand2 size={16} /></button>
+              </div>
             </label>
-            {shortNew && <small className="muted">At least 10 characters; a passphrase of a few words is ideal.</small>}
+            {shortNew && <small className="muted">At least 10 characters; a passphrase of a few words is ideal — or use the wand for a strong, memorable one.</small>}
             <label className="form-row">
               <span>Again</span>
               <input type="password" value={again} onChange={(e) => setAgain(e.target.value)} aria-label="Confirm new passphrase" autoComplete="new-password" />

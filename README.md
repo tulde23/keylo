@@ -124,7 +124,11 @@ There is no tool that returns a value. An agent can use a secret, but it can't r
   1Password, LastPass, KeePassXC and Apple Passwords, with folders, notes and one-time codes.
 - **Export to another password manager:** a Bitwarden CSV, or the browser format most password
   managers import, so you're never locked in.
-- **Encrypted backups** (AES-256-GCM, password-protected) that restore on any OS.
+- **Protect the vault** with an optional **master passphrase** (Windows), and unlock it with a
+  **Windows Hello** gesture (PIN or fingerprint, bound to this PC's TPM) instead of typing it — the
+  passphrase stays your recovery key. A built-in generator offers a strong, memorable passphrase.
+- **Encrypted backups** (AES-256-GCM, password-protected) that restore on any OS — your portable
+  recovery kit if you forget the passphrase or lose the machine.
 - **Sync between your own devices** through a folder they already share (OneDrive, iCloud Drive,
   Dropbox, Syncthing), end-to-end encrypted, with conflict copies instead of lost edits.
 - **One-time codes** (two-factor, TOTP): store a site's setup key with a login, then show or copy its
