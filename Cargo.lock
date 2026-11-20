@@ -2382,6 +2382,7 @@ name = "keylo-core"
 version = "2.3.0"
 dependencies = [
  "aes-gcm",
+ "argon2",
  "base64 0.22.1",
  "chrono",
  "csv",

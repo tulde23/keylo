@@ -895,10 +895,13 @@ keylo restore ~/keylo-2026-11-17.keylo [--overwrite]
 
 - One `.keylo` file with every secret's value and details, categories (with their icons and colours,
   and empty ones), custom types and uploaded icons.
-- Encrypted with **AES-256-GCM** under a key derived from your password with **PBKDF2-SHA256** (600,000
-  iterations, random salt). The header is authenticated too. Nothing, not even the secret names, is
-  readable without the password, and a wrong password or any change to the file is rejected.
-- Passwords need at least 10 characters. They're asked for on the terminal, or read with
+- Encrypted with **AES-256-GCM** under a key derived from your password with **Argon2id** (memory-hard,
+  random salt), so a stolen backup is far harder to brute-force on GPUs. The header is authenticated
+  too. Nothing, not even the secret names, is readable without the password, and a wrong password or
+  any change to the file is rejected. Backups from older versions (PBKDF2) are still read.
+- Passwords need at least 10 characters and can't be an obvious one (a common password, a keyboard
+  run); there are no upper/digit/symbol rules — length and unpredictability matter more, and the app's
+  generator makes a strong passphrase. They're asked for on the terminal, or read with
   `--password-stdin`, never taken as an argument.
 - Creating a backup always asks for your identity check, because it exports every value.
 - Restoring skips secrets you already have, unless you choose to replace them (`--overwrite`, or the
