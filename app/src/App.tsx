@@ -103,9 +103,19 @@ function Shell() {
   }, [reloadFromOutside]);
 
   // Reload on unlock, and when Settings opens (it counts secrets per type; the CLI may have added some).
-  // The splash stays up until this first load settles (success or caught error), never flashing empty.
+  // The splash stays up until the first load settles AND a short minimum has passed — so it's a
+  // consistent, calm "opening your vault" moment whether the vault loads instantly or is still
+  // migrating after a reinstall. (`active` guards against a lock racing the resolve.)
   useEffect(() => {
-    if (status?.unlocked) run(refresh).then(() => setLoaded(true));
+    if (!status?.unlocked) return;
+    let active = true;
+    const minShow = new Promise<void>((resolve) => setTimeout(resolve, 2000));
+    Promise.all([run(refresh), minShow]).then(() => {
+      if (active) setLoaded(true);
+    });
+    return () => {
+      active = false;
+    };
   }, [status?.unlocked, refresh, run]);
   useEffect(() => {
     if (settingsOpen && status?.unlocked) run(refresh);
