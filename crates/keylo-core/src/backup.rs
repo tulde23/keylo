@@ -2,16 +2,18 @@
 //! keychain).
 //!
 //! File layout (all integers little-endian):
-//!   "KEYLOBK1"  8-byte magic
-//!   version     1 byte (1)
-//!   iterations  4 bytes, PBKDF2-SHA256
+//!   "KEYLOBK1"  8-byte magic (the file signature; the version byte distinguishes the KDF)
+//!   version     1 byte: 2 = Argon2id (current), 1 = PBKDF2-SHA256 (read for old backups)
+//!   KDF params  v2: m, t, p (4 bytes each, Argon2id);  v1: iterations (4 bytes, PBKDF2)
 //!   salt        16 bytes
 //!   nonce       12 bytes
 //!   ciphertext  AES-256-GCM of the gzip-compressed JSON payload
 //!   tag         16 bytes
-//! The header (everything before the ciphertext) is the GCM associated data, so changing the
-//! iteration count or salt is detected rather than silently weakening the file. Nothing about the
-//! secrets, not even their names, is readable without the password.
+//! New backups use Argon2id (memory-hard), so brute-forcing a stolen file on GPUs is far costlier
+//! than the old PBKDF2 format; old files are still readable. The header (everything before the
+//! ciphertext) is the GCM associated data, so changing a KDF parameter or the salt is detected rather
+//! than silently weakening the file. Nothing about the secrets, not even their names, is readable
+//! without the password.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -38,13 +40,24 @@ pub const MIN_PASSWORD_LENGTH: usize = 10;
 pub const DEFAULT_ITERATIONS: u32 = 600_000;
 pub const FILE_EXTENSION: &str = "keylo";
 
-const MAGIC: &[u8; 8] = b"KEYLOBK1";
-const VERSION: u8 = 1;
+const MAGIC: &[u8; 8] = b"KEYLOBK1"; // the file signature (shared by both formats; the version byte follows)
+const V_PBKDF2: u8 = 1; // KEYLOBK1: magic | 1 | iterations(u32) | salt | nonce | ciphertext+tag
+const V_ARGON2: u8 = 2; // current: magic | 2 | m(u32) | t(u32) | p(u32) | salt | nonce | ciphertext+tag
 const SALT: usize = 16;
 const NONCE: usize = 12;
 const TAG: usize = 16;
-const HEADER: usize = 8 + 1 + 4 + SALT + NONCE;
+const HEADER_V1: usize = 8 + 1 + 4 + SALT + NONCE;
+const HEADER_V2: usize = 8 + 1 + 4 + 4 + 4 + SALT + NONCE;
 const MAX_ITERATIONS: u32 = 10_000_000;
+// Argon2id parameters for new backups (OWASP baseline, same as the vault's passphrase KDF). Memory-
+// hard, so a stolen backup is far harder to brute-force on GPUs than the old PBKDF2 format.
+const ARGON_M: u32 = 19_456; // 19 MiB
+const ARGON_T: u32 = 2;
+const ARGON_P: u32 = 1;
+// Bounds on a file's Argon2 header, so a hostile backup can't force a huge allocation.
+const ARGON_MAX_M: u32 = 4 * 1024 * 1024; // 4 GiB
+const ARGON_MAX_T: u32 = 100;
+const ARGON_MAX_P: u32 = 64;
 
 const WRONG_PASSWORD: &str = "Wrong password, or the backup file is damaged.";
 
@@ -106,9 +119,47 @@ pub struct RestoreResult {
     pub errors: Vec<String>,
 }
 
+/// Rejects passwords that are too short or too easy to guess. No composition rules (upper/digit/
+/// symbol) — NIST SP 800-63B advises against them; length and unpredictability matter more, and the
+/// generator makes a strong passphrase in one click.
 pub fn check_password(password: &str) -> Option<String> {
-    (password.chars().count() < MIN_PASSWORD_LENGTH)
-        .then(|| format!("Use at least {MIN_PASSWORD_LENGTH} characters — a passphrase of a few words is ideal."))
+    if password.chars().count() < MIN_PASSWORD_LENGTH {
+        return Some(format!("Use at least {MIN_PASSWORD_LENGTH} characters — a passphrase of a few words is ideal."));
+    }
+    if is_weak(password) {
+        return Some("That password is too easy to guess. Use a passphrase of a few words, or the generator.".into());
+    }
+    None
+}
+
+/// Obviously weak choices: one repeated character, a keyboard/number run, or a common password
+/// (possibly with trailing digits). Not an exhaustive breach check — it blocks the worst, cheaply.
+fn is_weak(password: &str) -> bool {
+    let lower = password.to_lowercase();
+    // All one character, e.g. "aaaaaaaaaa".
+    if lower.chars().next().is_some_and(|first| lower.chars().all(|c| c == first)) {
+        return true;
+    }
+    // Just the alphanumerics, and the same with any trailing digits dropped ("password123" → "password").
+    let core: String = lower.chars().filter(|c| c.is_alphanumeric()).collect();
+    let base = core.trim_end_matches(|c: char| c.is_ascii_digit());
+    const COMMON: &[&str] = &[
+        "password", "passw0rd", "qwerty", "iloveyou", "admin", "welcome", "letmein", "monkey", "dragon",
+        "abc123", "football", "baseball", "sunshine", "princess", "trustno1", "keylo", "secret", "changeme",
+        "qwertyuiop", "asdfghjkl", "zxcvbnm",
+    ];
+    if COMMON.iter().any(|c| core == *c || base == *c) {
+        return true;
+    }
+    // A run along one row of keys or the digits, e.g. "12345678", "0987654321", "qwertyui".
+    if core.len() >= 6 {
+        const RUNS: &[&str] = &["01234567890", "qwertyuiopasdfghjklzxcvbnm", "abcdefghijklmnopqrstuvwxyz"];
+        let reversed: String = core.chars().rev().collect();
+        if RUNS.iter().any(|run| run.contains(core.as_str()) || run.contains(reversed.as_str())) {
+            return true;
+        }
+    }
+    false
 }
 
 /// "backup" → "backup.keylo"; a path with an extension is kept.
@@ -160,11 +211,12 @@ pub fn write(contents: &BackupContents, path: &Path, password: &str, iterations:
     if let Some(problem) = check_password(password) {
         return Err(Error::Keylo(problem));
     }
+    let _ = iterations; // kept for API compatibility; the current format (Argon2id) sets its own cost.
     let json = Zeroizing::new(serde_json::to_vec(contents).map_err(|e| Error::msg(e.to_string()))?);
     let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
     gz.write_all(&json)?;
     let compressed = Zeroizing::new(gz.finish()?);
-    let file = encrypt(&compressed, password, iterations)?;
+    let file = encrypt(&compressed, password)?;
 
     let temp = path.with_extension(format!("{}.tmp", path.extension().and_then(|e| e.to_str()).unwrap_or("")));
     fs::write(&temp, &file)?;
@@ -182,23 +234,40 @@ pub fn write(contents: &BackupContents, path: &Path, password: &str, iterations:
 pub fn read(path: &Path, password: &str) -> Result<BackupContents> {
     let file = fs::read(path)?;
     let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-    if file.len() < HEADER + TAG || &file[..8] != MAGIC {
+    if file.len() < 9 || &file[..8] != MAGIC {
         bail!("'{name}' isn't a Keylo backup.");
     }
-    if file[8] != VERSION {
-        bail!("This backup was made by a newer version of Keylo (format {}).", file[8]);
-    }
-    let iterations = u32::from_le_bytes(file[9..13].try_into().unwrap());
-    if !(1..=MAX_ITERATIONS).contains(&iterations) {
-        bail!("{WRONG_PASSWORD}");
-    }
-    let salt = &file[13..13 + SALT];
-    let nonce = &file[13 + SALT..HEADER];
-    let key = derive_key(password, salt, iterations);
+    // The version byte picks the KDF and header length; the whole header is the GCM associated data.
+    let (key, header_len) = match file[8] {
+        V_PBKDF2 => {
+            if file.len() < HEADER_V1 + TAG {
+                bail!("{WRONG_PASSWORD}");
+            }
+            let iterations = u32::from_le_bytes(file[9..13].try_into().unwrap());
+            if !(1..=MAX_ITERATIONS).contains(&iterations) {
+                bail!("{WRONG_PASSWORD}");
+            }
+            (derive_pbkdf2(password, &file[13..13 + SALT], iterations), HEADER_V1)
+        }
+        V_ARGON2 => {
+            if file.len() < HEADER_V2 + TAG {
+                bail!("{WRONG_PASSWORD}");
+            }
+            let m = u32::from_le_bytes(file[9..13].try_into().unwrap());
+            let t = u32::from_le_bytes(file[13..17].try_into().unwrap());
+            let p = u32::from_le_bytes(file[17..21].try_into().unwrap());
+            if !(1..=ARGON_MAX_M).contains(&m) || !(1..=ARGON_MAX_T).contains(&t) || !(1..=ARGON_MAX_P).contains(&p) {
+                bail!("{WRONG_PASSWORD}");
+            }
+            (derive_argon2(password, &file[21..21 + SALT], m, t, p)?, HEADER_V2)
+        }
+        v => bail!("This backup was made by a newer version of Keylo (format {v})."),
+    };
+    let nonce = &file[header_len - NONCE..header_len];
     let cipher = Aes256Gcm::new_from_slice(&key[..]).expect("32-byte key");
     let compressed = Zeroizing::new(
         cipher
-            .decrypt(Nonce::from_slice(nonce), AeadPayload { msg: &file[HEADER..], aad: &file[..HEADER] })
+            .decrypt(Nonce::from_slice(nonce), AeadPayload { msg: &file[header_len..], aad: &file[..header_len] })
             .map_err(|_| Error::msg(WRONG_PASSWORD))?,
     );
 
@@ -288,22 +357,36 @@ fn strip_bom(data: &[u8]) -> &[u8] {
     data.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(data)
 }
 
-fn derive_key(password: &str, salt: &[u8], iterations: u32) -> Zeroizing<[u8; 32]> {
+/// PBKDF2-HMAC-SHA256, for reading old (KEYLOBK1) backups.
+fn derive_pbkdf2(password: &str, salt: &[u8], iterations: u32) -> Zeroizing<[u8; 32]> {
     let mut key = Zeroizing::new([0u8; 32]);
     pbkdf2::pbkdf2_hmac::<sha2::Sha256>(password.as_bytes(), salt, iterations, &mut key[..]);
     key
 }
 
-fn encrypt(plaintext: &[u8], password: &str, iterations: u32) -> Result<Vec<u8>> {
-    let mut header = Vec::with_capacity(HEADER);
+/// Argon2id, for current backups: memory-hard, so GPU brute-forcing a stolen file is far costlier.
+fn derive_argon2(password: &str, salt: &[u8], m: u32, t: u32, p: u32) -> Result<Zeroizing<[u8; 32]>> {
+    use argon2::{Algorithm, Argon2, Params, Version};
+    let params = Params::new(m, t, p, Some(32)).map_err(|e| Error::msg(format!("Argon2 parameters: {e}")))?;
+    let mut key = Zeroizing::new([0u8; 32]);
+    Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
+        .hash_password_into(password.as_bytes(), salt, &mut key[..])
+        .map_err(|e| Error::msg(format!("Argon2: {e}")))?;
+    Ok(key)
+}
+
+fn encrypt(plaintext: &[u8], password: &str) -> Result<Vec<u8>> {
+    let mut header = Vec::with_capacity(HEADER_V2);
     header.extend_from_slice(MAGIC);
-    header.push(VERSION);
-    header.extend_from_slice(&iterations.to_le_bytes());
+    header.push(V_ARGON2);
+    header.extend_from_slice(&ARGON_M.to_le_bytes());
+    header.extend_from_slice(&ARGON_T.to_le_bytes());
+    header.extend_from_slice(&ARGON_P.to_le_bytes());
     let mut random = [0u8; SALT + NONCE];
     rand::rngs::OsRng.fill_bytes(&mut random);
     header.extend_from_slice(&random);
 
-    let key = derive_key(password, &random[..SALT], iterations);
+    let key = derive_argon2(password, &random[..SALT], ARGON_M, ARGON_T, ARGON_P)?;
     let cipher = Aes256Gcm::new_from_slice(&key[..]).expect("32-byte key");
     // aes-gcm appends the tag to the ciphertext, which is the file's layout.
     let sealed = cipher
@@ -390,5 +473,49 @@ mod tests {
         assert_eq!((r.added, r.skipped), (0, 1));
         let r = restore(&store2, &mut catalog2, &SecretTypeCatalog::in_dir(&dir2), &dir2, &read_back, true).unwrap();
         assert_eq!(r.replaced, 1);
+        // New backups use the Argon2id format.
+        assert_eq!(fs::read(&path).unwrap()[8], V_ARGON2);
+    }
+
+    #[test]
+    fn reads_old_pbkdf2_backups() {
+        let dir = testing::setup();
+        let store = SecretStore::new(Some(&dir), Some(&testing::prefix()));
+        store.save(&SecretDraft { name: "api".into(), value: Zeroizing::new(b"old-value".to_vec()), ..Default::default() }, None).unwrap();
+        let contents = collect(&store, &CategoryCatalog::in_dir(&dir), &SecretTypeCatalog::in_dir(&dir), &dir).unwrap();
+
+        // Build a KEYLOBK1 (PBKDF2) file by hand, as an older Keylo wrote them.
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+        gz.write_all(&serde_json::to_vec(&contents).unwrap()).unwrap();
+        let compressed = gz.finish().unwrap();
+        let iterations = 1000u32;
+        let mut header = Vec::new();
+        header.extend_from_slice(MAGIC);
+        header.push(V_PBKDF2);
+        header.extend_from_slice(&iterations.to_le_bytes());
+        let mut random = [0u8; SALT + NONCE];
+        rand::rngs::OsRng.fill_bytes(&mut random);
+        header.extend_from_slice(&random);
+        let key = derive_pbkdf2("legacy pass phrase", &random[..SALT], iterations);
+        let sealed = Aes256Gcm::new_from_slice(&key[..])
+            .unwrap()
+            .encrypt(Nonce::from_slice(&random[SALT..]), AeadPayload { msg: &compressed, aad: &header })
+            .unwrap();
+        header.extend_from_slice(&sealed);
+        let path = dir.join("old.keylo");
+        fs::write(&path, &header).unwrap();
+
+        assert_eq!(read(&path, "legacy pass phrase").unwrap().secrets.len(), 1);
+        assert!(read(&path, "wrong one!!").is_err());
+    }
+
+    #[test]
+    fn weak_passwords_are_rejected() {
+        for weak in ["short", "aaaaaaaaaa", "password12", "1234567890", "qwertyuiop", "0987654321"] {
+            assert!(check_password(weak).is_some(), "{weak} should be rejected");
+        }
+        for ok in ["correct horse battery", "anchor-spiral-meadow-cobalt", "a long enough unique line"] {
+            assert!(check_password(ok).is_none(), "{ok} should be accepted");
+        }
     }
 }

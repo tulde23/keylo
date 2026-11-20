@@ -17,6 +17,7 @@ zeroize.workspace = true
 dirs.workspace = true
 aes-gcm.workspace = true
 pbkdf2.workspace = true
+argon2.workspace = true
 flate2.workspace = true
 hmac = "0.12"
 sha1 = "0.10"

@@ -57,7 +57,7 @@ having Keylo run commands with them, and never **read** them. This is a summary;
   removes the Hello wrap too.
 - **Recovering the vault.** The vault file is tied to this OS account (DPAPI on Windows), so copying it
   to another machine won't open it — even with the passphrase. The portable recovery artifact is an
-  **encrypted backup** (`.keylo`, AES-256-GCM, PBKDF2-SHA256), which opens on any PC or Mac with its
+  **encrypted backup** (`.keylo`, AES-256-GCM, Argon2id), which opens on any PC or Mac with its
   password; keep one, and its password, somewhere other than Keylo. Synced installs can also recover
   from another device with the join code.
 - **An agent, or any program, with unrestricted shell access as you.** Keylo's protection holds for
