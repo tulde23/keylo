@@ -40,6 +40,9 @@ use crate::crypto::{open, random_key, seal};
 const SCHEMA: i64 = 2;
 const VALUE_AAD: &str = "keylo:vault:value:v1:";
 const GUARD_AAD: &[u8] = b"keylo:vault:guard:v1";
+/// AAD for the optional "unlock with Windows Hello" wrap (meta `hello`): the vault key sealed under a
+/// key the Hello-protected TPM credential derives. Sits beside the passphrase, never replacing it.
+const HELLO_AAD: &[u8] = b"keylo:vault:hello:v1";
 
 /// Keeps the vault key safe with the operating system, so the vault opens for this user only.
 pub trait OsKey: Send + Sync {
@@ -371,7 +374,8 @@ impl SqliteVault {
         match &kdf {
             None => {
                 tx.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('guard', ?1)", [b"none".to_vec()]).map_err(db_err)?;
-                tx.execute("DELETE FROM meta WHERE key IN ('kdf', 'kdf_salt')", []).map_err(db_err)?;
+                // The Hello wrap sits on top of the passphrase; removing the passphrase removes it too.
+                tx.execute("DELETE FROM meta WHERE key IN ('kdf', 'kdf_salt', 'hello')", []).map_err(db_err)?;
             }
             Some(kdf) => {
                 tx.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('guard', ?1)", [b"passphrase".to_vec()]).map_err(db_err)?;
@@ -385,6 +389,81 @@ impl SqliteVault {
             self.write_session_key(&vault_key)?;
         } else {
             let _ = std::fs::remove_file(self.session_path());
+        }
+        Ok(())
+    }
+
+    /// Whether an "unlock with Windows Hello" wrap is stored for this vault.
+    pub fn has_hello(&self) -> Result<bool> {
+        if !self.path.is_file() {
+            return Ok(false);
+        }
+        let conn = Connection::open_with_flags(&self.path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)
+            .map_err(|e| Error::msg(format!("Couldn't open Keylo's vault ({}): {e}", self.path.display())))?;
+        Ok(!meta_value(&conn, "hello")?.is_empty())
+    }
+
+    /// The unlocked vault key right now, from the shared session or by opening with `passphrase`.
+    fn vault_key_now(&self, passphrase: Option<&str>) -> Result<Zeroizing<Vec<u8>>> {
+        if let Some(k) = self.session_key()? {
+            return Ok(k);
+        }
+        // No live session: open with the passphrase, which caches the session, then read it back.
+        self.open(passphrase)?;
+        self.session_key()?
+            .ok_or_else(|| Error::msg("Unlock the vault first (enter your master passphrase)."))
+    }
+
+    /// Turns "unlock with Windows Hello" on or off. The caller derives `hello_kek` from the Hello
+    /// gesture. Enabling stores the vault key sealed under that key (and the OS key) beside the
+    /// passphrase, so Hello becomes a second way in and the passphrase stays the recovery factor.
+    /// Requires a master passphrase, so a lost Hello key never loses the vault.
+    pub fn set_hello(&self, enable: bool, passphrase: Option<&str>, hello_kek: Option<&[u8; 32]>) -> Result<()> {
+        if !self.path.is_file() {
+            bail!("There's no Keylo vault yet.");
+        }
+        let mut conn = Connection::open_with_flags(&self.path, OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX)
+            .map_err(|e| Error::msg(format!("Couldn't open Keylo's vault ({}): {e}", self.path.display())))?;
+        conn.busy_timeout(Duration::from_secs(30)).map_err(db_err)?;
+        if enable {
+            if meta_value(&conn, "guard")?.as_slice() != b"passphrase" {
+                bail!("Set a master passphrase first. Windows Hello unlock sits on top of it, so you can still open the vault with the passphrase if the Hello key is ever lost (a reset PIN, a cleared TPM, a new PC).");
+            }
+            let kek = hello_kek.ok_or_else(|| Error::msg("No Windows Hello key was provided."))?;
+            let vault_key = self.vault_key_now(passphrase)?;
+            if vault_key.len() != 32 {
+                bail!("Keylo's vault is damaged: its key isn't valid.");
+            }
+            let stored = self.os_key.protect(&seal(&kek[..], &vault_key, HELLO_AAD)?)?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(db_err)?;
+            tx.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('hello', ?1)", [stored]).map_err(db_err)?;
+            tx.commit().map_err(db_err)?;
+        } else {
+            conn.execute("DELETE FROM meta WHERE key = 'hello'", []).map_err(db_err)?;
+        }
+        Ok(())
+    }
+
+    /// Unlocks with a Windows Hello-derived key (the gesture happened in the caller). Caches the
+    /// session so the CLI and MCP server follow, exactly as a passphrase unlock does.
+    pub fn unlock_hello(&self, hello_kek: &[u8; 32]) -> Result<()> {
+        let conn = Connection::open_with_flags(&self.path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)
+            .map_err(|e| Error::msg(format!("Couldn't open Keylo's vault ({}): {e}", self.path.display())))?;
+        let stored = meta_value(&conn, "hello")?;
+        if stored.is_empty() {
+            bail!("Windows Hello unlock isn't set up for this vault.");
+        }
+        let wrapped = self.os_key.unprotect(&stored).map_err(|e| Error::msg(format!("Couldn't open Keylo's vault: {e}")))?;
+        let vault_key = open(&hello_kek[..], &wrapped, HELLO_AAD)
+            .ok_or_else(|| Error::msg("Windows Hello didn't unlock the vault. The Hello key may have changed (a reset PIN or cleared TPM); use your master passphrase."))?;
+        if vault_key.len() != 32 {
+            bail!("Keylo's vault is damaged: its key isn't valid.");
+        }
+        drop(conn);
+        self.write_session_key(&vault_key)?;
+        let mut g = self.opened.lock().unwrap();
+        if g.is_none() {
+            *g = Some(self.open(None)?);
         }
         Ok(())
     }
@@ -976,6 +1055,34 @@ mod tests {
         assert!(locked.unlock("the wrong passphrase").is_err());
         locked.unlock(PASS).unwrap();
         assert_eq!(locked.read("Keylo:a").unwrap().unwrap().blob.as_slice(), inline(b"secret").as_slice());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn windows_hello_unlock_wraps_the_key_beside_the_passphrase() {
+        let (dir, v) = temp("hello");
+        let db = dir.join("keylo.db");
+        v.write("Keylo:a", &inline(b"secret"), None, None, &attrs("x")).unwrap();
+        let kek = [7u8; 32];
+        // Hello needs a passphrase first, so a lost Hello key never loses the vault.
+        assert!(v.set_hello(true, None, Some(&kek)).is_err());
+        v.set_passphrase(None, Some(PASS)).unwrap();
+        assert!(!v.has_hello().unwrap());
+        v.set_hello(true, None, Some(&kek)).unwrap(); // uses the live session
+        assert!(v.has_hello().unwrap());
+        // Locked, a fresh handle opens with the Hello key alone — no passphrase — but not a wrong one.
+        v.lock();
+        let fresh = SqliteVault::new(db.clone(), Box::new(TestKey));
+        assert!(!fresh.try_unlock_quietly().unwrap());
+        assert!(fresh.unlock_hello(&[9u8; 32]).is_err());
+        fresh.unlock_hello(&kek).unwrap();
+        assert_eq!(fresh.read("Keylo:a").unwrap().unwrap().blob.as_slice(), inline(b"secret").as_slice());
+        // The passphrase is still a way in; removing it removes the Hello wrap.
+        fresh.lock();
+        let byp = SqliteVault::new(db.clone(), Box::new(TestKey));
+        byp.unlock(PASS).unwrap();
+        byp.set_passphrase(Some(PASS), None).unwrap();
+        assert!(!byp.has_hello().unwrap());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

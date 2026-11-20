@@ -209,11 +209,14 @@ pub async fn vault_has_passphrase() -> Res<bool> {
     keylo_platform::vault_has_passphrase().map_err(err)
 }
 
-/// Opens a master-passphrase vault. Wrong passphrase returns an error for the screen to show.
+/// Opens a master-passphrase vault. Wrong passphrase returns an error for the screen to show. The
+/// passphrase proves presence, so this opens the app's identity gate too — no second Hello prompt.
 #[tauri::command]
-pub async fn vault_unlock(passphrase: String) -> Res<()> {
+pub async fn vault_unlock(state: State<'_, AppState>, passphrase: String) -> Res<()> {
     let passphrase = Zeroizing::new(passphrase);
-    keylo_platform::unlock_vault(Some(&passphrase)).map(|_| ()).map_err(err)
+    keylo_platform::unlock_vault(Some(&passphrase)).map(|_| ()).map_err(err)?;
+    state.gate.lock().unwrap().mark_verified().map_err(err)?;
+    Ok(())
 }
 
 /// Sets, changes or removes the master passphrase. Changing how the vault is protected asks for the
@@ -225,6 +228,37 @@ pub async fn set_vault_passphrase(window: WebviewWindow, state: State<'_, AppSta
     let current = current.map(Zeroizing::new);
     let new = new.map(Zeroizing::new);
     keylo_platform::set_vault_passphrase(current.as_ref().map(|z| z.as_str()), new.as_ref().map(|z| z.as_str())).map_err(err)
+}
+
+/// Whether Windows Hello can be a vault key source on this machine (a PIN/biometric is set up).
+#[tauri::command]
+pub async fn hello_available() -> Res<bool> {
+    Ok(keylo_platform::hello_available())
+}
+
+/// Whether "unlock with Windows Hello" is set up for the vault (for Settings → Security).
+#[tauri::command]
+pub async fn vault_has_hello() -> Res<bool> {
+    keylo_platform::vault_has_hello().map_err(err)
+}
+
+/// Turns "unlock with Windows Hello" on or off. Enabling asks for the Hello gesture (and the identity
+/// check first, since it changes how the vault opens); it needs a live session or the passphrase.
+#[tauri::command]
+pub async fn set_vault_hello(window: WebviewWindow, state: State<'_, AppState>, enable: bool, passphrase: Option<String>) -> Res<()> {
+    confirm(&window, "Keylo: change Windows Hello unlock").await?;
+    let _ = &state;
+    let passphrase = passphrase.map(Zeroizing::new);
+    keylo_platform::set_vault_hello(enable, passphrase.as_ref().map(|z| z.as_str())).map_err(err)
+}
+
+/// Opens a master-passphrase vault with Windows Hello instead of typing the passphrase. The Hello
+/// gesture proves presence, so this opens the app's identity gate too — a single gesture, not two.
+#[tauri::command]
+pub async fn vault_unlock_hello(state: State<'_, AppState>) -> Res<()> {
+    keylo_platform::unlock_vault_hello().map(|_| ()).map_err(err)?;
+    state.gate.lock().unwrap().mark_verified().map_err(err)?;
+    Ok(())
 }
 
 /// User activity: slides the session so it lasts while someone is at the keyboard.
@@ -610,6 +644,12 @@ pub async fn recent(state: State<'_, AppState>) -> Res<Vec<RecentUse>> {
 #[tauri::command]
 pub async fn generate_password(length: usize, symbols: bool) -> String {
     keylo_core::password::generate(length, symbols)
+}
+
+/// A memorable word passphrase, for secrets you must type and remember (master passphrase, backup).
+#[tauri::command]
+pub async fn generate_passphrase(words: usize) -> String {
+    keylo_core::password::generate_passphrase(words)
 }
 
 // ---------------------------------------------------------------------------- icon images

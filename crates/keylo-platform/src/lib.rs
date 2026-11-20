@@ -5,6 +5,8 @@
 mod crypto;
 #[cfg(windows)]
 mod sqlite_vault;
+#[cfg(windows)]
+mod hello_key;
 
 #[cfg(windows)]
 mod windows_platform;
@@ -102,6 +104,54 @@ pub fn set_vault_passphrase(current: Option<&str>, new: Option<&str>) -> keylo_c
         let _ = (current, new);
         keylo_core::bail!("A master passphrase isn't available on this platform yet.")
     }
+}
+
+/// Whether Windows Hello can be used as a key source (TPM key via KeyCredentialManager).
+pub fn hello_available() -> bool {
+    #[cfg(windows)]
+    return hello_key::available();
+    #[cfg(not(windows))]
+    false
+}
+
+/// Whether "unlock with Windows Hello" is set up for the vault.
+pub fn vault_has_hello() -> keylo_core::Result<bool> {
+    #[cfg(windows)]
+    return windows_platform::has_hello();
+    #[cfg(not(windows))]
+    Ok(false)
+}
+
+/// Turns "unlock with Windows Hello" on (needs the Hello gesture and, if no session is live, the
+/// current passphrase to bind the key) or off (Windows).
+pub fn set_vault_hello(enable: bool, passphrase: Option<&str>) -> keylo_core::Result<()> {
+    #[cfg(windows)]
+    return windows_platform::set_hello(enable, passphrase);
+    #[cfg(not(windows))]
+    {
+        let _ = (enable, passphrase);
+        keylo_core::bail!("Windows Hello unlock is only on Windows.")
+    }
+}
+
+/// Unlocks the vault with Windows Hello (asks for the gesture). Returns whether it's unlocked after.
+pub fn unlock_vault_hello() -> keylo_core::Result<bool> {
+    #[cfg(windows)]
+    {
+        windows_platform::unlock_hello()?;
+        return Ok(true);
+    }
+    #[cfg(not(windows))]
+    keylo_core::bail!("Windows Hello unlock is only on Windows.")
+}
+
+/// Creates/opens the Hello key, signs twice and checks stability, to confirm Hello works as a key
+/// source on this machine.
+pub fn hello_selftest() -> keylo_core::Result<String> {
+    #[cfg(windows)]
+    return hello_key::selftest();
+    #[cfg(not(windows))]
+    keylo_core::bail!("Windows Hello is only on Windows.")
 }
 
 /// An approval dialog for the MCP server when the app isn't installed (macOS and Linux; Windows

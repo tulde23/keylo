@@ -168,6 +168,11 @@ fn run(argv: &[String]) -> CliResult<i32> {
         "sync" => sync_cmd::sync_cmd(&mut c, &args),
         "config" => config_cmd(&mut c, &args),
         "__clip-clear" => clip_clear(&args),
+        "__hello-selftest" => {
+            args.throw_on_unknown(None)?;
+            info(&keylo_platform::hello_selftest()?);
+            Ok(0)
+        }
         "import" => import_cmd(&mut c, &args),
         "backup" | "export" => backup_cmd(&mut c, &args),
         "restore" => restore_cmd(&mut c, &args),
