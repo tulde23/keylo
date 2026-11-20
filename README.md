@@ -526,15 +526,25 @@ keylo rm NAME [--yes]
 ### Running commands with secrets
 
 ```bash
-keylo run --env VAR=REFERENCE [--env …] -- COMMAND [ARGS…]
+keylo run --env VAR=REFERENCE [--env …] [--file VAR=REFERENCE …] -- COMMAND [ARGS…]
 
 keylo run --env GITHUB_TOKEN=github-token -- gh repo list
 keylo run --env DATABASE_URL=prod-db:connection_string --env PGUSER=prod-db:username -- npm run migrate
 keylo run --env DB_PASSWORD=orders-db@uat:password -- ./deploy.sh
+
+# Credentials a program reads as a file (service-account / OAuth JSON, kubeconfig, PEM):
+keylo run --file GOOGLE_APPLICATION_CREDENTIALS=google-oauth -- gcloud auth activate-service-account
 ```
 
 The values exist only in that command's environment. With `KEYLO_ACCESS_KEY` set, a covered secret
 needs no identity check, and the use is audited; anything else asks.
+
+`--file` is for secrets a program expects as a **file on disk** rather than a variable. Keylo writes
+the value to a temporary file only you can read, sets the variable to its path, and wipes and removes
+the file as soon as the command exits — so a whole credential document (a Google
+`client_secret.json`, a kubeconfig, a `.pem` key) is used without ever being printed or kept
+unencrypted. Store the document as a single secret (the **Document** type, or any secret whose value
+is the file's contents); Keylo never parses it.
 
 ### Access keys and agents
 
@@ -636,7 +646,7 @@ Other MCP clients: run `keylo mcp` with `KEYLO_ACCESS_KEY` in its environment.
 | `search_secrets` | Finds secrets by name, category, username, notes or non-secret fields (`type:database`, `cat:prod`). Each result has its type, its field schema (which fields are secret, which is the main one), whether the key covers it (`run` or `needs approval`), and for a per-environment link its environments. Non-secret details and notes only appear for covered secrets. |
 | `list_categories` | Categories, how many secrets each holds, and how many the key covers. |
 | `list_types` | Every type and its fields. |
-| `run_with_secrets` | Runs a shell command with secrets as environment variables (`{"VAR": "reference"}`) and returns the exit code and output, with values replaced by `[keylo:name]`. Optional: `shell`, `working_directory`, `timeout_seconds` (default 120, at most 600; the process tree is killed on timeout), and `reason`, which the approval window shows you. |
+| `run_with_secrets` | Runs a shell command with secrets as environment variables (`env`: `{"VAR": "reference"}`) and/or as temporary files (`files`: `{"VAR": "reference"}` — the value is written to a private temp file, the variable set to its path, the file deleted when the command exits), and returns the exit code and output, with values replaced by `[keylo:name]`. Optional: `shell`, `working_directory`, `timeout_seconds` (default 120, at most 600; the process tree is killed on timeout), and `reason`, which the approval window shows you. |
 | `request_access` | Asks you to add secrets to the key permanently, with a reason. |
 | `list_aws_profiles` | AWS environments, the profiles in `~/.aws` (name, region, how each signs in; never keys), every region, and whether the `aws` CLI is installed. |
 | `check_for_updates` | Whether a newer Keylo has been released, and how you can install it. Read-only: agents can't install updates. |

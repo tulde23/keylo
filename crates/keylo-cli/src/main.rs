@@ -50,9 +50,11 @@ keylo set NAME --type T [--field F=V]... [--category C] [--notes N] [--file FILE
                                         Add a typed secret (the main secret field is prompted)
 keylo edit NAME [--rename NEW] [--category C] [--username U] [--notes N] [--field F=V]...
 keylo rm NAME [--yes]                   Delete a secret
-keylo run --env VAR=NAME [...] -- CMD [ARGS]
+keylo run --env VAR=NAME [--file VAR=NAME] [...] -- CMD [ARGS]
                                         Run CMD with secrets as environment variables
-                                        (NAME:FIELD maps one field, e.g. prod-db:password;
+                                        (--file writes the secret to a temporary file and sets VAR
+                                        to its path, for creds a program reads as a file;
+                                        NAME:FIELD maps one field, e.g. prod-db:password;
                                         NAME@ENV picks an environment of a per-environment link)
 keylo link NAME --item ITEM [--provider 1password|aws] [--vault V] [--account A] [--field F] [--category C]
                                         Link to an item in another vault (read live, never copied)
@@ -967,10 +969,11 @@ fn restore_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
 }
 
 fn run_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
-    let mappings = args.options("env");
+    let env_maps = args.options("env");
+    let file_maps = args.options("file");
     args.throw_on_unknown(None)?;
-    if mappings.is_empty() {
-        usage!("Map at least one secret: --env VAR=NAME");
+    if env_maps.is_empty() && file_maps.is_empty() {
+        usage!("Map at least one secret: --env VAR=NAME (or --file VAR=NAME to hand it over as a temporary file).");
     }
     if args.positional_count() > 0 {
         usage!("Put the command after '--': keylo run --env VAR=NAME -- CMD");
@@ -979,15 +982,17 @@ fn run_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
         usage!("Replace YOUR-COMMAND with the program that needs the secret, e.g. ... -- node deploy.js (it reads the variables from its environment).");
     }
 
+    // (var, info, field, environment, as_file)
     let mut pairs = Vec::new();
-    for m in &mappings {
-        let Some(eq) = m.find('=').filter(|&e| e > 0 && e < m.len() - 1) else { usage!("--env expects VAR=NAME, got '{m}'.") };
+    for (m, as_file) in env_maps.iter().map(|m| (m, false)).chain(file_maps.iter().map(|m| (m, true))) {
+        let opt = if as_file { "--file" } else { "--env" };
+        let Some(eq) = m.find('=').filter(|&e| e > 0 && e < m.len() - 1) else { usage!("{opt} expects VAR=NAME, got '{m}'.") };
         let (info, r, environment) = c.find_reference(&m[eq + 1..])?;
-        pairs.push((m[..eq].to_string(), info, r.field, environment));
+        pairs.push((m[..eq].to_string(), info, r.field, environment, as_file));
     }
     let mut infos: Vec<SecretInfo> = Vec::new();
     let mut labels: Vec<String> = Vec::new();
-    for (_, i, _, e) in &pairs {
+    for (_, i, _, e, _) in &pairs {
         if !infos.iter().any(|x| eq_ic(&x.name, &i.name)) {
             infos.push(i.clone());
         }
@@ -999,17 +1004,27 @@ fn run_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
             labels.push(label);
         }
     }
-    let always_ask = pairs.iter().any(|(_, _, _, e)| e.as_ref().is_some_and(|e| e.always_ask));
+    let always_ask = pairs.iter().any(|(_, _, _, e, _)| e.as_ref().is_some_and(|e| e.always_ask));
     c.authorize_uses(SecretOperation::Run, &infos, &format!("run with {}", labels.join(", ")), always_ask, &labels)?;
 
+    // Secrets delivered as files live in a private directory that is wiped when `files` is dropped,
+    // after the command exits.
+    let mut files = if pairs.iter().any(|p| p.4) { Some(runner::SecretFiles::new()?) } else { None };
     let mut env = BTreeMap::new();
-    for (var, info, field, environment) in &pairs {
-        env.insert(var.clone(), c.field_value(info, field.as_deref(), environment.as_ref().map(|e| e.name.as_str()))?.to_string());
+    for (var, info, field, environment, as_file) in &pairs {
+        let value = c.field_value(info, field.as_deref(), environment.as_ref().map(|e| e.name.as_str()))?;
+        if *as_file {
+            let path = files.as_mut().unwrap().add(var, value.as_bytes())?;
+            env.insert(var.clone(), path.to_string_lossy().into_owned());
+        } else {
+            env.insert(var.clone(), value.to_string());
+        }
     }
     let code = runner::run(&args.rest, &env);
     for v in env.values_mut() {
         zeroize::Zeroize::zeroize(v);
     }
+    drop(files); // wipe and remove the temporary files
     code
 }
 

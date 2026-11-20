@@ -54,6 +54,7 @@ fn instructions() -> String {
   \"orders-db@uat\" or \"orders-db@prod:password\"; without it the default environment is used. Environments marked
   \"always ask\" (usually prod) open an approval window every time, whatever your key covers.
 - Prefer run_with_secrets: values reach the command as environment variables and are redacted from its output, so they never enter this conversation.
+- For a credential a program reads as a file (service-account/OAuth JSON, kubeconfig, PEM): use run_with_secrets' \"files\" map instead of \"env\". Keylo writes it to a private temp file, sets the variable to its path, and deletes the file when the command finishes. Don't ask for the value to write the file yourself.
 - Keylo never returns secret values to agents. To use one, run a command with run_with_secrets.
 - Using a secret outside your key's scope asks the user to approve it (with {}); an approval
   lasts for their Keylo session (15 minutes by default). If they deny it, don't retry; ask them.
@@ -441,27 +442,44 @@ impl Server {
         let timeout = Duration::from_secs(opt_int(args, "timeout_seconds").unwrap_or(120).clamp(1, 600) as u64);
         let reason = opt_str(args, "reason");
 
-        let Some(env) = args.get("env").and_then(Value::as_object).filter(|e| !e.is_empty()) else {
-            tool_fail!("env must map at least one environment variable to a secret, e.g. {{\"GITHUB_TOKEN\": \"github-token\"}}.")
-        };
-        let mut mappings = Vec::new();
-        for (var, source) in env {
-            let Some(source) = source.as_str() else { tool_fail!("env.{var} must be a secret name.") };
-            mappings.push((var.clone(), self.resolve(source)?));
+        let env = args.get("env").and_then(Value::as_object).filter(|e| !e.is_empty());
+        let as_files = args.get("files").and_then(Value::as_object).filter(|e| !e.is_empty());
+        if env.is_none() && as_files.is_none() {
+            tool_fail!("Map at least one secret: env (as environment variables) or files (written to a temp file, the variable set to its path), e.g. {{\"GITHUB_TOKEN\": \"github-token\"}}.")
         }
-        let uses: Vec<SecretUse> = mappings.iter().map(|(_, u)| u.clone()).collect();
+        // (var, SecretUse, as_file)
+        let mut mappings = Vec::new();
+        for (var, source) in env.into_iter().flatten() {
+            let Some(source) = source.as_str() else { tool_fail!("env.{var} must be a secret name.") };
+            mappings.push((var.clone(), self.resolve(source)?, false));
+        }
+        for (var, source) in as_files.into_iter().flatten() {
+            let Some(source) = source.as_str() else { tool_fail!("files.{var} must be a secret name.") };
+            mappings.push((var.clone(), self.resolve(source)?, true));
+        }
+        let uses: Vec<SecretUse> = mappings.iter().map(|(_, u, _)| u.clone()).collect();
         self.authorize(&key, SecretOperation::Run, &uses, reason.as_deref(), Some(&format!("[{shell}] {command}")))?;
 
+        // Secrets handed over as files live in a private directory, wiped when `files` is dropped
+        // (after the command exits). The value never reaches the command's environment — only the path.
+        let mut files = runner::SecretFiles::new().map_err(|e| ToolError(format!("Couldn't create a temporary file for a secret: {e}")))?;
         // Each secret (and environment) is read once, however many variables use it.
         let mut read: HashMap<String, BTreeMap<String, String>> = HashMap::new();
         let mut environment = BTreeMap::new();
-        for (var, u) in &mappings {
+        for (var, u, as_file) in &mappings {
             let label = u.label().to_lowercase();
             if !read.contains_key(&label) {
                 let values = self.read_all(u)?;
                 read.insert(label.clone(), values);
             }
-            environment.insert(var.clone(), self.pick(&u.info, &read[&label], u.field.as_deref())?);
+            let mut value = self.pick(&u.info, &read[&label], u.field.as_deref())?;
+            if *as_file {
+                let path = files.add(var, value.as_bytes()).map_err(|e| ToolError(format!("Couldn't write a secret to a temporary file: {e}")))?;
+                zeroize::Zeroize::zeroize(&mut value);
+                environment.insert(var.clone(), path.to_string_lossy().into_owned());
+            } else {
+                environment.insert(var.clone(), value);
+            }
         }
         for values in read.values_mut() {
             for v in values.values_mut() {
@@ -472,6 +490,7 @@ impl Server {
         for v in environment.values_mut() {
             zeroize::Zeroize::zeroize(v);
         }
+        drop(files); // wipe and remove the temporary files
         let r = result?;
 
         let mut output = if r.timed_out {
@@ -1190,7 +1209,7 @@ pub fn definitions() -> Value {
       {
         "name": "run_with_secrets",
         "title": "Run a command with secrets",
-        "description": "Run a shell command with secrets as environment variables. This is the only way to use a secret: Keylo never returns values, and any that appear in the output are replaced with [keylo:name]. Returns the exit code, stdout and stderr. Secrets your key doesn't cover ask the user first.",
+        "description": "Run a shell command with secrets, as environment variables (env) and/or as temporary files (files). This is the only way to use a secret: Keylo never returns values, and any that appear in the output are replaced with [keylo:name]. Returns the exit code, stdout and stderr. Secrets your key doesn't cover ask the user first.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -1199,13 +1218,18 @@ pub fn definitions() -> Value {
               "description": "Environment variable -> secret name, which maps its main value, or 'name:field' for one field (see the fields from search_secrets), or 'name@env' / 'name@env:field' for an environment of a per-environment link, e.g. {\"GITHUB_TOKEN\": \"github-token\", \"DB_URL\": \"prod-db:connection_string\", \"DB_USER\": \"prod-db:username\"}.",
               "additionalProperties": { "type": "string" }
             },
-            "command": { "type": "string", "description": "The command line. Reference variables in the shell's syntax: $env:VAR (powershell), %VAR% (cmd), $VAR (bash, zsh, sh)." },
+            "files": {
+              "type": "object",
+              "description": "For secrets a program reads as a FILE rather than a variable (a service-account or OAuth JSON, a kubeconfig, a PEM key or certificate): environment variable -> secret name. Keylo writes each value to a private temporary file only you can read, deleted when the command finishes, and sets the variable to that file's path. Same name grammar as env ('name', 'name:field', 'name@env:field'). Example: {\"GOOGLE_APPLICATION_CREDENTIALS\": \"google-oauth\"}.",
+              "additionalProperties": { "type": "string" }
+            },
+            "command": { "type": "string", "description": "The command line. Reference variables in the shell's syntax: $env:VAR (powershell), %VAR% (cmd), $VAR (bash, zsh, sh). A files entry's variable holds the path to the written file." },
             "shell": { "type": "string", "enum": ["powershell", "cmd", "bash", "zsh", "sh"], "description": "Windows: powershell (default; pwsh if installed), cmd, or bash (Git Bash). macOS: zsh (default), bash, sh, or powershell if installed. Linux: bash (default), zsh, sh, or powershell if installed." },
             "working_directory": { "type": "string", "description": "Defaults to the server's working directory (the project Claude Code was started in)." },
             "timeout_seconds": { "type": "integer", "description": "Default 120, max 600. The process tree is killed on timeout." },
             "reason": { "type": "string", "description": "Why you need these secrets; shown to the user if approval is needed." }
           },
-          "required": ["env", "command"]
+          "required": ["command"]
         },
         "annotations": { "destructiveHint": true, "openWorldHint": true }
       },

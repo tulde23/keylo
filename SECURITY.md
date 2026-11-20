@@ -28,6 +28,10 @@ having Keylo run commands with them, and never **read** them. This is a summary;
   show the exact command and the agent's stated reason. Every use is written to an audit log.
 - **Secrets in plain-text files** (`.env`, key folders) being read, committed, synced or shared.
 - **Values in shell history or the process list.** Values are never taken as command-line arguments.
+  A credential a program reads as a file (a service-account or OAuth JSON, a kubeconfig, a PEM key)
+  is written to a short-lived file only you can read, the variable set to its path; the file is
+  overwritten and removed when the command exits, so the value is never passed on the command line
+  or left on disk.
 - **Other users on the computer, and a stolen disk or copied backup.** Secret values live in Keylo's
   vault (`keylo.db`), each encrypted under a key the OS protects — DPAPI on Windows, the macOS
   Keychain on macOS, the desktop keyring on Linux — or, on a headless Linux box, in Keylo's
