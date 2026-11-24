@@ -5,9 +5,8 @@
 //! The store is chosen once and remembered (store.txt in Keylo's data folder), so a machine never
 //! ends up with secrets split between the two. KEYLO_STORE=keyring|file overrides the choice.
 
-mod keycache;
+pub(crate) mod keycache;
 mod keyring;
-pub mod vault;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -22,10 +21,10 @@ use keylo_core::{bail, paths, Error, Result};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
+use crate::file_vault::FileVault;
 use crate::sqlite_vault::{OsKey, SqliteVault};
 use crate::unix::{self, AesKeyProtector};
 use keyring::SecretServiceStore;
-use vault::FileVault;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StoreKind {
@@ -351,7 +350,7 @@ impl UserVerifier for PolkitVerifier {
         let subject = format!("{pid},{start}");
 
         // No desktop (SSH, a plain terminal): a text agent so polkit can ask here.
-        let terminal = vault::CAN_PROMPT_ON_TERMINAL.load(std::sync::atomic::Ordering::Relaxed);
+        let terminal = crate::file_vault::CAN_PROMPT_ON_TERMINAL.load(std::sync::atomic::Ordering::Relaxed);
         let mut agent = None;
         if !unix::has_display() && terminal {
             if let Some(tty_agent) = unix::find("pkttyagent") {

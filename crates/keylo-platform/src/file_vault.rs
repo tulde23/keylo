@@ -1,10 +1,13 @@
-//! Keylo's own encrypted store, for Linux machines without a desktop keyring (servers, containers,
-//! WSL). One file holds every item, sealed with AES-256-GCM under a random vault key; the vault key
-//! is wrapped with a key derived from the user's passphrase (PBKDF2-SHA256, 600,000 iterations).
+//! Keylo's own encrypted store, for machines without a desktop keyring or an accessible login
+//! Keychain (Linux servers, containers and WSL; a headless/SSH macOS session). One file holds every
+//! item, sealed with AES-256-GCM under a random vault key; the vault key is wrapped with a key
+//! derived from the user's passphrase (PBKDF2-SHA256, 600,000 iterations).
 //!
 //! The passphrase comes from KEYLO_PASSPHRASE or KEYLO_PASSPHRASE_FILE, or is asked for on the
-//! terminal; the unlocked vault key is then cached in the kernel keyring for
-//! KEYLO_VAULT_CACHE_MINUTES (15 by default), so later commands don't ask again.
+//! terminal. On Linux the unlocked vault key is then cached in the kernel keyring for
+//! KEYLO_VAULT_CACHE_MINUTES (15 by default), so later commands don't ask again; elsewhere there's no
+//! cross-process cache, so each command relies on KEYLO_PASSPHRASE or a prompt (a long-running app or
+//! MCP server keeps the key in memory once unlocked).
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -22,8 +25,22 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
-use super::keycache;
 use crate::unix::{self, open, seal};
+
+// The unlocked-key cache: the kernel keyring on Linux (shared across processes, like ssh-agent);
+// elsewhere there's no cross-process keyring, so the key lives only in this process.
+#[cfg(target_os = "linux")]
+use crate::linux::keycache;
+#[cfg(not(target_os = "linux"))]
+mod keycache {
+    use std::time::Duration;
+    use zeroize::Zeroizing;
+    pub fn get(_description: &str) -> Option<Zeroizing<Vec<u8>>> {
+        None
+    }
+    pub fn put(_description: &str, _key: &[u8], _lifetime: Duration) {}
+    pub fn remove(_description: &str) {}
+}
 
 const ITERATIONS: u32 = 600_000;
 const KEY_AAD: &[u8] = b"keylo-vault:key:v1";

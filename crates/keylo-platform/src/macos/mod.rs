@@ -6,16 +6,19 @@
 mod keychain;
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+use hkdf::Hkdf;
 use keylo_core::platform::{
     AncestorProcess, CredentialDetails, CredentialStore, DataProtector, Platform, ProcessAncestry, RawCredential,
     SecureClipboard, UserVerifier, VerificationResult,
 };
 use keylo_core::{bail, paths, Error, Result};
+use sha2::Sha256;
 use zeroize::Zeroizing;
 
+use crate::file_vault::FileVault;
 use crate::sqlite_vault::{OsKey, SqliteVault};
 use crate::unix::{self, AesKeyProtector};
 use keychain::KeychainStore;
@@ -26,18 +29,165 @@ fn keychain_path() -> Option<String> {
     std::env::var("KEYLO_KEYCHAIN").ok().filter(|p| !p.is_empty())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreKind {
+    /// The SQLite vault, its key sealed under a login-Keychain master key (a desktop session).
+    Keychain,
+    /// Keylo's passphrase-protected vault file, for a headless/SSH session where the Keychain can't
+    /// be reached without a prompt (the same store Linux uses without a desktop keyring).
+    File,
+}
+
+struct Shared {
+    data_dir: PathBuf,
+    file: FileVault,
+    keychain: MacVaultStore,
+    kind: OnceLock<std::result::Result<StoreKind, String>>,
+}
+
+impl Shared {
+    fn kind(&self) -> Result<StoreKind> {
+        self.kind.get_or_init(|| choose_store(&self.data_dir, &self.file)).clone().map_err(Error::msg)
+    }
+
+    fn store(&self) -> Result<&dyn CredentialStore> {
+        Ok(match self.kind()? {
+            StoreKind::Keychain => &self.keychain,
+            StoreKind::File => &self.file,
+        })
+    }
+
+    /// Records the store on the first write, so later runs use the same one and secrets never split.
+    fn remember(&self) {
+        let file = self.data_dir.join("store.txt");
+        if std::env::var("KEYLO_STORE").is_ok_and(|s| !s.is_empty()) || file.exists() {
+            return;
+        }
+        if let Ok(kind) = self.kind() {
+            let _ = std::fs::create_dir_all(&self.data_dir);
+            let _ = std::fs::write(file, if kind == StoreKind::Keychain { "keychain\n" } else { "file\n" });
+        }
+    }
+}
+
+/// Keychain-sealed vault in a desktop session, else the passphrase vault file. KEYLO_STORE
+/// (keychain|file) or store.txt override; an existing vault.json or keylo.db stays the store it is.
+fn choose_store(data_dir: &Path, file: &FileVault) -> std::result::Result<StoreKind, String> {
+    let setting = std::env::var("KEYLO_STORE").ok().filter(|s| !s.is_empty()).or_else(|| std::fs::read_to_string(data_dir.join("store.txt")).ok());
+    match setting.as_deref().map(|s| s.trim().to_lowercase()).as_deref() {
+        Some("file") => return Ok(StoreKind::File),
+        Some("keychain") => {
+            return if keychain_reachable() {
+                Ok(StoreKind::Keychain)
+            } else {
+                Err("Keylo's vault is sealed in this Mac's login Keychain, but this session can't reach it \
+                     (no desktop session, e.g. over SSH). Use Keylo on the Mac itself, or set KEYLO_STORE=file \
+                     to keep secrets in a passphrase-protected vault here instead."
+                    .into())
+            };
+        }
+        _ => {}
+    }
+    // Stick with whichever store already holds secrets.
+    if file.exists() {
+        return Ok(StoreKind::File);
+    }
+    if data_dir.join("keylo.db").exists() {
+        return Ok(StoreKind::Keychain);
+    }
+    // Fresh: the Keychain in a desktop session, else the passphrase vault.
+    Ok(if has_graphic_access() { StoreKind::Keychain } else { StoreKind::File })
+}
+
+/// Whether this process is in a session with a window server (a desktop login) — false over SSH.
+fn has_graphic_access() -> bool {
+    #[link(name = "Security", kind = "framework")]
+    extern "C" {
+        fn SessionGetInfo(session: i32, id: *mut i32, attributes: *mut u32) -> i32;
+    }
+    const CALLER_SECURITY_SESSION: i32 = -1;
+    const SESSION_HAS_GRAPHIC_ACCESS: u32 = 0x0010;
+    let (mut id, mut attributes) = (0i32, 0u32);
+    let ok = unsafe { SessionGetInfo(CALLER_SECURITY_SESSION, &mut id, &mut attributes) } == 0;
+    ok && attributes & SESSION_HAS_GRAPHIC_ACCESS != 0
+}
+
+/// Whether the login Keychain can be read here without a prompt (false only when macOS would need to
+/// ask and can't — errSecInteractionNotAllowed, e.g. over SSH).
+fn keychain_reachable() -> bool {
+    let internal = KeychainStore::new(&format!("{}.Internal", keychain::DEFAULT_SERVICE), keychain_path().as_deref());
+    internal.reachable("keylo-master-key")
+}
+
+/// Picks the store on first use rather than at startup, so 'keylo version' never touches it.
+struct LazyStore(&'static Shared);
+
+impl CredentialStore for LazyStore {
+    fn max_blob_bytes(&self) -> usize {
+        16 * 1024
+    }
+    fn max_attribute_bytes(&self) -> usize {
+        1024
+    }
+    fn max_attributes(&self) -> usize {
+        64
+    }
+    fn read(&self, target: &str) -> Result<Option<RawCredential>> {
+        self.0.store()?.read(target)
+    }
+    fn enumerate(&self, prefix: &str) -> Result<Vec<RawCredential>> {
+        self.0.store()?.enumerate(prefix)
+    }
+    fn write(&self, target: &str, blob: &[u8], user_name: Option<&str>, comment: Option<&str>, attributes: &BTreeMap<String, String>) -> Result<()> {
+        self.0.store()?.write(target, blob, user_name, comment, attributes)?;
+        self.0.remember();
+        Ok(())
+    }
+    fn delete(&self, target: &str) -> Result<bool> {
+        self.0.store()?.delete(target)
+    }
+    fn enumerate_details(&self, prefix: &str) -> Result<Vec<CredentialDetails>> {
+        self.0.store()?.enumerate_details(prefix)
+    }
+    fn read_details(&self, target: &str) -> Result<Option<CredentialDetails>> {
+        self.0.store()?.read_details(target)
+    }
+    fn update_details(&self, target: &str, user_name: Option<&str>, comment: Option<&str>, attributes: &BTreeMap<String, String>) -> Result<bool> {
+        self.0.store()?.update_details(target, user_name, comment, attributes)
+    }
+}
+
 pub struct MacPlatform {
-    credentials: MacVaultStore,
+    shared: &'static Shared,
+    credentials: LazyStore,
     protector: AesKeyProtector,
 }
 
 impl MacPlatform {
     pub fn new() -> Self {
-        // The master key sits under its own service so it never shows up among secrets. It seals local
-        // files (large values, the session) and wraps the vault key.
-        let internal = KeychainStore::new(&format!("{}.Internal", keychain::DEFAULT_SERVICE), keychain_path().as_deref());
-        let protector = AesKeyProtector::new(move || master_key(&internal));
-        MacPlatform { credentials: MacVaultStore { vault: vault(), moved: Mutex::new(false) }, protector }
+        let data_dir = paths::data_dir();
+        let shared: &'static Shared = Box::leak(Box::new(Shared {
+            file: FileVault::new(data_dir.join("vault.json")),
+            keychain: MacVaultStore { vault: vault(), moved: Mutex::new(false) },
+            data_dir,
+            kind: OnceLock::new(),
+        }));
+        // The files key: with the Keychain store, Keylo's master key from the login Keychain (which
+        // also seals large values and the session); with the file vault, a key derived from the vault
+        // key, as on Linux.
+        let protector = AesKeyProtector::new(move || match shared.kind()? {
+            StoreKind::Keychain => {
+                let internal = KeychainStore::new(&format!("{}.Internal", keychain::DEFAULT_SERVICE), keychain_path().as_deref());
+                master_key(&internal)
+            }
+            StoreKind::File => {
+                let vault_key = shared.file.vault_key()?;
+                let mut key = Zeroizing::new(vec![0u8; 32]);
+                Hkdf::<Sha256>::new(None, &vault_key).expand(b"keylo-vault:files:v1", &mut key).map_err(|_| Error::msg("HKDF failed."))?;
+                Ok(key)
+            }
+        });
+        MacPlatform { shared, credentials: LazyStore(shared), protector }
     }
 }
 
@@ -75,10 +225,16 @@ impl Platform for MacPlatform {
         "Touch ID".into()
     }
     fn store_name(&self) -> String {
-        "Keylo's vault".into()
+        match self.shared.kind() {
+            Ok(StoreKind::File) => "Keylo's encrypted vault".into(),
+            _ => "Keylo's vault".into(),
+        }
     }
     fn file_protection_name(&self) -> String {
-        "Keychain key".into()
+        match self.shared.kind() {
+            Ok(StoreKind::File) => "vault key".into(),
+            _ => "Keychain key".into(),
+        }
     }
     fn clipboard(&self) -> &dyn SecureClipboard {
         &Pasteboard
@@ -88,8 +244,23 @@ impl Platform for MacPlatform {
     }
 }
 
+static INSTALLED: OnceLock<&'static Shared> = OnceLock::new();
+
 pub(crate) fn install() {
-    keylo_core::platform::install(Box::new(MacPlatform::new()));
+    let platform = MacPlatform::new();
+    let _ = INSTALLED.set(platform.shared);
+    keylo_core::platform::install(Box::new(platform));
+}
+
+/// The chosen store kind, once the platform is installed.
+fn kind() -> Option<StoreKind> {
+    INSTALLED.get()?.kind().ok()
+}
+
+/// The passphrase vault file, when it's the store in use (a headless/SSH session).
+fn file_vault() -> Option<&'static FileVault> {
+    let shared = INSTALLED.get()?;
+    (shared.kind().ok()? == StoreKind::File).then_some(&shared.file)
 }
 
 // ---------------------------------------------------------------------------- the SQLite vault
@@ -188,31 +359,67 @@ impl CredentialStore for MacVaultStore {
     }
 }
 
-/// `keylo lock`: ends the session and locks a master-passphrase vault.
-pub(crate) fn lock() {
-    vault().lock();
+/// `keylo unlock` for the passphrase vault file (the headless store); None with the Keychain store,
+/// which the master-passphrase path below handles.
+pub(crate) fn unlock_store() -> Result<Option<String>> {
+    match file_vault() {
+        Some(v) => {
+            v.vault_key()?;
+            Ok(Some("Vault unlocked.".into()))
+        }
+        None => Ok(None),
+    }
 }
 
-/// Whether a master passphrase is set on the vault.
+/// `keylo lock`: ends the session and locks the vault (the passphrase file vault, or a master-passphrase
+/// Keychain vault).
+pub(crate) fn lock() {
+    match file_vault() {
+        Some(v) => v.lock(),
+        None => vault().lock(),
+    }
+}
+
+/// Whether a master passphrase is set on the Keychain vault. The headless file vault unlocks through
+/// its own passphrase (`unlock_store`), not this optional layer, so it reports false here.
 pub(crate) fn has_passphrase() -> Result<bool> {
-    vault().has_passphrase()
+    match kind() {
+        Some(StoreKind::File) => Ok(false),
+        _ => vault().has_passphrase(),
+    }
 }
 
 /// Unlocks the vault: `Some` with the passphrase, `None` to try quietly (session or KEYLO_PASSPHRASE).
 pub(crate) fn unlock(passphrase: Option<&str>) -> Result<bool> {
+    if let Some(v) = file_vault() {
+        return match passphrase {
+            Some(p) => v.unlock(p).map(|()| true),
+            None => v.try_unlock_quietly(),
+        };
+    }
     match passphrase {
         Some(p) => vault().unlock(p).map(|()| true),
         None => vault().try_unlock_quietly(),
     }
 }
 
-/// Sets, changes or removes the vault's master passphrase.
+/// Sets, changes or removes the Keychain vault's master passphrase.
 pub(crate) fn set_passphrase(current: Option<&str>, new: Option<&str>) -> Result<()> {
+    if file_vault().is_some() {
+        bail!(
+            "This is Keylo's passphrase-protected vault file (a headless session). It's created from \
+             KEYLO_PASSPHRASE or a prompt on first use; a separate master passphrase doesn't apply here."
+        );
+    }
     vault().set_passphrase(current, new)
 }
 
 /// Where secrets are kept, with its state, for `keylo status`.
 pub(crate) fn status() -> Option<String> {
+    if let Some(v) = file_vault() {
+        let state = if v.try_unlock_quietly().unwrap_or(false) { "unlocked" } else { "locked" };
+        return Some(format!("Keylo's encrypted vault ({}, {state})", v.path().display()));
+    }
     let v = vault();
     let has = v.has_passphrase().unwrap_or(false);
     let locked = has && !v.try_unlock_quietly().unwrap_or(true);
@@ -230,13 +437,20 @@ pub(crate) fn status() -> Option<String> {
 // releases the key to open the vault without typing the passphrase. (Needs the signed keylo-mac with
 // its keychain-access-group entitlement; an unsigned build can't use that keychain.)
 
-/// Whether Touch ID can be a vault key source here (biometrics enrolled, helper present).
+/// Whether Touch ID can be a vault key source here (biometrics enrolled, helper present). Not with the
+/// headless file vault — Touch ID needs a desktop session.
 pub(crate) fn hello_available() -> bool {
+    if matches!(kind(), Some(StoreKind::File)) {
+        return false;
+    }
     matches!(run_helper(&["bio-available"], None), Ok((0, _)))
 }
 
 /// Whether "unlock with Touch ID" is set up for the vault (the wrap and the Secure Enclave blob).
 pub(crate) fn has_hello() -> Result<bool> {
+    if matches!(kind(), Some(StoreKind::File)) {
+        return Ok(false);
+    }
     Ok(vault().has_hello()? && touchid_blob_path().is_file())
 }
 
@@ -250,6 +464,9 @@ fn touchid_blob_path() -> PathBuf {
 /// yields) or off. Enabling prompts Touch ID, and needs a live session or `passphrase` to reach the
 /// vault key.
 pub(crate) fn set_hello(enable: bool, passphrase: Option<&str>) -> Result<()> {
+    if file_vault().is_some() {
+        bail!("Touch ID unlock needs a desktop session; it isn't available for the headless vault file.");
+    }
     if enable {
         let (code, out) = run_helper(&["bio-enroll"], None)?;
         match code {
@@ -281,6 +498,9 @@ pub(crate) fn set_hello(enable: bool, passphrase: Option<&str>) -> Result<()> {
 
 /// Unlocks the vault with Touch ID (prompts the gesture): re-derives the key from the stored blob.
 pub(crate) fn unlock_hello() -> Result<()> {
+    if file_vault().is_some() {
+        bail!("Touch ID unlock needs a desktop session; it isn't available for the headless vault file.");
+    }
     let blob = std::fs::read_to_string(touchid_blob_path()).map_err(|_| Error::msg("Touch ID unlock isn't set up for this vault."))?;
     let blob = blob.trim();
     if blob.is_empty() {
