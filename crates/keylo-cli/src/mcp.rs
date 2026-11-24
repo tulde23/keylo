@@ -55,7 +55,7 @@ fn instructions() -> String {
   \"orders-db@uat\" or \"orders-db@prod:password\"; without it the default environment is used. Environments marked
   \"always ask\" (usually prod) open an approval window every time, whatever your key covers.
 - Prefer run_with_secrets: values reach the command as environment variables and are redacted from its output, so they never enter this conversation.
-- For a credential a program reads as a file (service-account/OAuth JSON, kubeconfig, PEM): use run_with_secrets' \"files\" map instead of \"env\". Keylo writes it to a private temp file, sets the variable to its path, and deletes the file when the command finishes. Don't ask for the value to write the file yourself.
+- For a credential a program reads as a file (service-account/OAuth JSON, kubeconfig, PEM): use run_with_secrets' \"files\" map instead of \"env\". Keylo writes it to a private temp file, sets the variable to its path, and deletes the file when the command finishes. Don't ask for the value to write the file yourself. Binary secrets (a .p12 certificate, a keystore) can only be used this way, never as env.
 - Keylo never returns secret values to agents. To use one, run a command with run_with_secrets.
 - Using a secret outside your key's scope asks the user to approve it (with {}); an approval
   lasts for their Keylo session (15 minutes by default). If they deny it, don't retry; ask them.
@@ -693,7 +693,9 @@ impl Server {
                 if let Some(u) = &info.username {
                     all.insert("username".into(), u.clone());
                 }
-                let Some(v) = types::decode_text(&secret.value) else { tool_fail!("'{}' is binary; it can't be used as text.", info.name) };
+                let Some(v) = types::decode_text(&secret.value) else {
+                    tool_fail!("'{}' holds binary data, so it can't be an environment variable. Map it in the files argument instead to deliver it to the command as a file.", info.name)
+                };
                 redactor.add(&info.name, &v);
                 all.insert("value".into(), v);
             }
@@ -1243,12 +1245,12 @@ pub fn definitions() -> Value {
           "properties": {
             "env": {
               "type": "object",
-              "description": "Environment variable -> secret name, which maps its main value, or 'name:field' for one field (see the fields from search_secrets), or 'name@env' / 'name@env:field' for an environment of a per-environment link, e.g. {\"GITHUB_TOKEN\": \"github-token\", \"DB_URL\": \"prod-db:connection_string\", \"DB_USER\": \"prod-db:username\"}.",
+              "description": "Environment variable -> secret name, which maps its main value, or 'name:field' for one field (see the fields from search_secrets), or 'name@env' / 'name@env:field' for an environment of a per-environment link, e.g. {\"GITHUB_TOKEN\": \"github-token\", \"DB_URL\": \"prod-db:connection_string\", \"DB_USER\": \"prod-db:username\"}. A binary secret can't be an environment variable — put it in files instead.",
               "additionalProperties": { "type": "string" }
             },
             "files": {
               "type": "object",
-              "description": "For secrets a program reads as a FILE rather than a variable (a service-account or OAuth JSON, a kubeconfig, a PEM key or certificate): environment variable -> secret name. Keylo writes each value to a private temporary file only you can read, deleted when the command finishes, and sets the variable to that file's path. Same name grammar as env ('name', 'name:field', 'name@env:field'). Example: {\"GOOGLE_APPLICATION_CREDENTIALS\": \"google-oauth\"}.",
+              "description": "For secrets a program reads as a FILE rather than a variable (a service-account or OAuth JSON, a kubeconfig, a PEM key or certificate), and the only way to use a binary secret (a .p12/PFX certificate, a keystore, a DER key): environment variable -> secret name. Keylo writes each value to a private temporary file only you can read, deleted when the command finishes, and sets the variable to that file's path. Same name grammar as env ('name', 'name:field', 'name@env:field'). Example: {\"GOOGLE_APPLICATION_CREDENTIALS\": \"google-oauth\"}.",
               "additionalProperties": { "type": "string" }
             },
             "command": { "type": "string", "description": "The command line. Reference variables in the shell's syntax: $env:VAR (powershell), %VAR% (cmd), $VAR (bash, zsh, sh). A files entry's variable holds the path to the written file." },

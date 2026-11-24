@@ -281,7 +281,7 @@ impl Context {
             }
             return match types::decode_text(&secret.value) {
                 Some(v) => Ok(Zeroizing::new(v)),
-                None => fail!("'{}' is binary and can't be an environment variable.", info.name),
+                None => fail!("'{}' is binary and can't be an environment variable. Use --file VAR={} to deliver it to the command as a file instead.", info.name, info.name),
             };
         };
         let chosen = pick_field(&t, &info.name, field.as_deref())?;

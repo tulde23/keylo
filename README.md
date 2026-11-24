@@ -544,7 +544,8 @@ the value to a temporary file only you can read, sets the variable to its path, 
 the file as soon as the command exits — so a whole credential document (a Google
 `client_secret.json`, a kubeconfig, a `.pem` key) is used without ever being printed or kept
 unencrypted. Store the document as a single secret (the **Document** type, or any secret whose value
-is the file's contents); Keylo never parses it.
+is the file's contents); Keylo never parses it. It's also the only way to use a **binary** secret (a
+`.p12`/PFX certificate, a keystore, a DER key), which can't be an environment variable.
 
 ### Access keys and agents
 
