@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 keylo=${1:-target/debug/keylo}
 
-keychain="$RUNNER_TEMP/keylo-ci.keychain-db"
+keychain="${RUNNER_TEMP:-}/keylo-ci.keychain-db"
 [[ -n ${RUNNER_TEMP:-} ]] || keychain="$(mktemp -d)/keylo-ci.keychain-db"
 security create-keychain -p ci-password "$keychain"
 security set-keychain-settings "$keychain"          # no auto-lock
