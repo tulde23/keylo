@@ -14,7 +14,9 @@ security set-keychain-settings "$keychain"          # no auto-lock
 security unlock-keychain -p ci-password "$keychain"
 trap 'security delete-keychain "$keychain" 2>/dev/null || true' EXIT
 
-export KEYLO_KEYCHAIN=$keychain KEYLO_HOME=$(mktemp -d) KEYLO_PREFIX="KeyloCiTest:"
+# Pin the Keychain store: CI runners have no desktop session, so auto-detect would otherwise fall
+# back to the passphrase vault file (tested separately below).
+export KEYLO_KEYCHAIN=$keychain KEYLO_HOME=$(mktemp -d) KEYLO_PREFIX="KeyloCiTest:" KEYLO_STORE=keychain
 echo '{"hello":"never"}' > "$KEYLO_HOME/config.json"
 
 pass=0
@@ -49,4 +51,20 @@ check "rename" "orders-db" "$("$keylo" list)"
 for n in plain big orders-db; do "$keylo" rm "$n" --yes >/dev/null 2>&1 || true; done
 check "all removed" "0" "$("$keylo" list --json | grep -c '"name"' || true)"
 check "status" "Keylo" "$("$keylo" status)"
+
+# The headless fallback: a passphrase-protected vault file, no Keychain (as over SSH or on a server).
+echo "== headless vault file (KEYLO_STORE=file)"
+(
+  export KEYLO_STORE=file KEYLO_HOME=$(mktemp -d) KEYLO_PREFIX="KeyloCiFile:" KEYLO_PASSPHRASE="correct horse battery staple 7"
+  echo '{"hello":"never"}' > "$KEYLO_HOME/config.json"
+  printf 'file-value' | "$keylo" set plain --category dev >/dev/null
+  check "file vault: value round-trips" "file-value" "$("$keylo" get plain)"
+  check "file vault: it's the vault file, not the Keychain db" "vault.json" "$(ls "$KEYLO_HOME")"
+  check "file vault: status names it" "encrypted vault" "$("$keylo" status)"
+  check "file vault: run delivers the value" "V=file-value" "$("$keylo" run --env V=plain -- sh -c 'echo V=$V')"
+  # Binary round-trips through --file (a file vault stores raw bytes, no Keychain involved).
+  printf '\000\377\001\002' > "$KEYLO_HOME/bin"
+  "$keylo" set cert --file "$KEYLO_HOME/bin" >/dev/null
+  check "file vault: binary via --file" "len=4" "$("$keylo" run --file C=cert -- sh -c 'printf len=%s "$(wc -c < "$C" | tr -d " ")"')"
+)
 echo "$pass checks passed."
