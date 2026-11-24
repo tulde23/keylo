@@ -21,6 +21,7 @@ use keylo_core::refs::SecretReference;
 use keylo_core::secrets::SecretInfo;
 use keylo_core::store::SecretStore;
 use keylo_core::types::{self, SecretTypeCatalog, SecretTypeDefinition};
+use zeroize::Zeroizing;
 use keylo_core::{eq_ic, search, Error};
 use serde_json::{json, Map, Value};
 
@@ -54,7 +55,7 @@ fn instructions() -> String {
   \"orders-db@uat\" or \"orders-db@prod:password\"; without it the default environment is used. Environments marked
   \"always ask\" (usually prod) open an approval window every time, whatever your key covers.
 - Prefer run_with_secrets: values reach the command as environment variables and are redacted from its output, so they never enter this conversation.
-- For a credential a program reads as a file (service-account/OAuth JSON, kubeconfig, PEM): use run_with_secrets' \"files\" map instead of \"env\". Keylo writes it to a private temp file, sets the variable to its path, and deletes the file when the command finishes. Don't ask for the value to write the file yourself.
+- For a credential a program reads as a file (service-account/OAuth JSON, kubeconfig, PEM): use run_with_secrets' \"files\" map instead of \"env\". Keylo writes it to a private temp file, sets the variable to its path, and deletes the file when the command finishes. Don't ask for the value to write the file yourself. Binary secrets (a .p12 certificate, a keystore) can only be used this way, never as env.
 - Keylo never returns secret values to agents. To use one, run a command with run_with_secrets.
 - Using a secret outside your key's scope asks the user to approve it (with {}); an approval
   lasts for their Keylo session (15 minutes by default). If they deny it, don't retry; ask them.
@@ -467,17 +468,17 @@ impl Server {
         let mut read: HashMap<String, BTreeMap<String, String>> = HashMap::new();
         let mut environment = BTreeMap::new();
         for (var, u, as_file) in &mappings {
-            let label = u.label().to_lowercase();
-            if !read.contains_key(&label) {
-                let values = self.read_all(u)?;
-                read.insert(label.clone(), values);
-            }
-            let mut value = self.pick(&u.info, &read[&label], u.field.as_deref())?;
             if *as_file {
-                let path = files.add(var, value.as_bytes()).map_err(|e| ToolError(format!("Couldn't write a secret to a temporary file: {e}")))?;
-                zeroize::Zeroize::zeroize(&mut value);
+                // Raw bytes: a binary secret (a cert, a keystore) is valid as a file.
+                let bytes = self.read_bytes(u)?;
+                let path = files.add(var, &bytes).map_err(|e| ToolError(format!("Couldn't write a secret to a temporary file: {e}")))?;
                 environment.insert(var.clone(), path.to_string_lossy().into_owned());
             } else {
+                let label = u.label().to_lowercase();
+                if !read.contains_key(&label) {
+                    read.insert(label.clone(), self.read_all(u)?);
+                }
+                let value = self.pick(&u.info, &read[&label], u.field.as_deref())?;
                 environment.insert(var.clone(), value);
             }
         }
@@ -692,7 +693,9 @@ impl Server {
                 if let Some(u) = &info.username {
                     all.insert("username".into(), u.clone());
                 }
-                let Some(v) = types::decode_text(&secret.value) else { tool_fail!("'{}' is binary; it can't be used as text.", info.name) };
+                let Some(v) = types::decode_text(&secret.value) else {
+                    tool_fail!("'{}' holds binary data, so it can't be an environment variable. Map it in the files argument instead to deliver it to the command as a file.", info.name)
+                };
                 redactor.add(&info.name, &v);
                 all.insert("value".into(), v);
             }
@@ -709,6 +712,33 @@ impl Server {
             }
         }
         Ok(all)
+    }
+
+    /// A secret's value or field as raw bytes, for delivery as a file. Unlike the text path, a plain
+    /// secret's binary main value is allowed. The value is registered for output redaction when it is
+    /// valid text (binary can't meaningfully be matched in the command's text output).
+    fn read_bytes(&self, u: &SecretUse) -> Result<Zeroizing<Vec<u8>>, ToolError> {
+        let info = &u.info;
+        let lower = u.field.as_deref().map(str::to_lowercase);
+        let plain_main = links::read(info).is_none()
+            && !matches!(lower.as_deref(), Some("username") | Some("key"))
+            && self.type_of(info).is_none();
+        if plain_main {
+            if !matches!(lower.as_deref(), None | Some("value")) {
+                tool_fail!("'{}' is a plain secret; it only has value and username.", info.name);
+            }
+            let secret = self.store.get(&info.name)?;
+            if let Some(text) = types::decode_text(&secret.value) {
+                self.redactor.lock().unwrap().add(&info.name, &text);
+            }
+            return Ok(secret.value.clone());
+        }
+        // Typed fields, usernames and linked secrets are text; read_all registers them for redaction.
+        let all = self.read_all(u)?;
+        let mut text = self.pick(info, &all, u.field.as_deref())?;
+        let bytes = Zeroizing::new(text.as_bytes().to_vec());
+        zeroize::Zeroize::zeroize(&mut text);
+        Ok(bytes)
     }
 
     /// One field: the main value when `field` is None or "value".
@@ -1215,12 +1245,12 @@ pub fn definitions() -> Value {
           "properties": {
             "env": {
               "type": "object",
-              "description": "Environment variable -> secret name, which maps its main value, or 'name:field' for one field (see the fields from search_secrets), or 'name@env' / 'name@env:field' for an environment of a per-environment link, e.g. {\"GITHUB_TOKEN\": \"github-token\", \"DB_URL\": \"prod-db:connection_string\", \"DB_USER\": \"prod-db:username\"}.",
+              "description": "Environment variable -> secret name, which maps its main value, or 'name:field' for one field (see the fields from search_secrets), or 'name@env' / 'name@env:field' for an environment of a per-environment link, e.g. {\"GITHUB_TOKEN\": \"github-token\", \"DB_URL\": \"prod-db:connection_string\", \"DB_USER\": \"prod-db:username\"}. A binary secret can't be an environment variable — put it in files instead.",
               "additionalProperties": { "type": "string" }
             },
             "files": {
               "type": "object",
-              "description": "For secrets a program reads as a FILE rather than a variable (a service-account or OAuth JSON, a kubeconfig, a PEM key or certificate): environment variable -> secret name. Keylo writes each value to a private temporary file only you can read, deleted when the command finishes, and sets the variable to that file's path. Same name grammar as env ('name', 'name:field', 'name@env:field'). Example: {\"GOOGLE_APPLICATION_CREDENTIALS\": \"google-oauth\"}.",
+              "description": "For secrets a program reads as a FILE rather than a variable (a service-account or OAuth JSON, a kubeconfig, a PEM key or certificate), and the only way to use a binary secret (a .p12/PFX certificate, a keystore, a DER key): environment variable -> secret name. Keylo writes each value to a private temporary file only you can read, deleted when the command finishes, and sets the variable to that file's path. Same name grammar as env ('name', 'name:field', 'name@env:field'). Example: {\"GOOGLE_APPLICATION_CREDENTIALS\": \"google-oauth\"}.",
               "additionalProperties": { "type": "string" }
             },
             "command": { "type": "string", "description": "The command line. Reference variables in the shell's syntax: $env:VAR (powershell), %VAR% (cmd), $VAR (bash, zsh, sh). A files entry's variable holds the path to the written file." },

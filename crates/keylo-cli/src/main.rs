@@ -281,7 +281,7 @@ impl Context {
             }
             return match types::decode_text(&secret.value) {
                 Some(v) => Ok(Zeroizing::new(v)),
-                None => fail!("'{}' is binary and can't be an environment variable.", info.name),
+                None => fail!("'{}' is binary and can't be an environment variable. Use --file VAR={} to deliver it to the command as a file instead.", info.name, info.name),
             };
         };
         let chosen = pick_field(&t, &info.name, field.as_deref())?;
@@ -290,6 +290,23 @@ impl Context {
             Some(v) => Ok(Zeroizing::new(v)),
             None => fail!("'{}' has no {}.", info.name, chosen.map(|f| f.label.as_str()).unwrap_or("value")),
         }
+    }
+
+    /// A secret's value or field as raw bytes, for delivery as a file. Unlike `field_value`, a plain
+    /// secret's binary main value is allowed — a file can hold any bytes. Typed fields, usernames and
+    /// linked secrets are always text, so they go through `field_value`.
+    pub fn field_bytes(&self, info: &SecretInfo, field: Option<&str>, environment: Option<&str>) -> CliResult<Zeroizing<Vec<u8>>> {
+        let f = field.map(str::to_lowercase);
+        let plain_main = links::read(info).is_none()
+            && !matches!(f.as_deref(), Some("username") | Some("key"))
+            && self.types.find(info.type_id.as_deref())?.is_none();
+        if plain_main {
+            if !matches!(f.as_deref(), None | Some("value")) {
+                fail!("'{}' is a plain secret; it only has value and username.", info.name);
+            }
+            return Ok(self.store.get(&info.name)?.value.clone());
+        }
+        Ok(Zeroizing::new(self.field_value(info, field, environment)?.as_bytes().to_vec()))
     }
 }
 
@@ -1012,12 +1029,13 @@ fn run_cmd(c: &mut Context, args: &Args) -> CliResult<i32> {
     let mut files = if pairs.iter().any(|p| p.4) { Some(runner::SecretFiles::new()?) } else { None };
     let mut env = BTreeMap::new();
     for (var, info, field, environment, as_file) in &pairs {
-        let value = c.field_value(info, field.as_deref(), environment.as_ref().map(|e| e.name.as_str()))?;
+        let env_name = environment.as_ref().map(|e| e.name.as_str());
         if *as_file {
-            let path = files.as_mut().unwrap().add(var, value.as_bytes())?;
+            let bytes = c.field_bytes(info, field.as_deref(), env_name)?;
+            let path = files.as_mut().unwrap().add(var, &bytes)?;
             env.insert(var.clone(), path.to_string_lossy().into_owned());
         } else {
-            env.insert(var.clone(), value.to_string());
+            env.insert(var.clone(), c.field_value(info, field.as_deref(), env_name)?.to_string());
         }
     }
     let code = runner::run(&args.rest, &env);
