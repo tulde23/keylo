@@ -21,6 +21,7 @@ use keylo_core::refs::SecretReference;
 use keylo_core::secrets::SecretInfo;
 use keylo_core::store::SecretStore;
 use keylo_core::types::{self, SecretTypeCatalog, SecretTypeDefinition};
+use zeroize::Zeroizing;
 use keylo_core::{eq_ic, search, Error};
 use serde_json::{json, Map, Value};
 
@@ -467,17 +468,17 @@ impl Server {
         let mut read: HashMap<String, BTreeMap<String, String>> = HashMap::new();
         let mut environment = BTreeMap::new();
         for (var, u, as_file) in &mappings {
-            let label = u.label().to_lowercase();
-            if !read.contains_key(&label) {
-                let values = self.read_all(u)?;
-                read.insert(label.clone(), values);
-            }
-            let mut value = self.pick(&u.info, &read[&label], u.field.as_deref())?;
             if *as_file {
-                let path = files.add(var, value.as_bytes()).map_err(|e| ToolError(format!("Couldn't write a secret to a temporary file: {e}")))?;
-                zeroize::Zeroize::zeroize(&mut value);
+                // Raw bytes: a binary secret (a cert, a keystore) is valid as a file.
+                let bytes = self.read_bytes(u)?;
+                let path = files.add(var, &bytes).map_err(|e| ToolError(format!("Couldn't write a secret to a temporary file: {e}")))?;
                 environment.insert(var.clone(), path.to_string_lossy().into_owned());
             } else {
+                let label = u.label().to_lowercase();
+                if !read.contains_key(&label) {
+                    read.insert(label.clone(), self.read_all(u)?);
+                }
+                let value = self.pick(&u.info, &read[&label], u.field.as_deref())?;
                 environment.insert(var.clone(), value);
             }
         }
@@ -709,6 +710,33 @@ impl Server {
             }
         }
         Ok(all)
+    }
+
+    /// A secret's value or field as raw bytes, for delivery as a file. Unlike the text path, a plain
+    /// secret's binary main value is allowed. The value is registered for output redaction when it is
+    /// valid text (binary can't meaningfully be matched in the command's text output).
+    fn read_bytes(&self, u: &SecretUse) -> Result<Zeroizing<Vec<u8>>, ToolError> {
+        let info = &u.info;
+        let lower = u.field.as_deref().map(str::to_lowercase);
+        let plain_main = links::read(info).is_none()
+            && !matches!(lower.as_deref(), Some("username") | Some("key"))
+            && self.type_of(info).is_none();
+        if plain_main {
+            if !matches!(lower.as_deref(), None | Some("value")) {
+                tool_fail!("'{}' is a plain secret; it only has value and username.", info.name);
+            }
+            let secret = self.store.get(&info.name)?;
+            if let Some(text) = types::decode_text(&secret.value) {
+                self.redactor.lock().unwrap().add(&info.name, &text);
+            }
+            return Ok(secret.value.clone());
+        }
+        // Typed fields, usernames and linked secrets are text; read_all registers them for redaction.
+        let all = self.read_all(u)?;
+        let mut text = self.pick(info, &all, u.field.as_deref())?;
+        let bytes = Zeroizing::new(text.as_bytes().to_vec());
+        zeroize::Zeroize::zeroize(&mut text);
+        Ok(bytes)
     }
 
     /// One field: the main value when `field` is None or "value".
