@@ -34,8 +34,9 @@ having Keylo run commands with them, and never **read** them. This is a summary;
   or left on disk.
 - **Other users on the computer, and a stolen disk or copied backup.** Secret values live in Keylo's
   vault (`keylo.db`), each encrypted under a key the OS protects — DPAPI on Windows, the macOS
-  Keychain on macOS, the desktop keyring on Linux — or, on a headless Linux box, in Keylo's
-  passphrase-wrapped vault file, all tied to your account. On Windows, macOS and the Linux keyring
+  Keychain on macOS, the desktop keyring on Linux — or, on a headless box with no desktop session
+  (a Linux server, or macOS over SSH), in Keylo's passphrase-wrapped vault file, all tied to your
+  account. On Windows, macOS and the Linux keyring
   vault, secrets' details (names, categories, usernames, websites, notes) are readable by programs
   running as you, as Credential Manager and Keychain attributes always were. Keylo
   authenticates the whole vault (every value, every detail and the set of entries) under its key and

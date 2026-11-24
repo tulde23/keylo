@@ -123,6 +123,23 @@ impl KeychainStore {
         CFDictionary::from_CFType_pairs(&pairs)
     }
 
+    /// Whether an item here can be read without a user prompt. False only when macOS would need to ask
+    /// and can't (errSecInteractionNotAllowed, -25308 — e.g. over SSH); a missing item or any other
+    /// status counts as reachable, so the real error surfaces later with its own message. Reading the
+    /// data forces the access-control check that would prompt.
+    pub fn reachable(&self, probe_account: &str) -> bool {
+        const ERR_INTERACTION_NOT_ALLOWED: OSStatus = -25308;
+        let query = self.query(
+            Some(probe_account),
+            false,
+            vec![
+                (key(unsafe { kSecReturnData }), CFBoolean::true_value().as_CFType()),
+                (key(unsafe { kSecMatchLimit }), key(unsafe { kSecMatchLimitOne }).as_CFType()),
+            ],
+        );
+        !matches!(copy_matching(&query), Err(ERR_INTERACTION_NOT_ALLOWED))
+    }
+
     fn to_credential(&self, target: &str, attributes: &CFDictionary<CFString, CFType>, blob: Vec<u8>) -> RawCredential {
         let generic = attributes
             .find(key(unsafe { kSecAttrGeneric }))

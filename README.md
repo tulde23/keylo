@@ -997,10 +997,10 @@ never deletes anything, and brings the secrets back.
 
 | | Windows | macOS | Linux |
 |---|---|---|---|
-| Secrets | Keylo's vault, `keylo.db` (SQLite) in the data folder: values encrypted, key protected by DPAPI | Keylo's vault, `keylo.db` (SQLite): values encrypted, key sealed by a Keychain-stored master key | with a desktop keyring: Keylo's vault, `keylo.db`, key kept in the keyring (Secret Service: GNOME Keyring, KWallet, KeePassXC…). Headless: Keylo's own encrypted vault file |
-| Values kept in the store | up to 64 KB | up to 64 KB | keyring vault: up to 64 KB; file vault: up to 16 KB |
-| Larger values | DPAPI-encrypted files in `blobs\` | AES-256-GCM files, key in the keychain | AES-256-GCM files, key in the keyring or derived from the vault key |
-| Tied to | your Windows account on this PC | your macOS account and its keychain | your keyring (desktop) or the vault's passphrase (headless) |
+| Secrets | Keylo's vault, `keylo.db` (SQLite) in the data folder: values encrypted, key protected by DPAPI | Desktop session: Keylo's vault, `keylo.db` (SQLite), values encrypted, key sealed by a Keychain-stored master key. Headless (SSH, no desktop): Keylo's own encrypted vault file | with a desktop keyring: Keylo's vault, `keylo.db`, key kept in the keyring (Secret Service: GNOME Keyring, KWallet, KeePassXC…). Headless: Keylo's own encrypted vault file |
+| Values kept in the store | up to 64 KB | keychain vault: up to 64 KB; file vault: up to 16 KB | keyring vault: up to 64 KB; file vault: up to 16 KB |
+| Larger values | DPAPI-encrypted files in `blobs\` | AES-256-GCM files, key in the keychain or derived from the vault key (headless) | AES-256-GCM files, key in the keyring or derived from the vault key |
+| Tied to | your Windows account on this PC | your macOS account and its keychain (desktop), or the vault's passphrase (headless) | your keyring (desktop) or the vault's passphrase (headless) |
 
 **On Windows,** secrets are in Keylo's vault, a SQLite database (`keylo.db`) in the data folder:
 - **Values** are each encrypted with AES-256-GCM and bound to their entry, under a key derived from a
@@ -1029,6 +1029,16 @@ list), so the vault opens for you without a passphrase. Earlier versions kept ea
 login-Keychain item (service `Keylo`); the first run of this version moves them into the vault, checks
 each copy, and only then removes the Keychain originals. The optional master passphrase works the same
 way as on Windows (**Settings → General** or `keylo passphrase set`).
+
+In a **headless session** (over SSH, with no desktop login) the login Keychain won't release the
+vault key without a prompt it can't show, so there Keylo falls back to its own **encrypted vault
+file** `vault.json` — the same passphrase-wrapped store Linux uses without a keyring (AES-256-GCM
+under a random key, wrapped with your passphrase from `KEYLO_PASSPHRASE`/`KEYLO_PASSPHRASE_FILE` or a
+terminal prompt). Keylo picks this automatically when there's no desktop session; `KEYLO_STORE=file`
+or `KEYLO_STORE=keychain` forces the choice, and the store is remembered (`store.txt`) so secrets
+never split across the two. The Keychain vault is sealed to the Mac and can't be opened headless, so
+a Mac that already keeps its secrets there needs a desktop session (or `KEYLO_STORE=file` for a
+separate passphrase vault); Keylo says so rather than silently starting an empty one.
 
 **With sync on,** each synced secret is also in every syncing device's file in the sync folder,
 encrypted with AES-256-GCM under the sync vault key (see
@@ -1115,8 +1125,8 @@ environments) are in the same file, under `providers`.
 | `KEYLO_ACCESS_KEY` | The access key for `keylo mcp` and `keylo run` (set by your agent's MCP configuration) |
 | `KEYLO_HOME` | A different data folder (tests, experiments) |
 | `KEYLO_PREFIX` | A different prefix for secrets' entries in the store (default `Keylo:`), to keep test secrets apart |
-| `KEYLO_STORE` | Linux: `keyring` or `file`, overriding the remembered choice |
-| `KEYLO_PASSPHRASE` / `KEYLO_PASSPHRASE_FILE` | Linux vault file: the passphrase, for unattended use |
+| `KEYLO_STORE` | Linux: `keyring` or `file`; macOS: `keychain` or `file`. Overrides the remembered choice |
+| `KEYLO_PASSPHRASE` / `KEYLO_PASSPHRASE_FILE` | The vault file's passphrase (Linux, or headless macOS), for unattended use |
 | `KEYLO_VAULT_CACHE_MINUTES` | Linux vault file: how long the unlocked key is cached (default 15; 0 turns caching off) |
 | `KEYLO_KEYCHAIN` | macOS: use this keychain file instead of the login keychain (tests, SSH sessions) |
 
@@ -1142,7 +1152,7 @@ Credential Manager: only the default data folder, or a setup with its own prefix
 | `blobs/` | Encrypted files for large values |
 | `icons/` | Uploaded icon images |
 | `keylo.db` (with `-wal` and `-shm`) | Windows: Keylo's vault |
-| `vault.json`, `store.txt` | Linux: the vault file, and which store is in use |
+| `vault.json`, `store.txt` | Linux, or headless macOS: the passphrase vault file, and which store is in use |
 | `sync.json`, `sync.key`, `sync-state.bin` | Sync: the folder and device name, the vault key (protected), and what the last sync saw (protected) |
 
 None of these files hold secret values in readable form; `keylo.db` holds secrets' details readable.
@@ -1164,8 +1174,11 @@ None of these files hold secret values in readable form; `keylo.db` holds secret
 - Secrets live in Keylo's vault (`keylo.db`); the only Keychain item is Keylo's master key, under
   `Keylo.Internal`, which seals the vault key and local files. (Older per-secret items under `Keylo`
   are moved into the vault on first run.)
-- The login keychain is locked in SSH sessions, so the vault can't open there. Use
-  `KEYLO_KEYCHAIN=/path/to.keychain-db` for a keychain you can unlock.
+- The login Keychain won't release the vault key in an SSH session (no desktop to confirm), so there
+  Keylo uses its passphrase-protected vault file (`vault.json`) instead — chosen automatically when
+  there's no desktop session, or forced with `KEYLO_STORE=file`. Set `KEYLO_PASSPHRASE` /
+  `KEYLO_PASSPHRASE_FILE`, or run `keylo unlock`. (For a throwaway Keychain you can unlock yourself,
+  `KEYLO_KEYCHAIN=/path/to.keychain-db` with `KEYLO_STORE=keychain` still works.)
 - Copied values are marked concealed and transient, so clipboard managers and Universal Clipboard
   skip them.
 

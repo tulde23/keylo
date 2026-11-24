@@ -18,6 +18,11 @@ pub use windows_platform::WindowsPlatform;
 #[cfg(unix)]
 mod unix;
 
+// Keylo's passphrase-wrapped vault file: the store on a headless Linux box, and the headless/SSH
+// fallback on macOS. Shared by both.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod file_vault;
+
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
@@ -43,9 +48,9 @@ pub fn install() {
 /// Whether the store may ask for a passphrase on the terminal (Linux's vault file). The CLI allows
 /// it; the MCP server and the app don't (they have no terminal to ask on).
 pub fn set_terminal_prompts(allowed: bool) {
-    #[cfg(target_os = "linux")]
-    linux::vault::CAN_PROMPT_ON_TERMINAL.store(allowed, std::sync::atomic::Ordering::Relaxed);
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    file_vault::CAN_PROMPT_ON_TERMINAL.store(allowed, std::sync::atomic::Ordering::Relaxed);
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     let _ = allowed;
 }
 
@@ -54,7 +59,9 @@ pub fn set_terminal_prompts(allowed: bool) {
 pub fn unlock_store() -> keylo_core::Result<Option<String>> {
     #[cfg(target_os = "linux")]
     return linux::unlock_store();
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    return macos::unlock_store();
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     Ok(None)
 }
 

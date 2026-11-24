@@ -19,6 +19,10 @@ libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 secret-service = { version = "5", features = ["rt-async-io-crypto-rust"] }
+
+# Keylo's passphrase-wrapped vault file (file_vault.rs): the store on a headless Linux box, and the
+# headless/SSH fallback on macOS.
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 pbkdf2.workspace = true
 hex.workspace = true
 
