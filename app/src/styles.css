@@ -169,7 +169,7 @@ kbd { font-size: 11px; border: 1px solid var(--border); border-radius: 4px; padd
 .empty-state p { margin: 0; font-size: 13px; line-height: 1.6; }
 .detail-header { display: flex; align-items: center; gap: 16px; }
 .detail-title { min-width: 0; }
-.detail-title h1 { font-size: 22px; overflow-wrap: anywhere; }
+.detail-title h1 { font-size: 22px; overflow-wrap: anywhere; user-select: text; }
 .chips { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 .chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .chip-soft { background: var(--row-hover); color: var(--muted); }
