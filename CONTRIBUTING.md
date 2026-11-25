@@ -49,4 +49,5 @@ app in `app/`.
 ## License
 
 By contributing, you agree that your contributions are licensed under the project's
-[MIT License](LICENSE).
+[Business Source License 1.1](LICENSE), and that the Licensor may also make your contributions
+available under the Change License (Apache 2.0) and under separate commercial license terms.
