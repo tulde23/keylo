@@ -3,7 +3,7 @@
 *Agents use them. Never see them.*
 
 [![Latest release](https://img.shields.io/github/v/release/tulde23/keylo?label=release)](https://github.com/tulde23/keylo/releases/latest)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: BSL 1.1](https://img.shields.io/badge/license-BSL%201.1-blue.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-6D28D9)
 
 <p align="center"><img src="docs/images/keylo-mcp-demo.gif" alt="An agent using Keylo's MCP server: it finds the orders-db secret by name, runs the migrations with the connection string in DATABASE_URL, and when it echoes the variable the output shows [keylo:orders-db:connection_string] instead of the value" width="900"></p>
@@ -1290,4 +1290,13 @@ Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Source-available under the [Business Source License 1.1](LICENSE). The source is published so the
+security-critical code can be read and audited.
+
+You may use Keylo free of charge for any purpose — personal, internal business (including at a
+company), research, or education — and redistribute the unmodified build with its license intact.
+What you may **not** do without a separate commercial license is offer Keylo to third parties as a
+hosted/managed service or resell it as a competing product.
+
+On **2029-11-25** (the Change Date), each released version converts to the **Apache License 2.0**.
+For commercial-licensing questions, open an issue at <https://github.com/tulde23/keylo>.
