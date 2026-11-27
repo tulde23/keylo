@@ -1191,35 +1191,35 @@ pub fn definitions() -> Value {
             "limit": { "type": "integer", "description": "Maximum results (default 50, max 200)." }
           }
         },
-        "annotations": { "readOnlyHint": true, "openWorldHint": false }
+        "annotations": { "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
       },
       {
         "name": "list_categories",
         "title": "List secret categories",
         "description": "Categories with how many secrets each has, and how many your access key can use without approval.",
         "inputSchema": { "type": "object", "properties": {} },
-        "annotations": { "readOnlyHint": true, "openWorldHint": false }
+        "annotations": { "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
       },
       {
         "name": "list_types",
         "title": "List secret types",
         "description": "The secret types (login, api_key, database, ssh_key, note, password, server, email_account, software_license, wireless_router, crypto_wallet, document, credit_card, bank_account, and the user's custom ones) with their fields: which are secret and which is the main value.",
         "inputSchema": { "type": "object", "properties": {} },
-        "annotations": { "readOnlyHint": true, "openWorldHint": false }
+        "annotations": { "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
       },
       {
         "name": "check_for_updates",
         "title": "Check for a Keylo update",
         "description": "Whether a newer version of Keylo has been released: this build's version, the latest one, and how the user can install it. Read-only; agents can't install updates (the user does, from the Keylo app or with 'keylo update').",
         "inputSchema": { "type": "object", "properties": {} },
-        "annotations": { "readOnlyHint": true, "openWorldHint": true }
+        "annotations": { "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true }
       },
       {
         "name": "list_aws_profiles",
         "title": "List AWS profiles and regions",
         "description": "Keylo's AWS environments (dev, uat, prod…: each a profile and region; secrets linked per environment are used as name@env), the AWS profiles set up on this computer (~/.aws/config and ~/.aws/credentials: name, region, and how each signs in, e.g. sso or access keys; never any keys), every AWS region, whether the aws CLI is installed, and the profile and region Keylo's AWS Secrets Manager provider uses. Useful before running aws commands with run_with_secrets, or to tell the user which profile to link secrets from.",
         "inputSchema": { "type": "object", "properties": {} },
-        "annotations": { "readOnlyHint": true, "openWorldHint": false }
+        "annotations": { "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
       },
       {
         "name": "list_aws_secrets",
@@ -1234,7 +1234,7 @@ pub fn definitions() -> Value {
             "query": { "type": "string", "description": "Only secrets whose name, description or tags contain every word." }
           }
         },
-        "annotations": { "readOnlyHint": true, "openWorldHint": true }
+        "annotations": { "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true }
       },
       {
         "name": "run_with_secrets",
@@ -1261,7 +1261,7 @@ pub fn definitions() -> Value {
           },
           "required": ["command"]
         },
-        "annotations": { "destructiveHint": true, "openWorldHint": true }
+        "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": true }
       },
       {
         "name": "request_access",
@@ -1275,7 +1275,145 @@ pub fn definitions() -> Value {
           },
           "required": ["names", "reason"]
         },
-        "annotations": { "readOnlyHint": false, "openWorldHint": false }
+        "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
       }
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::definitions;
+    use serde_json::Value;
+
+    /// Every tool the MCP server advertises. Each is referenced by name in a test below so
+    /// the tool surface has explicit coverage and changes to it fail loudly.
+    const TOOL_NAMES: &[&str] = &[
+        "search_secrets",
+        "list_categories",
+        "list_types",
+        "check_for_updates",
+        "list_aws_profiles",
+        "list_aws_secrets",
+        "run_with_secrets",
+        "request_access",
+    ];
+
+    const HINTS: &[&str] = &[
+        "readOnlyHint",
+        "destructiveHint",
+        "idempotentHint",
+        "openWorldHint",
+    ];
+
+    fn tool(name: &str) -> Value {
+        definitions()
+            .as_array()
+            .expect("definitions() is an array")
+            .iter()
+            .find(|t| t["name"] == name)
+            .unwrap_or_else(|| panic!("tool {name} is not defined"))
+            .clone()
+    }
+
+    fn assert_well_formed(name: &str) {
+        let t = tool(name);
+        assert_eq!(t["name"], name, "{name}: name mismatch");
+        assert!(t["description"].is_string(), "{name}: missing description");
+        assert!(
+            t["inputSchema"].is_object(),
+            "{name}: missing inputSchema object"
+        );
+        let ann = &t["annotations"];
+        assert!(ann.is_object(), "{name}: missing annotations object");
+        // OpenAI's directory rejects a tool unless all four hints are present and boolean.
+        for hint in HINTS {
+            assert!(
+                ann.get(hint).and_then(Value::as_bool).is_some(),
+                "{name}: annotation {hint} must be an explicit boolean"
+            );
+        }
+    }
+
+    #[test]
+    fn definitions_lists_every_tool_exactly_once() {
+        let defs = definitions();
+        let arr = defs.as_array().expect("definitions() is an array");
+        assert_eq!(
+            arr.len(),
+            TOOL_NAMES.len(),
+            "tool count changed; update TOOL_NAMES and its per-tool tests"
+        );
+        for name in TOOL_NAMES {
+            let matches = arr.iter().filter(|t| t["name"] == *name).count();
+            assert_eq!(matches, 1, "tool {name} should appear exactly once");
+        }
+    }
+
+    #[test]
+    fn every_tool_declares_all_four_hints() {
+        for name in TOOL_NAMES {
+            assert_well_formed(name);
+        }
+    }
+
+    #[test]
+    fn search_secrets_is_read_only() {
+        let a = &tool("search_secrets")["annotations"];
+        assert_eq!(a["readOnlyHint"], true);
+        assert_eq!(a["destructiveHint"], false);
+    }
+
+    #[test]
+    fn list_categories_is_read_only() {
+        assert_eq!(tool("list_categories")["annotations"]["readOnlyHint"], true);
+    }
+
+    #[test]
+    fn list_types_is_read_only() {
+        assert_eq!(tool("list_types")["annotations"]["readOnlyHint"], true);
+    }
+
+    #[test]
+    fn check_for_updates_touches_the_network() {
+        let a = &tool("check_for_updates")["annotations"];
+        assert_eq!(a["readOnlyHint"], true);
+        assert_eq!(a["openWorldHint"], true);
+    }
+
+    #[test]
+    fn list_aws_profiles_is_read_only() {
+        assert_eq!(
+            tool("list_aws_profiles")["annotations"]["readOnlyHint"],
+            true
+        );
+    }
+
+    #[test]
+    fn list_aws_secrets_touches_the_network() {
+        assert_eq!(
+            tool("list_aws_secrets")["annotations"]["openWorldHint"],
+            true
+        );
+    }
+
+    #[test]
+    fn run_with_secrets_is_destructive_and_not_idempotent() {
+        let a = &tool("run_with_secrets")["annotations"];
+        assert_eq!(a["readOnlyHint"], false);
+        assert_eq!(a["destructiveHint"], true);
+        assert_eq!(a["idempotentHint"], false);
+        assert!(
+            tool("run_with_secrets")["inputSchema"]["required"]
+                .as_array()
+                .is_some_and(|r| r.iter().any(|v| v == "command")),
+            "run_with_secrets must require a command"
+        );
+    }
+
+    #[test]
+    fn request_access_is_a_non_destructive_write() {
+        let a = &tool("request_access")["annotations"];
+        assert_eq!(a["readOnlyHint"], false);
+        assert_eq!(a["destructiveHint"], false);
+    }
 }
