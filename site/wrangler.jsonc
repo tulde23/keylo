@@ -1,0 +1,15 @@
+{
+  // Cloudflare Workers "static assets" config for the keylo.dev marketing site.
+  //
+  // The Cloudflare project's build "Root directory" is set to `site`, so `wrangler deploy`
+  // runs in this folder and serves it (assets.directory ".": this directory). No Worker
+  // script, no build step. `.assetsignore` keeps this config out of what gets served.
+  "name": "keylo",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "."
+  },
+  // Keep the *.workers.dev preview URL; the custom domain keylo.dev is attached in the
+  // Cloudflare dashboard (Workers > keylo > Domains & Routes).
+  "workers_dev": true
+}
