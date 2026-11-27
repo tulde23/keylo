@@ -29,6 +29,7 @@ OneDrive, iCloud Drive, Dropbox or Syncthing.
 
 - [The problem Keylo solves](#the-problem-keylo-solves)
 - [How it works](#how-it-works)
+- [How Keylo differs](#how-keylo-differs)
 - [Features](#features)
 - [Install](#install)
 - [Updates](#updates)
@@ -96,6 +97,34 @@ There is no tool that returns a value. An agent can use a secret, but it can't r
 
 > Secret names in this guide, such as `prod-db`, `github-token` and `stripe/live-key`, are examples
 > of names you might give your own secrets.
+
+## How Keylo differs
+
+Developer secret tools mostly do **secret injection**: at runtime they fetch the value and place it
+into your code, your environment, or your agent — replacing the `.env` file, but still handing the
+real value to whatever consumes it. 1Password's developer SDKs, HashiCorp Vault agents, Doppler and
+`.env` loaders all work this way. Injection is a real improvement over plaintext files on disk.
+
+Keylo makes a different, stronger guarantee for the AI-agent case: **the agent never receives the
+value at all.** It names a secret; Keylo runs the command with the value and returns only the exit
+code and (redacted) output. There is no tool that returns a value — so there is nothing to leak into
+the conversation, the model provider, or the logs.
+
+|  | Injection tools | Keylo |
+|---|---|---|
+| **Does the agent get the value?** | Yes — injected at runtime into code/env/agent | **No** — run-only; no tool returns a value |
+| **Command output** | Your responsibility | Secret values replaced with `[keylo:name]` before the agent sees them |
+| **Account / cloud** | Usually a hosted account or server | **None** — no account, no server, local-first |
+| **Price / source** | Typically paid SaaS | **Free, source-available** ([BSL 1.1](LICENSE)) — the security-critical code can be audited |
+| **Scope control** | Varies | Run-only access keys, per-secret, with per-use approval and an audit log |
+
+This isn't a setting you turn on — it's how Keylo is built. The full mechanism, with source
+references, is in **[How Keylo conceals secrets from agents](docs/agent-secret-concealment.md)**.
+
+What Keylo deliberately does **not** try to be: a team secrets platform. It has no fleet-wide secret
+discovery, SSO/SCIM provisioning, or SIEM pipeline. It's a local-first tool for a developer and their
+agents. If you need org-wide governance, an injection platform is the right tool; if you need your
+agent to use secrets it can't read, that's Keylo.
 
 ## Features
 
@@ -676,6 +705,10 @@ Output over 30,000 characters is shortened in the middle.
 reversing it, hashing it) can get it past the redactor, and values shorter than 4 characters aren't
 redacted. Keys and approvals decide which secrets a command gets; redaction keeps them out of the
 conversation by accident. Don't approve commands you don't understand.
+
+For the exact mechanism — the tool surface, the run path, redaction, file delivery and the
+access-key gate, with source references — see
+[How Keylo conceals secrets from agents](docs/agent-secret-concealment.md).
 
 ---
 
