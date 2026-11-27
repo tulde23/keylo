@@ -5,6 +5,7 @@
 [![Latest release](https://img.shields.io/github/v/release/tulde23/keylo?label=release)](https://github.com/tulde23/keylo/releases/latest)
 [![License: BSL 1.1](https://img.shields.io/badge/license-BSL%201.1-blue.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-6D28D9)
+[![M8ven Score](https://m8ven.ai/badge/mcp/tulde23-keylo-gnetw8?v=f9b341f17041fdbc87ea153dd4b465fe)](https://m8ven.ai/mcp/tulde23-keylo-gnetw8?s=readme)
 
 [![Downloads](https://img.shields.io/github/downloads/tulde23/keylo/total?style=for-the-badge&logo=github&color=007ec6)](https://github.com/tulde23/keylo/releases)
 
