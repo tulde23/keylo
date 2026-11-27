@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Keylo vs. Secret Injection</title>
+<meta name="description" content="Keylo lets your AI agent use secrets it can never read. Every other developer secret tool injects the value into your code or agent; Keylo hands it to the command instead. No account, no cloud, source you can audit.">
+<meta property="og:title" content="Keylo vs. Secret Injection">
+<meta property="og:description" content="Secrets your agent can use but never read. No account, no cloud, source you can audit.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://keylo.dev/">
+<link rel="canonical" href="https://keylo.dev/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath fill='%237C3AED' d='M64 32h40L72 118l40 86H68L28 118z'/%3E%3Cpath fill='%23A78BFA' d='M150 70l60 32-60 32-18-32z'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+  /* Layout: hero -> the two-flow mechanism diagram -> comparison table -> three wedges -> honest limits -> CTA.
+     Keylo violet, violet-biased neutrals, both themes. */
+  :root{
+    --bg:#f5f3fb; --panel:#ffffff; --panel-2:#faf8ff; --line:#e7e2f4;
+    --ink:#1a1626; --muted:#625b78; --faint:#8a83a0;
+    --v1:#5b21b6; --v2:#6d28d9; --v3:#7c3aed; --v4:#8b5cf6; --v6:#a855f7; --v7:#a78bfa; --v8:#ddd6fe;
+    --navy:#1e1b4b; --accent:#7c3aed; --accent-ink:#5b21b6;
+    --ok:#2f9e5b; --ok-bg:#e5f4e4; --no:#b4409a;
+    --radius:16px;
+    --display:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;
+    --body:"Inter",ui-sans-serif,system-ui,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#110f18; --panel:#1a1725; --panel-2:#201c2f; --line:#2c2640;
+    --ink:#ece9f6; --muted:#a89fc3; --faint:#7f779c;
+    --accent:#a78bfa; --accent-ink:#c4b5fd; --ok:#5ed17f; --ok-bg:#163a22; --no:#e07ac4;
+    color-scheme:dark;
+  }}
+  :root[data-theme="dark"]{
+    --bg:#110f18; --panel:#1a1725; --panel-2:#201c2f; --line:#2c2640;
+    --ink:#ece9f6; --muted:#a89fc3; --faint:#7f779c;
+    --accent:#a78bfa; --accent-ink:#c4b5fd; --ok:#5ed17f; --ok-bg:#163a22; --no:#e07ac4;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--body);line-height:1.55;
+    padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  img{max-width:100%}
+  .wrap{max-width:1040px;margin:0 auto;padding-block:36px 72px}
+  section{margin-top:52px}
+  h2{font-family:var(--display);font-weight:600;font-size:clamp(1.3rem,3vw,1.8rem);letter-spacing:-.02em;margin:0 0 6px;text-wrap:balance}
+  .sub{color:var(--muted);margin:0 0 22px;max-width:62ch}
+  .eyebrow{font-family:var(--display);text-transform:uppercase;letter-spacing:.15em;font-size:.7rem;color:var(--accent);font-weight:600;margin:0 0 12px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;background:color-mix(in srgb,var(--accent) 10%,transparent);padding:.1em .35em;border-radius:5px}
+
+  .top{display:flex;align-items:center;gap:12px}
+  .logo{width:34px;height:34px;flex:none}
+  .brand{font-family:var(--display);font-weight:700;font-size:1.1rem;letter-spacing:-.01em}
+
+  .hero{margin-top:34px}
+  .hero h1{font-family:var(--display);font-weight:700;font-size:clamp(2rem,6vw,3.4rem);line-height:1.05;letter-spacing:-.03em;margin:0 0 16px;text-wrap:balance;max-width:16ch}
+  .hero .grad{background:linear-gradient(100deg,var(--v3),var(--v6));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero p{font-size:clamp(1.02rem,2.4vw,1.2rem);color:var(--muted);max-width:56ch;margin:0 0 24px}
+  .cta{display:flex;gap:12px;flex-wrap:wrap}
+  .btn{font-family:var(--display);font-weight:600;font-size:.95rem;padding:11px 20px;border-radius:999px;border:1px solid transparent;text-decoration:none;display:inline-block}
+  .btn.primary{background:var(--accent);color:#fff}
+  .btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+  .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  .flows{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .flow{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px}
+  .flow.keylo{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+  .flow h3{font-family:var(--display);font-size:1.02rem;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+  .flow .tag{font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;padding:2px 8px;border-radius:999px}
+  .tag.inject{background:color-mix(in srgb,var(--no) 16%,transparent);color:var(--no)}
+  .tag.safe{background:var(--ok-bg);color:var(--ok)}
+  .flow .cap{color:var(--faint);font-size:.82rem;margin:0 0 14px;min-height:2.4em}
+  .svgbox{width:100%;height:auto}
+  .legend{font-size:.8rem;color:var(--muted);margin:10px 0 0;display:flex;gap:14px;flex-wrap:wrap}
+  .dot{display:inline-flex;align-items:center;gap:6px}
+  .dot i{width:10px;height:10px;border-radius:3px;display:inline-block}
+
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel)}
+  table{border-collapse:collapse;width:100%;min-width:560px;font-size:.92rem}
+  th,td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{font-family:var(--display);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+  thead th.keycol{color:var(--accent)}
+  tbody tr:last-child td{border-bottom:none}
+  td.row-h{font-weight:600;color:var(--ink)}
+  .yes{color:var(--ok);font-weight:600}
+  .no{color:var(--no);font-weight:600}
+  .keycell{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+
+  .wedges{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+  .wedge{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px}
+  .wedge .n{font-family:var(--display);font-weight:700;font-size:1.3rem;color:var(--accent);margin:0 0 6px}
+  .wedge h3{font-family:var(--display);font-size:1.05rem;margin:0 0 6px}
+  .wedge p{margin:0;color:var(--muted);font-size:.9rem}
+
+  .honest{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:24px}
+  .honest ul{margin:12px 0 0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:10px}
+  .honest li{display:flex;gap:10px;color:var(--muted);font-size:.92rem}
+  .honest li b{color:var(--ink)}
+  .honest li::before{content:"\2014";color:var(--accent);font-weight:700}
+
+  .foot{margin-top:56px;text-align:center;background:linear-gradient(135deg,color-mix(in srgb,var(--v3) 14%,var(--panel)),var(--panel));border:1px solid var(--line);border-radius:22px;padding:40px 24px}
+  .foot h2{margin-bottom:10px}
+  .foot p{color:var(--muted);max-width:50ch;margin:0 auto 22px}
+  .note{color:var(--faint);font-size:.76rem;margin-top:26px;text-align:center}
+  @media (max-width:640px){.flows{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <svg class="logo" viewBox="0 0 256 256" aria-label="Keylo">
+      <clipPath id="k0"><path d="M18.9,140.2 Q12,128 18.9,115.8 L55.1,52.2 Q62,40 76,40 L156,40 Q170,40 163.5,52.4 L130.5,115.6 Q124,128 130.5,140.4 L163.5,203.6 Q170,216 156,216 L76,216 Q62,216 55.1,203.8 Z"/></clipPath>
+      <g clip-path="url(#k0)">
+        <path fill="#9333EA" d="M84,118 L62,216 L12,128 Z"/><path fill="#A855F7" d="M84,118 L12,128 L62,40 Z"/>
+        <path fill="#8B5CF6" d="M84,118 L62,40 L170,40 Z"/><path fill="#6D28D9" d="M84,118 L170,40 L124,128 Z"/>
+        <path fill="#7C3AED" d="M84,118 L124,128 L170,216 Z"/><path fill="#5B21B6" d="M84,118 L170,216 L62,216 Z"/>
+      </g>
+      <clipPath id="k1"><path d="M150.5,136.7 Q146,128 150.5,119.3 L173.9,74.7 Q178.4,66 187.1,70.5 L227.3,91.5 Q236,96 236,105.8 L236,150.2 Q236,160 227.3,164.5 L187.1,185.5 Q178.4,190 173.9,181.3 Z"/></clipPath>
+      <g clip-path="url(#k1)">
+        <path fill="#DDD6FE" d="M146,128 L178.4,66 L236,96 Z"/><path fill="#A78BFA" d="M146,128 L236,96 L236,160 Z"/>
+        <path fill="#7C3AED" d="M146,128 L236,160 L178.4,190 Z"/>
+      </g>
+    </svg>
+    <span class="brand">Keylo</span>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">Keylo vs. secret injection</p>
+    <h1>Secrets your agent can <span class="grad">use but never read.</span></h1>
+    <p>Every other developer secret tool injects the value into your code, your shell, or your AI agent. Keylo hands it to the <b>command</b> instead &mdash; the agent never sees it. No account, no cloud, and the source is yours to audit.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/tulde23/keylo#install">Install Keylo</a>
+      <a class="btn ghost" href="#mechanism">See how it works</a>
+    </div>
+  </header>
+
+  <section id="mechanism">
+    <p class="eyebrow">The difference that matters</p>
+    <h2>Injection hands over the value. Keylo doesn't.</h2>
+    <p class="sub">Both keep secrets out of plaintext <code>.env</code> files. Only one keeps the value out of the agent's context &mdash; where it would be logged, sent to a model provider, and replayed.</p>
+    <div class="flows">
+      <div class="flow inject">
+        <h3>Injection tools <span class="tag inject">value injected</span></h3>
+        <p class="cap">1Password SDKs, Vault, Doppler, <code>.env</code> loaders: the real value is placed into the agent at runtime.</p>
+        <svg class="svgbox" viewBox="0 0 320 150" role="img" aria-label="Vault sends the secret value to the agent, which runs the command.">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--no)"/></marker>
+          </defs>
+          <rect x="6" y="54" width="78" height="42" rx="9" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+          <text x="45" y="79" text-anchor="middle" font-size="12" fill="var(--muted)" font-family="Inter, system-ui, sans-serif">Vault</text>
+          <rect x="121" y="54" width="78" height="42" rx="9" fill="color-mix(in srgb,var(--no) 12%,transparent)" stroke="var(--no)" stroke-width="1.5"/>
+          <text x="160" y="79" text-anchor="middle" font-size="12" fill="var(--no)" font-family="Inter, system-ui, sans-serif">Agent</text>
+          <rect x="236" y="54" width="78" height="42" rx="9" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+          <text x="275" y="79" text-anchor="middle" font-size="12" fill="var(--muted)" font-family="Inter, system-ui, sans-serif">Command</text>
+          <line x1="86" y1="75" x2="117" y2="75" stroke="var(--no)" stroke-width="2.5" marker-end="url(#ar)"/>
+          <text x="101" y="45" text-anchor="middle" font-size="10.5" fill="var(--no)" font-family="Inter, system-ui, sans-serif">value</text>
+          <line x1="201" y1="75" x2="232" y2="75" stroke="var(--muted)" stroke-width="2" marker-end="url(#ar)" opacity=".7"/>
+          <text x="216" y="45" text-anchor="middle" font-size="10.5" fill="var(--muted)" font-family="Inter, system-ui, sans-serif">value</text>
+        </svg>
+        <p class="legend"><span class="dot"><i style="background:var(--no)"></i>the agent holds the real secret</span></p>
+      </div>
+
+      <div class="flow keylo">
+        <h3>Keylo <span class="tag safe">run-only</span></h3>
+        <p class="cap">The agent names a secret; Keylo runs the command with it and returns only redacted output.</p>
+        <svg class="svgbox" viewBox="0 0 320 150" role="img" aria-label="The agent names a secret to Keylo; Keylo passes the value to the command and returns redacted output to the agent.">
+          <defs>
+            <marker id="ag" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+            <marker id="ao" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--ok)"/></marker>
+          </defs>
+          <rect x="6" y="14" width="78" height="42" rx="9" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+          <text x="45" y="39" text-anchor="middle" font-size="12" fill="var(--muted)" font-family="Inter, system-ui, sans-serif">Agent</text>
+          <rect x="121" y="54" width="78" height="42" rx="9" fill="color-mix(in srgb,var(--accent) 14%,transparent)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="160" y="79" text-anchor="middle" font-size="12" fill="var(--accent-ink)" font-family="Inter, system-ui, sans-serif" font-weight="600">Keylo</text>
+          <rect x="236" y="54" width="78" height="42" rx="9" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+          <text x="275" y="79" text-anchor="middle" font-size="12" fill="var(--muted)" font-family="Inter, system-ui, sans-serif">Command</text>
+          <line x1="78" y1="40" x2="128" y2="60" stroke="var(--accent)" stroke-width="2" marker-end="url(#ag)"/>
+          <text x="86" y="28" text-anchor="start" font-size="10" fill="var(--accent)" font-family="Inter, system-ui, sans-serif">name only</text>
+          <line x1="201" y1="75" x2="232" y2="75" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#ag)"/>
+          <text x="216" y="45" text-anchor="middle" font-size="10.5" fill="var(--accent)" font-family="Inter, system-ui, sans-serif">value</text>
+          <path d="M240,100 Q150,138 70,58" fill="none" stroke="var(--ok)" stroke-width="2" marker-end="url(#ao)"/>
+          <text x="158" y="134" text-anchor="middle" font-size="10" fill="var(--ok)" font-family="Inter, system-ui, sans-serif">output &middot; [keylo:name]</text>
+        </svg>
+        <p class="legend"><span class="dot"><i style="background:var(--accent)"></i>value never leaves Keylo + command</span></p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Side by side</p>
+    <h2>What each model actually does</h2>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>&nbsp;</th><th>Injection tools</th><th class="keycol">Keylo</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="row-h">Does the agent receive the value?</td><td><span class="no">Yes</span> &mdash; injected at runtime</td><td class="keycell"><span class="yes">No</span> &mdash; run-only; no tool returns a value</td></tr>
+          <tr><td class="row-h">Command output</td><td>Your responsibility</td><td class="keycell">Secrets replaced with <code>[keylo:name]</code> first</td></tr>
+          <tr><td class="row-h">Account / cloud</td><td>Hosted account or server</td><td class="keycell"><span class="yes">None</span> &mdash; local-first</td></tr>
+          <tr><td class="row-h">Price / source</td><td>Typically paid SaaS, closed</td><td class="keycell">Free, source-available (BSL 1.1)</td></tr>
+          <tr><td class="row-h">Scope control</td><td>Varies</td><td class="keycell">Run-only keys, per-use approval, audit log</td></tr>
+          <tr><td class="row-h">Team governance (SSO, SIEM)</td><td><span class="yes">Yes</span></td><td class="keycell"><span class="no">No</span> &mdash; single-dev by design</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Where Keylo wins</p>
+    <h2>Three things an injection vendor can't copy</h2>
+    <div class="wedges">
+      <div class="wedge"><p class="n">01</p><h3>The agent never reads it</h3><p>Run-only access plus output redaction keep the value out of the agent's context entirely &mdash; the strongest answer to the one threat this category exists for.</p></div>
+      <div class="wedge"><p class="n">02</p><h3>No account, no cloud</h3><p>Keylo has no sign-up and no server. Nothing about a secret is routed through a vendor. A hosted platform can't match this without dismantling its own model.</p></div>
+      <div class="wedge"><p class="n">03</p><h3>Free &amp; auditable</h3><p>The security-critical code is published under BSL 1.1. For a trust tool, "read the code, pay nothing" beats "trust our closed SaaS."</p></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Honest limits</p>
+    <h2>What Keylo doesn't claim</h2>
+    <div class="honest">
+      <p class="sub" style="margin:0">Stating these plainly is what makes the rest credible. Keylo fails closed and documents its edges.</p>
+      <ul>
+        <li><span><b>Not a team platform.</b> No fleet-wide discovery, SSO/SCIM, or SIEM. For org-wide governance, an injection platform is the right tool.</span></li>
+        <li><span><b>Redaction catches accidents, not intent.</b> A command that transforms a value (base64, hashing) can get it past the redactor. Access keys and approval are the real control.</span></li>
+        <li><span><b>An approved command gets the real value.</b> Once you approve a command it holds the plaintext. Keylo stops the agent reading secrets, not a command you chose to run.</span></li>
+        <li><span><b>Same-user access.</b> Any program running as you can read the OS-sealed vault. A master passphrase narrows this; sandboxing the agent's shell is the real mitigation.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <div class="foot">
+    <h2>Let your agent use secrets it can never read.</h2>
+    <p>Local-first, free, and source-available. Works with Claude Code and any MCP-capable agent.</p>
+    <div class="cta" style="justify-content:center">
+      <a class="btn primary" href="https://github.com/tulde23/keylo#install">Install Keylo</a>
+      <a class="btn ghost" href="https://github.com/tulde23/keylo/blob/main/README.md#security-model">Read the security model</a>
+    </div>
+  </div>
+
+  <p class="note">Comparison of secret-delivery models for AI agents. "Injection tools" refers to the common runtime-injection pattern (1Password developer SDKs, HashiCorp Vault agents, Doppler, <code>.env</code> loaders), not any single product.</p>
+</div>
+</body>
+</html>
