@@ -6,6 +6,9 @@
 [![License: BSL 1.1](https://img.shields.io/badge/license-BSL%201.1-blue.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-6D28D9)
 
+[![Downloads](https://img.shields.io/github/downloads/tulde23/keylo/total?style=for-the-badge&logo=github&color=007ec6)](https://github.com/tulde23/keylo/releases)
+
+
 <p align="center"><img src="docs/images/keylo-mcp-demo.gif" alt="An agent using Keylo's MCP server: it finds the orders-db secret by name, runs the migrations with the connection string in DATABASE_URL, and when it echoes the variable the output shows [keylo:orders-db:connection_string] instead of the value" width="900"></p>
 
 Keylo is a secrets manager for developers working with AI agents. Agents use your API keys,
