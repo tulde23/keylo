@@ -111,6 +111,19 @@ impl SecretStore {
         Ok(Secret { info, value })
     }
 
+    /// The raw stored record for a secret, for copying it into another store (e.g. the headless
+    /// vault). The bool is true when the value is **inline** — its blob is the whole value and can be
+    /// written verbatim into another store. It is false for a **file-backed** (large or binary) value,
+    /// whose blob is only a reference to an encrypted file under `blobs/`; that reference means
+    /// nothing in another store, so such secrets can't be copied this way yet. `None` if there's no
+    /// such secret.
+    pub fn raw_for_publish(&self, name: &str) -> Result<Option<(RawCredential, bool)>> {
+        Ok(creds().read(&self.target(name))?.map(|c| {
+            let inline = c.blob.first() == Some(&KIND_INLINE);
+            (c, inline)
+        }))
+    }
+
     /// Adds a secret, or updates one when `original_name` is given (which may differ from the draft's
     /// name, renaming it). Adding fails if the name is taken; so does renaming onto another secret.
     pub fn save(&self, draft: &SecretDraft, original_name: Option<&str>) -> Result<SecretInfo> {

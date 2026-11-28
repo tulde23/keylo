@@ -188,6 +188,34 @@ pub fn hello_selftest() -> keylo_core::Result<String> {
     keylo_core::bail!("A biometric unlock isn't available on this platform.")
 }
 
+/// Result of publishing a chosen subset of secrets into the headless vault file.
+pub struct HeadlessPublish {
+    /// Secrets written or updated in the headless vault.
+    pub written: usize,
+    /// Stale secrets removed from the headless vault (present there, no longer in the chosen set).
+    pub removed: usize,
+}
+
+/// Publishes a chosen subset of secrets into the headless vault file (`headless-vault.json` in
+/// `dir`), encrypted under `passphrase`, so an SSH/headless session on this machine can use them.
+/// The file is created on first publish. Afterwards it mirrors `creds`: each is written, and any
+/// item under `prefix` that is no longer in `creds` is removed. This is a separate file from the
+/// store-selection `vault.json`, so it never changes which store a desktop session uses.
+///
+/// Unix only — the headless vault is a Linux/macOS feature. Returns an error elsewhere.
+#[cfg_attr(not(any(target_os = "linux", target_os = "macos")), allow(unused_variables))]
+pub fn publish_headless(
+    dir: &std::path::Path,
+    passphrase: &str,
+    prefix: &str,
+    creds: &[keylo_core::platform::RawCredential],
+) -> keylo_core::Result<HeadlessPublish> {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    return file_vault::publish(dir, passphrase, prefix, creds);
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    keylo_core::bail!("Headless provisioning isn't available on this platform yet; it publishes to the Linux/macOS headless vault.")
+}
+
 /// An approval dialog for the MCP server when the app isn't installed (macOS and Linux; Windows
 /// uses a message box in keylo itself). 10 denied, 11 once, 12 always.
 pub fn approval_dialog(title: &str, message: &str, allow_always: bool) -> keylo_core::Result<i32> {
