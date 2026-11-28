@@ -10,6 +10,7 @@ pub mod claude_code;
 pub mod config;
 pub mod error;
 pub mod gate;
+pub mod headless;
 pub mod icons;
 pub mod import;
 pub mod inference;

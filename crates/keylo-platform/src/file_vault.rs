@@ -389,6 +389,33 @@ impl CredentialStore for FileVault {
     }
 }
 
+/// See [`crate::publish_headless`]. Writes `creds` into `headless-vault.json` in `dir` — a file
+/// separate from the store-selection `vault.json` — creating it with `passphrase` on first use, then
+/// reconciling it to exactly `creds`: each is written, and any item under `prefix` no longer in the
+/// set is removed. Inline values only; the caller filters file-backed secrets out first.
+pub fn publish(dir: &Path, passphrase: &str, prefix: &str, creds: &[RawCredential]) -> Result<crate::HeadlessPublish> {
+    let vault = FileVault::new(dir.join("headless-vault.json"));
+    if vault.exists() {
+        vault.unlock(passphrase)?;
+    } else {
+        vault.create(passphrase)?;
+    }
+    let mut written = 0;
+    for c in creds {
+        vault.write(&c.target, &c.blob, c.user_name.as_deref(), c.comment.as_deref(), &c.attributes)?;
+        written += 1;
+    }
+    // Reconcile: drop anything in the headless vault that's no longer chosen.
+    let desired: std::collections::HashSet<String> = creds.iter().map(|c| c.target.to_lowercase()).collect();
+    let mut removed = 0;
+    for existing in vault.enumerate(prefix)? {
+        if !desired.contains(&existing.target.to_lowercase()) && vault.delete(&existing.target)? {
+            removed += 1;
+        }
+    }
+    Ok(crate::HeadlessPublish { written, removed })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -413,6 +440,37 @@ mod tests {
         assert!(again.delete("Keylo:a").unwrap());
         assert!(again.enumerate("Keylo:").unwrap().is_empty());
         v.lock();
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn publish_creates_then_reconciles_to_the_chosen_set() {
+        let dir = std::env::temp_dir().join(format!("keylo-hl-pub-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let cred = |target: &str, value: &[u8]| RawCredential {
+            target: target.into(),
+            user_name: None,
+            comment: None,
+            last_written: chrono::Utc::now(),
+            blob: zeroize::Zeroizing::new(value.to_vec()),
+            attributes: BTreeMap::new(),
+        };
+
+        // First publish creates the file with two secrets.
+        let r = publish(&dir, "correct horse battery", "Keylo:", &[cred("Keylo:a", b"A"), cred("Keylo:b", b"B")]).unwrap();
+        assert_eq!((r.written, r.removed), (2, 0));
+        assert!(dir.join("headless-vault.json").exists());
+
+        // Re-publishing a smaller set reconciles: 'a' is updated, 'b' is removed.
+        let r = publish(&dir, "correct horse battery", "Keylo:", &[cred("Keylo:a", b"A2")]).unwrap();
+        assert_eq!((r.written, r.removed), (1, 1));
+
+        let v = FileVault::new(dir.join("headless-vault.json"));
+        v.unlock("correct horse battery").unwrap();
+        assert_eq!(v.read("Keylo:a").unwrap().unwrap().blob.as_slice(), b"A2");
+        assert!(v.read("Keylo:b").unwrap().is_none());
         let _ = fs::remove_dir_all(&dir);
     }
 }

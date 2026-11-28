@@ -1,6 +1,7 @@
 //! keylo: the command line for Keylo's secrets, and (keylo mcp) the MCP server for AI agents.
 
 mod args;
+mod headless_cmd;
 mod mcp;
 mod runner;
 mod sync_cmd;
@@ -29,6 +30,7 @@ use zeroize::Zeroizing;
 const FLAGS: &[&str] = &[
     "clip", "yes", "overwrite", "delete-originals", "flat", "plain", "all", "json", "force", "dry-run",
     "password-stdin", "both", "add-to-claude", "help", "stdio", "ask", "no-ask", "check", "set",
+    "sync", "off",
 ];
 
 fn usage_text() -> String {
@@ -91,6 +93,11 @@ keylo sync [status | code]              Sync now with your other devices (a shar
 keylo sync create FOLDER [--name N]     Start syncing: a new vault in a folder your devices share
 keylo sync join FOLDER [--name N]       Join it from another device (asks for the code)
 keylo sync rename NAME | forget DEVICE | leave
+keylo headless [status]                 Secrets chosen for headless/SSH use, and whether each is current
+keylo headless add NAME... [--sync]     Choose secrets to publish to the headless vault (--sync: auto-update)
+keylo headless remove NAME...           Drop secrets from the headless set
+keylo headless sync NAME [--off]        Turn keep-in-sync on (or off) for a chosen secret
+keylo headless publish                  Write the chosen secrets into the headless vault (asks a passphrase)
 keylo update [--check] [--yes]          Check for a newer Keylo and install it (Windows: the app and
                                         keylo, in place; macOS: from the app; Linux: the release page)
 keylo config [hello session|always|never | session-minutes N | clipboard-seconds N | audit-days N|forever]",
@@ -168,6 +175,7 @@ fn run(argv: &[String]) -> CliResult<i32> {
         "status" => status(&c, &args),
         "update" => update_cmd(&args),
         "sync" => sync_cmd::sync_cmd(&mut c, &args),
+        "headless" => headless_cmd::headless_cmd(&mut c, &args),
         "config" => config_cmd(&mut c, &args),
         "__clip-clear" => clip_clear(&args),
         "__hello-selftest" => {
