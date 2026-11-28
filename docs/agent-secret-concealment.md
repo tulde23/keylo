@@ -115,6 +115,22 @@ approvals (§5) — decides *which* secrets a command may receive at all. Redact
 secrets out of the conversation by accident; it is not a defense against a command you approved that
 is actively trying to exfiltrate. The rule follows: **don't approve commands you don't understand.**
 
+### Derived values pass through (by design)
+
+Redaction is purely value-based: the `OutputRedactor` only holds the specific values Keylo
+*injected* for a run (`redactor.add`, `redactor.rs:26`), and `redact` does nothing but match and
+replace those exact strings (`redactor.rs:39`). A value the command *produces* at runtime — a
+short-lived access token an API returns in exchange for your key — was never injected, so it is not
+in the redactor's set and reaches the agent unchanged. This is intentional, not a gap: it is what
+lets an agent exchange a long-lived key for a session token and use that token in later calls. There
+is no "mark this output safe" flag because there is nothing to opt out of — the default is already
+"pass through unless it is a stored secret."
+
+The trade-off: Keylo conceals the **long-lived credential you stored**, not an ephemeral token
+derived from it. If that derived token is itself sensitive and you don't want the agent to hold it,
+keep the whole chain — the token exchange *and* the call that uses it — inside a **single**
+`run_with_secrets` command, so the token lives and dies in the child process and never surfaces.
+
 ---
 
 ## 4. File delivery: path in, value never
